@@ -1,0 +1,196 @@
+/* ========================================
+   CSS PARA ALERTAS DE DESPESAS
+   - Altura fixa com scroll
+   - Indicador visual de mais conteúdo
+   ======================================== */
+
+/* ===== CONTAINER PRINCIPAL DOS ALERTAS ===== */
+#dashAlertBox {
+  max-height: 600px; /* Altura máxima fixa */
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  padding-bottom: 20px;
+  
+  /* Scroll suave */
+  scroll-behavior: smooth;
+  
+  /* Estilo da barra de rolagem (Webkit - Chrome/Safari) */
+  scrollbar-width: thin;
+  scrollbar-color: #f59e0b #fef3c7;
+}
+
+/* Barra de rolagem customizada (Chrome/Safari/Edge) */
+#dashAlertBox::-webkit-scrollbar {
+  width: 8px;
+}
+
+#dashAlertBox::-webkit-scrollbar-track {
+  background: #fef3c7;
+  border-radius: 4px;
+}
+
+#dashAlertBox::-webkit-scrollbar-thumb {
+  background: #f59e0b;
+  border-radius: 4px;
+}
+
+#dashAlertBox::-webkit-scrollbar-thumb:hover {
+  background: #d97706;
+}
+
+/* ===== INDICADOR DE "HÁ MAIS ABAIXO" ===== */
+#dashAlertBox.has-scroll::after {
+  content: "▼ Role para ver mais alertas ▼";
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: linear-gradient(to bottom, transparent, #fef3c7 20%, #fef3c7);
+  color: #92400e;
+  font-weight: 700;
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
+  animation: pulse-indicator 2s ease-in-out infinite;
+  z-index: 10;
+}
+
+/* Animação do indicador */
+@keyframes pulse-indicator {
+  0%, 100% {
+    opacity: 0.7;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(3px);
+  }
+}
+
+/* Remove o indicador quando rolar até o fim */
+#dashAlertBox.scrolled-to-bottom::after {
+  display: none;
+}
+
+/* ===== ESTILOS DOS ITENS DE ALERTA ===== */
+.alert-item {
+  background: #fff;
+  border: 2px solid #f59e0b;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
+  transition: all 0.2s ease;
+}
+
+.alert-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);
+}
+
+.alert-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.alert-ico {
+  font-size: 24px;
+}
+
+.alert-title strong {
+  font-size: 16px;
+  color: #92400e;
+  flex: 1;
+  min-width: 150px;
+}
+
+.alert-badge {
+  background: #f59e0b;
+  color: #fff;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ===== LISTA DE FICHAS ===== */
+.alert-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.alert-ficha {
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ficha-numero {
+  font-weight: 700;
+  color: #92400e;
+}
+
+.ficha-rota {
+  color: #78716c;
+  font-size: 11px;
+}
+
+/* ===== BOTÃO "MOSTRAR DETALHES" ===== */
+.alert-item .btn {
+  width: 100%;
+  background: #f59e0b;
+  color: #fff;
+  border: none;
+  padding: 10px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.alert-item .btn:hover {
+  background: #d97706;
+  transform: scale(1.02);
+}
+
+/* ===== MENSAGEM "TUDO CERTO" ===== */
+#dashAlertBox .muted {
+  text-align: center;
+  color: #78716c;
+  padding: 40px 20px;
+  font-size: 14px;
+}
+
+/* ===== RESPONSIVO ===== */
+@media (max-width: 768px) {
+  #dashAlertBox {
+    max-height: 400px;
+  }
+  
+  .alert-title {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .alert-badge {
+    align-self: flex-start;
+  }
+}

@@ -1,5 +1,41 @@
 // ==== DESPESAS ====
 // ===== INICIALIZAÇÃO GLOBAL DE DESPESAS =====
+// ✅ CARREGAR DESPESAS DO SUPABASE
+async function loadDespesas() {
+  try {
+    window.despesas = await window.SupabaseAPI.despesas.getAll();
+    console.log('[Despesas] Carregadas do Supabase:', window.despesas.length);
+  } catch (error) {
+    console.error('[Despesas] Erro ao carregar:', error);
+    window.despesas = [];
+  }
+}
+
+// ✅ SALVAR DESPESA NO SUPABASE
+async function saveDespesa(despesa) {
+  try {
+    if (despesa.id) {
+      // Atualizar existente
+      await window.SupabaseAPI.despesas.updateByUid(despesa.uid, despesa);
+    } else {
+      // Criar nova
+      despesa.uid = window.uid();
+      await window.SupabaseAPI.despesas.create(despesa);
+    }
+    
+    // Recarrega lista
+    await loadDespesas();
+    
+    console.log('[Despesas] Salva com sucesso');
+  } catch (error) {
+    console.error('[Despesas] Erro ao salvar:', error);
+    throw error;
+  }
+}
+
+// Substituir window.saveDesp
+window.saveDesp = saveDespesas;
+
 (function initDespesasGlobal() {
   const KEY = 'bsx_despesas_v1';
   

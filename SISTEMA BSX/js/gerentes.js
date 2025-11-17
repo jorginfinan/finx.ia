@@ -25,13 +25,135 @@
     ? window.uid
     : function() { return 'g_'+Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); };
 
-  function read(){ 
-    const arr = jget(KEY, []); 
-    return Array.isArray(arr) ? arr : []; 
-  }
-  
-  function write(arr){
-    const safe = Array.isArray(arr) ? arr : [];
+    async function read() {
+      try {
+        const arr = await window.SupabaseAPI.gerentes.getAtivos();
+        return Array.isArray(arr) ? arr : [];
+      } catch (error) {
+        console.error('Erro ao carregar gerentes:', error);
+        return [];
+      }
+    }
+    
+    // ✅ ATUALIZAR onSubmit (salvar gerente):
+    async function onSubmit(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      
+      if (__saving || __submitting) {
+        console.warn('[Gerentes] ⚠️ Já está salvando, aguarde...');
+        return false;
+      }
+      
+      __submitting = true;
+      const form = e.currentTarget;
+      const btn = form.querySelector('#btnSalvarGerente');
+      
+      __saving = true;
+      if (btn) btn.disabled = true;
+      
+      try {
+        const fd = new FormData(form);
+        const uidEditing = (form.dataset.editingUid || '').trim();
+        
+        const nome = String(fd.get('nome')||'').trim();
+        const numero = String(fd.get('numero')||'').trim();
+        
+        if (!nome) throw new Error('Informe o nome do gerente.');
+        if (!numero) throw new Error('Informe o número do gerente.');
+        
+        const temSegundaComissao = !!fd.get('temSegundaComissao');
+        const comissao2Value = Number(fd.get('comissao2') || 0);
+        
+        if (temSegundaComissao && !comissao2Value) {
+          throw new Error('Informe o valor da 2ª comissão.');
+        }
+        
+        const comissaoPorRotaPositiva = !!fd.get('comissaoPorRotaPositiva');
+        
+        const g = {
+          nome,
+          comissao: Number(fd.get('comissao')||0) || 0,
+          numero,
+          endereco: String(fd.get('endereco')||'').trim(),
+          telefone: String(fd.get('telefone')||'').trim(),
+          email: String(fd.get('email')||'').trim(),
+          obs: String(fd.get('obs')||'').trim(),
+          base_calculo: comissaoPorRotaPositiva ? 'coletas' : String(fd.get('baseCalculo') || 'coletas-despesas'),
+          comissao_por_rota_positiva: comissaoPorRotaPositiva,
+          tem_segunda_comissao: temSegundaComissao,
+          comissao2: temSegundaComissao ? comissao2Value : 0
+        };
+        
+        // Salva no Supabase
+        if (uidEditing) {
+          await window.SupabaseAPI.gerentes.updateByUid(uidEditing, g);
+        } else {
+          g.uid = uidFn();
+          await window.SupabaseAPI.gerentes.create(g);
+        }
+        
+        // Limpa formulário
+        form.reset();
+        form.removeAttribute('data-editing-uid');
+        delete form.dataset.editingUid;
+        
+        // Re-renderiza
+        await render();
+        
+        window.showNotification('Gerente salvo com sucesso!', 'success');
+        
+      } catch (error) {
+        console.error('[Gerentes] ❌ Erro ao salvar:', error);
+        window.showNotification(error.message || 'Erro ao salvar. Tente novamente.', 'error');
+      } finally {
+        __savingTimeout = setTimeout(function() {
+          __saving = false;
+          __submitting = false;
+          if (btn) btn.disabled = false;
+          __savingTimeout = null;
+        }, 500);
+      }
+    }
+    
+    // ✅ ATUALIZAR render:
+    async function render() {
+      const arr = await read();
+      arr.sort(function(a,b) { 
+        return String(a.nome||'').localeCompare(String(b.nome||'')); 
+      });
+    
+      const tb = document.getElementById('tbodyGerentes');
+      if (tb) {
+        tb.innerHTML = arr.length ? arr.map(function(g) {
+          const com = (Number(g.comissao)||0).toFixed(0);
+          const com2 = g.tem_segunda_comissao ? (' + ' + (Number(g.comissao2)||0).toFixed(0) + '%') : '';
+          
+          return '<tr data-context="gerentes" data-uid="' + g.uid + '">' +
+            '<td>' + esc(g.nome) + '</td>' +
+            '<td>' + esc(g.numero||'') + '</td>' +
+            '<td>' + esc(g.endereco||'') + '</td>' +
+            '<td>' + esc(g.telefone||'') + '</td>' +
+            '<td>' + esc(g.email||'') + '</td>' +
+            '<td>' + com + '%' + com2 + '</td>' +
+            '<td>' + esc(g.obs||'') + '</td>' +
+            '<td class="tv-right">' +
+              '<button type="button" class="btn btn-gerente-edit" data-edit-gerente="' + g.uid + '">EDITAR</button> ' +
+              '<button type="button" class="btn danger btn-gerente-del" data-del-gerente="' + g.uid + '">EXCLUIR</button>' +
+            '</td>' +
+          '</tr>';
+        }).join('') : '<tr><td colspan="8">Nenhum gerente cadastrado.</td></tr>';
+      }
+    
+      // Atualiza datalist
+      const dl = document.getElementById('listGerentes');
+      if (dl) {
+        dl.innerHTML = arr.map(function(g) { 
+          return '<option value="' + esc(g.nome) + '"></option>'; 
+        }).join('');
+      }
+    
     
     // Remove duplicados baseado no UID antes de salvar
     const uniqueMap = new Map();

@@ -1561,22 +1561,14 @@ function pgDivAddFromForm(){
   <!-- JS: manter apenas UMA lib XLSX para evitar conflitos -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
- <!-- Supabase Client -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<!-- Configuração -->
-<script>
-  const SUPABASE_URL = 'https://ttdwmbwiapkjbjbepeza.supabase.co';
-  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0ZHdtYndpYXBramJqYmVwZXphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzMjg4NDgsImV4cCI6MjA3ODkwNDg0OH0.NZxm-ZQbQFVceO6yUABKAIj7XY7qN6RXSLi-8NF-BAw';
-  
-  window.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  console.log('✅ Supabase conectado');
-</script> 
 
 <!-- JS externo -->
-<script src="js/api-supabase.js"></script>
+
 <script src="js/utils.js"></script>
 <script src="js/empresa-shim.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/api-supabase.js"></script>
 <script src="js/auth-rbac.js" defer></script>
 <script src="js/sync-manager.js" defer></script>
 <script src="js/nav.js" ></script>

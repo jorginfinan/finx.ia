@@ -430,8 +430,87 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
   }
 
   /* --- Persistência & sessão --- */
-  function loadUsers(){ return jget(K_USERS, []) || []; }
-  function saveUsers(arr){ jset(K_USERS, arr||[]); }
+  async function loadUsers() {
+    return await window.SupabaseAPI.users.getAll();
+  }
+  
+  async function saveUsers(arr) {
+    // Não precisa mais salvar array completo
+    // Cada operação já salva individualmente
+  }
+  
+  // ✅ ATUALIZAR createUser:
+  async function createUser({username, password, role='operador', perms, companies}) {
+    username = String(username||'').trim().toLowerCase();
+    if (!username || !password) return {ok:false, msg:'Preencha usuário e senha'};
+    
+    // Verifica se existe
+    const existing = await window.SupabaseAPI.users.getByUsername(username);
+    if (existing) return {ok:false, msg:'Usuário já existe'};
+    
+    // Cria no Supabase
+    const permObj = (role==='admin') ? permsAllTrue() : toPermObject(perms);
+    
+    try {
+      await window.SupabaseAPI.users.create({
+        username,
+        pass: await sha(password),
+        role,
+        perms: permObj,
+        companies: Array.isArray(companies) ? companies : []
+      });
+      
+      return {ok:true};
+    } catch (error) {
+      return {ok:false, msg: error.message};
+    }
+  }
+  
+  // ✅ ATUALIZAR updateUser:
+  async function updateUser(id, patch) {
+    try {
+      const p = Object.assign({}, patch||{});
+      if (p.perms) p.perms = toPermObject(p.perms);
+      if (p.role === 'admin') p.perms = permsAllTrue();
+      if (typeof p.password === 'string') delete p.password;
+      
+      await window.SupabaseAPI.users.update(id, p);
+      return {ok:true};
+    } catch (error) {
+      return {ok:false, msg: error.message};
+    }
+  }
+  
+  // ✅ ATUALIZAR removeUser:
+  async function removeUser(id) {
+    try {
+      await window.SupabaseAPI.users.delete(id);
+      return {ok:true};
+    } catch (error) {
+      return {ok:false, msg: error.message};
+    }
+  }
+  
+  // ✅ ATUALIZAR login:
+  async function login(username, password) {
+    const u = await window.SupabaseAPI.users.getByUsername(username);
+    if (!u || u.active===false) return {ok:false, msg:'Usuário inexistente ou inativo'};
+    if (!(await passOk(u.pass, password))) return {ok:false, msg:'Senha inválida'};
+    
+    const perms = (u.role==='admin') ? permsAllTrue()
+               : (Array.isArray(u.perms) ? toPermObject(u.perms) : (u.perms||{}));
+    
+    setSession({
+      id: u.id,
+      username: u.username,
+      role: u.role,
+      perms,
+      companies: Array.isArray(u.companies) ? u.companies : []
+    });
+    
+    document.dispatchEvent(new CustomEvent('auth:login', { detail:{ user: current() } }));
+    return {ok:true};
+  }
   function setSession(s){ jset(K_SESS, s); }
   function current(){ return jget(K_SESS, null); }
 

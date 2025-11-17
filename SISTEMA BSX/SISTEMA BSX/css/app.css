@@ -1,0 +1,2220 @@
+:root{ --brand:#f4b300; --brand-2:#d29c0f; --bg:#0f0f0f; --ok:#4caf50; --danger:#b91c1c; }
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#f6f7fb;color:#111}
+#loginPage{min-height:100vh;display:flex;justify-content:center;align-items:center}
+.login-box{background:#fff;padding:28px;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.12);width:min(92vw,360px)}
+.login-box h2{margin:0 0 14px;text-align:center;color:#333}
+.login-box label{display:block;margin:10px 0 6px;font-size:13px;color:#333}
+.login-box input{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:10px}
+.login-box button{margin-top:16px;width:100%;padding:12px;background:var(--brand-2);color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer}
+.login-box button:hover{filter:brightness(1.05)}
+.error{color:#c00;font-size:12px;margin-top:10px;display:none;text-align:center}
+#app{display:none}
+header{background:var(--bg);color:#fff;display:flex;align-items:center;gap:16px;padding:12px 20px;position:sticky;top:0;z-index:10}
+.logo{font-size:20px;font-weight:800;color:var(--brand)}
+nav{display:flex;gap:14px;flex-wrap:wrap}
+nav button{background:transparent;border:1px solid #333;color:#fff;padding:8px 12px;border-radius:8px;cursor:pointer}
+nav button.active{background:#1f2937}
+.user-area{margin-left:auto;display:flex;align-items:center;gap:10px}
+.user-badge{background:#222;border:1px solid #000;color:#fff;padding:6px 10px;border-radius:999px;font-size:12px}
+.btn{background:#222;color:#fff;border:1px solid #000;padding:9px 12px;border-radius:8px;cursor:pointer}
+.btn.secondary{background:#333}
+.btn.ghost{background:transparent;color:#111;border-color:#ddd}
+.btn.danger{background:var(--danger);border-color:#7f1d1d}
+.container{max-width:1200px;margin:0 auto;padding:18px}
+.quick-actions{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.qa{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;cursor:pointer}
+.qa:hover{background:#f8fafc}
+#pageInicio .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}
+@media (max-width:900px){ .grid{grid-template-columns:1fr} }
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px}
+.card h3{margin:0 0 12px}
+.form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.form-grid label{display:flex;flex-direction:column;font-size:12px;color:#374151;gap:6px}
+.form-grid input, .form-grid textarea, .form-grid select{padding:9px;border:1px solid #d1d5db;border-radius:8px}
+table{width:100%;border-collapse:collapse;font-size:14px;background:#fff}
+thead th{position:sticky;top:0;background:#111827;color:#fff}
+th,td{border-bottom:1px solid #e5e7eb;padding:10px;text-align:center}
+tr:nth-child(even){background:#f9fafb}
+.submenu{background:var(--brand-2);padding:10px;display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:16px 0}
+.card-fin{color:#fff;font-weight:700}
+.card-fin .big{font-size:26px}
+.r{background:#0b3d0b}.p{background:#212121}.s{background:var(--ok)}
+.filters{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin:10px 0}
+.field{display:flex;flex-direction:column;gap:6px}
+.field input,.field select{padding:8px 10px;border:1px solid #bbb;border-radius:8px;min-width:120px}
+.hidden{display:none}
+footer{color:#6b7280;font-size:12px;text-align:center;padding:18px}
+.pc-layout{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}
+.pc-box{background:#fff;border:1px solid #ddd;border-radius:8px;padding:12px}
+.pc-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.right-box h4{margin:8px 0}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row .field{flex:1;min-width:140px}
+canvas{max-width:100%;border:1px solid #ddd;border-radius:6px;background:#fff}
+
+/* Badge de ediÃ§Ã£o (mostra tooltip no title) */
+.badge-edited{
+    display:inline-block;
+    background:#fde68a;
+    color:#7c2d12;
+    border:1px solid #f59e0b;
+    padding:2px 6px;
+    border-radius:999px;
+    font-size:11px;
+    margin-left:6px;
+    cursor:help;
+    vertical-align:middle;
+  }
+  /* ===================== IMPRESSÃƒO (FINANCEIRO) ===================== */
+@page {
+    size: A4 portrait;         /* 210 x 297 mm */
+    margin: 10mm;              /* borda da folha */
+  }
+  
+  @media print {
+    html, body {
+      width: 210mm;
+      background: #fff !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+  
+  
+    /* ...e mostra sÃ³ a pÃ¡gina Financeiro */
+    #pageFinanceiro { display: block !important; }
+  
+    /* Esconde navegaÃ§Ã£o, botÃµes, filtros etc. */
+    header, .submenu, .filters, .quick-actions, .user-area, footer,
+    #btnNovo, #btnImprimirCaixa, #btnExportar, #btnLancamentos, #btnCaixa {
+      display: none !important;
+    }
+  
+    /* Mostra somente CARTÃ•ES de totais + TABELA de lanÃ§amentos */
+    #pageFinanceiro .cards,
+    #pageFinanceiro #tabela {
+      display: block !important;
+    }
+  
+    /* Compacta os cartÃµes (totais) para caber na folha */
+    #pageFinanceiro .cards {
+      grid-template-columns: repeat(3, 1fr) !important;
+      gap: 8px !important;
+      margin: 0 0 8px 0 !important;
+    }
+    #pageFinanceiro .card-fin { padding: 10px !important; border-radius: 8px !important; }
+    #pageFinanceiro .card-fin .big { font-size: 18px !important; }
+  
+    /* Tabela mais compacta */
+    #pageFinanceiro table { font-size: 11px !important; }
+    #pageFinanceiro th, #pageFinanceiro td {
+      padding: 6px 8px !important;
+    }
+    #pageFinanceiro thead th {
+      background: #222 !important;
+      color: #fff !important;
+    }
+    /* tira bordas de container para nÃ£o "estourar" a pÃ¡gina */
+    #pageFinanceiro [style*="overflow:auto"] {
+      overflow: visible !important;
+      border: none !important;
+    }
+  
+    /* Evita quebra feia no meio da linha */
+    #pageFinanceiro table, #pageFinanceiro tr, #pageFinanceiro td, #pageFinanceiro th {
+      page-break-inside: avoid;
+    }
+  
+    /* Reduz um pouco a escala geral para garantir caber numa folha na maioria dos casos */
+    #pageFinanceiro { transform: scale(0.95); transform-origin: top left; }
+  }
+/* ===== NAV COMO BOTÃ•ES (corrige roxo/sublinhado) ===== */
+#mainNav a { 
+  text-decoration: none !important;
+  color: #e5e7eb !important;        /* mesma cor do header */
+}
+#mainNav a:visited { color: #e5e7eb !important; }
+
+/* aparÃªncia de botÃ£o */
+#mainNav .btn-nav{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid #2e2e2e;
+  background: #111;                  /* fundo escuro igual ao header */
+  color: #fff;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+  transition: background .15s ease, border-color .15s ease, transform .05s ease;
+  white-space: nowrap;
+}
+#mainNav .btn-nav:hover{ background:#181818; }
+#mainNav .btn-nav:active{ transform: translateY(1px); }
+#mainNav .btn-nav.active{
+  background:#334155;                /* destaque da aba ativa */
+  border-color:#475569;
+}
+
+/* acessibilidade */
+#mainNav .btn-nav:focus-visible{
+  outline: 2px solid #8b5cf6;
+  outline-offset: 2px;
+}
+.pc-layout{
+  display:grid;
+  grid-template-columns: calc(55% - 12px) calc(65% - 12px);
+  gap:24px !important;
+  align-items:start;
+}
+.pc-layout > * { min-width:0; }
+
+@media (max-width:1100px){
+  .pc-layout{ grid-template-columns:1fr; }
+}
+/* aviso e selo */
+.warn {
+  background:#fff7ed;
+  border:1px solid #fdba74;
+  color:#7c2d12;
+  border-radius:8px;
+  padding:10px 12px;
+  margin:10px 0;
+}
+.pill-oculta{
+  display:inline-block;
+  background:#fef08a;
+  color:#7c2d12;
+  border:1px solid #f59e0b;
+  padding:2px 8px;
+  border-radius:999px;
+  font-size:12px;
+  vertical-align:middle;
+  margin-left:6px;
+}
+.row-oculta { opacity:.6; }
+/* aumenta largura da tabela de despesas */
+#tbodyDespesas td, 
+#tbodyDespesas th {
+  padding: 10px 14px;   /* mais espaÃ§o interno */
+}
+
+/* deixa a coluna "InformaÃ§Ãµes" mais larga */
+#tbodyDespesas td:nth-child(5),
+#tbodyDespesas th:nth-child(5) {
+  min-width: 220px;   /* largura mÃ­nima para texto */
+  text-align: left;
+}
+
+/* coluna aÃ§Ãµes maior e botÃµes lado a lado */
+#tbodyDespesas td:last-child,
+#tbodyDespesas th:last-child {
+  min-width: 180px;  /* mais espaÃ§o */
+  text-align: center;
+}
+
+#tbodyDespesas td:last-child button {
+  margin: 4px;      /* espaÃ§o entre os botÃµes */
+  width: 80px;      /* largura fixa pra nÃ£o quebrar */
+}
+/* ===== DESPESAS â€“ layout mais largo e aÃ§Ãµes lado a lado ===== */
+
+/* 1) permita rolagem horizontal se precisar e fixe uma largura mÃ­nima confortÃ¡vel */
+#pageDespesas .card,
+#pageDespesas .card table { overflow-x: auto; }
+#pageDespesas table { min-width: 1200px; }   /* ajuste se quiser maior/menor */
+
+/* 2) deixe a coluna "InformaÃ§Ãµes" realmente larga */
+#tbodyDespesas th:nth-child(5),
+#tbodyDespesas td:nth-child(5) {
+  width: 34%;          /* ocupa ~1/3 da tabela */
+  min-width: 320px;    /* evita espremer texto */
+  text-align: left;
+  white-space: normal; /* permite quebrar linha */
+}
+
+/* 3) aumente a coluna de AÃ§Ãµes e alinhe botÃµes na horizontal */
+#tbodyDespesas th:last-child,
+#tbodyDespesas td:last-child {
+  width: 220px;
+  min-width: 220px;
+  text-align: center;
+}
+/* ===== DESPESAS â€“ largura e aÃ§Ãµes ===== */
+
+/* container com rolagem horizontal se precisar */
+#pageDespesas .table-wrap { overflow-x: auto; }
+#pageDespesas table       { min-width: 1300px; }   /* ajuste se quiser maior/menor */
+
+/* coluna "InformaÃ§Ãµes" com largura moderada */
+#tbodyDespesas th:nth-child(5),
+#tbodyDespesas td:nth-child(5) {
+  width: 25%;         /* um quarto da tabela */
+  min-width: 180px;   /* suficiente pra textos mÃ©dios */
+  text-align: left;
+  white-space: normal;
+}
+/* ===== DESPESAS â€” barra de rolagem tambÃ©m no topo ===== */
+.scroll-wrap{
+  border:1px solid #e5e7eb;
+  border-radius:12px;
+  background:#fff;
+}
+
+.scroll-top{
+  overflow-x:auto;
+  overflow-y:hidden;
+  border-bottom:1px solid #e5e7eb;
+  border-top-left-radius:12px;
+  border-top-right-radius:12px;
+  height:16px;                 /* altura da Ã¡rea da barra */
+  -webkit-overflow-scrolling: touch;
+}
+.scroll-ghost{ height:1px; }   /* â€œfantasmaâ€ para dar largura */
+
+.scroll-main{
+  overflow:auto;
+  border-bottom-left-radius:12px;
+  border-bottom-right-radius:12px;
+  -webkit-overflow-scrolling: touch;
+}
+
+
+/* >>> use classe explÃ­cita para as aÃ§Ãµes */
+#tbodyDespesas .acoes-cell-h,
+#tbodyDespesas .acoes-cell {
+  width: 220px;
+  min-width: 220px;
+  text-align: center;
+}
+
+/* botÃµes lado a lado apenas na cÃ©lula de aÃ§Ãµes */
+#tbodyDespesas .acoes-cell{
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;      /* quebra caso aperte */
+}
+
+#tbodyDespesas .acoes-cell .btn{
+  min-width: 96px;
+  margin: 2px 0;
+}
+/* submenu de Cadastros */
+.menu-group {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+}
+.submenu-box {
+  position: absolute;
+  z-index: 20;
+  background: #000000;
+  border: 1px solid #e5e7eb;
+  border-radius: .5rem;
+  padding: .35rem;
+  margin-top: .25rem;
+  box-shadow: 0 6px 18px rgba(255,255,255,.04);
+}
+.submenu-box .subbtn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: .5rem .7rem;
+  border-radius: .4rem;
+}
+.submenu-box .subbtn:hover { background:#4c4c4c; }
+
+/* em navs horizontais, manter o submenu abaixo do botÃ£o */
+nav { position: relative; }
+.menu-group[aria-expanded="true"] + .submenu-box { display:block; }
+:root{
+  --sb-w: 230px;
+  --sb-bg: #0f172a;      /* fundo escuro */
+  --sb-fg: #e5e7eb;      /* texto */
+  --sb-fg-dim:#9ca3af;   /* texto secundÃ¡rio */
+  --sb-border:#1f2937;
+  --top-h: 56px;
+}
+
+/* garante altura total */
+html, body { height: 100%; }
+body { margin: 0; }
+
+/* Layout base: sidebar fixo + topbar */
+.layout{
+  display:grid;
+  grid-template-columns: var(--sb-w) 1fr;
+  grid-template-rows: var(--top-h) 1fr;
+  height:100vh;
+}
+#sidebar{
+  grid-row:1 / span 2; grid-column:1;
+  background:var(--sb-bg); color:var(--sb-fg);
+  display:flex; flex-direction:column;
+  border-right:1px solid var(--sb-border);
+}
+.topbar{
+  grid-row:1; grid-column:2;
+  display:flex; align-items:center; gap:10px;
+  padding:0 12px; border-bottom:1px solid #e5e7eb; background:#fff;
+}
+#content{ grid-row:2; grid-column:2; overflow:auto; padding:14px; }
+
+/* Sidebar */
+#sidebar .sb-top{ display:flex; align-items:center; justify-content:space-between; padding:12px; }
+#sidebar .logo{ font-weight:800; letter-spacing:.5px; }
+.sb-close{ display:none; background:transparent; color:var(--sb-fg); font-size:22px; border:none; cursor:pointer; }
+.sb-open{ display:none; font-size:18px; background:#111827; color:#fff; border-radius:8px; padding:6px 10px; border:none; cursor:pointer; }
+
+.sb-nav{ padding:8px; overflow:auto; }
+.sb-item, .sb-subitem, .sb-group{
+  width:100%; text-align:left; background:transparent; color:var(--sb-fg);
+  border:1px solid transparent; border-radius:8px; padding:10px 12px;
+  display:flex; justify-content:space-between; align-items:center; cursor:pointer;
+}
+.sb-item:hover, .sb-subitem:hover, .sb-group:hover{ background:rgba(255,255,255,.06); }
+.sb-item.active, .sb-subitem.active{
+  background:rgba(255,255,255,.10); border-color:rgba(255,255,255,.12);
+}
+
+.sb-sub{ padding-left:8px; display:grid; gap:6px; margin:6px 0 8px; }
+.sb-subitem{ color:var(--sb-fg-dim); padding-left:14px; }
+
+.sb-bottom{ margin-top:auto; padding:10px; border-top:1px solid var(--sb-border); display:flex; flex-direction:column; gap:8px; }
+.user-badge{ background:#1f2937; padding:6px 8px; border-radius:8px; }
+
+/* Responsivo: sidebar como "drawer" no mobile */
+@media (max-width: 900px){
+  .layout{ grid-template-columns: 1fr; }
+  #sidebar { position: fixed; left: -280px; width: 260px; z-index: 50; transition: left .2s; }
+  #sidebar.open { left: 0; }
+  body.sb-open #sidebar{ transform: translateX(0); }
+  .topbar { position: sticky; top:0; z-index: 40; }
+  #content{ grid-column:1; }
+  .sb-open{ display:inline-flex; }
+  .sb-close{ display:inline-flex; }
+  /* backdrop */
+  body.sb-open::after{
+    content:""; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:40;
+  }
+}
+
+/* Ãcones dentro dos botÃµes da sidebar */
+.sb-item .ico, .sb-subitem .ico {
+  width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;
+  margin-right: 10px; opacity: .9;
+}
+.sb-item .ico svg, .sb-subitem .ico svg, .sb-group .chev svg {
+  width: 20px; height: 20px; fill: currentColor; stroke: currentColor; stroke-width: 1.5;
+}
+
+/* Texto e seta do grupo */
+.sb-group { position: relative; }
+.sb-group .chev {
+  margin-left: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  opacity: .75; transition: transform .2s ease;
+}
+.sb-group[aria-expanded="true"] .chev { transform: rotate(180deg); }
+
+/* Submenu escondido / visÃ­vel */
+.sb-sub[hidden] { display: none !important; }
+.sb-sub { padding-left: 8px; margin: 6px 0 8px; display: grid; gap: 6px; }
+
+/* Estados ativos/hover */
+.sb-item, .sb-subitem {
+  gap: 10px;
+}
+.sb-item.active, .sb-subitem.active {
+  background: rgba(255,255,255,0.10);
+  border-color: rgba(255,255,255,0.12);
+}
+/* Em PrestaÃ§Ãµes, nÃ£o usar cabeÃ§alho sticky para evitar sobrepor colunas */
+#pagePrestacoes thead th {
+  position: static !important;
+  top: auto !important;
+  z-index: auto !important;
+}
+/* FormulÃ¡rio dos vales mais flexÃ­vel */
+#pagePrestacoes .right-box #formVale.form-grid {
+  grid-template-columns: 1fr 1fr 1.2fr 1fr; /* um pouco mais de espaÃ§o p/ Obs */
+  gap: 8px;
+}
+#pagePrestacoes .right-box #formVale input {
+  min-width: 0; /* evita estourar a coluna do grid */
+}
+
+/* Linha do botÃ£o "Adicionar vale" alinhada Ã  direita e sem sair do card */
+#pagePrestacoes .right-box #formVale > div {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* BotÃµes nas tabelas sem ficarem gigantes */
+#pagePrestacoes .right-box table .btn {
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+/* === PRESTAÃ‡Ã•ES â€” alinhar formulÃ¡rios, botÃµes e barras === */
+
+/* 0) Desliga sticky no cabeÃ§alho das tabelas desta pÃ¡gina (evita sobreposiÃ§Ã£o) */
+#pagePrestacoes thead th { position: static !important; top: auto !important; z-index: auto !important; }
+
+/* 1) Pagamentos NORMAIS â€“ inputs em grid e botÃµes alinhados Ã  esquerda */
+#pagePrestacoes #pgFormN {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr; /* Data | Valor | Forma | Obs */
+  gap: 10px;
+}
+#pagePrestacoes #pgFormN input,
+#pagePrestacoes #pgFormN select { min-width: 0; } /* evita estourar a coluna */
+
+#pagePrestacoes .pc-actions { justify-content: flex-start; gap: 10px; }
+#pagePrestacoes .pc-actions .btn { white-space: nowrap; }
+
+/* 2) â€œVales do gerenteâ€ â€” grade mais folgada e botÃ£o encaixado */
+#pagePrestacoes #formVale.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr 0.9fr; /* Cod/Ref | Valor | Obs | PerÃ­odo */
+  gap: 10px;
+}
+#pagePrestacoes #formVale input { min-width: 0; }
+#pagePrestacoes #formVale > div {
+  grid-column: 1 / -1;            /* linha inteira */
+  display: flex;
+  justify-content: flex-end;       /* botÃ£o Ã  direita, dentro do card */
+  align-items: center;
+  margin-top: 6px;
+}
+
+/* 3) Tabelas dentro de PrestaÃ§Ãµes â€” barras (thead) e rodapÃ©s consistentes */
+#pagePrestacoes .card table { border-radius: 10px; overflow: hidden; }
+#pagePrestacoes .card thead th {
+  background: #0f172a;            /* mesma barra escura da UI */
+  color: #fff;
+}
+#pagePrestacoes .card tfoot th { background: #f8fafc; }
+
+/* 4) BotÃµes â€œAplicar/Quitar/Excluirâ€ da lista de vales sem quebrar linha */
+#pagePrestacoes #pcValesBody .btn {
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+/* 5) Se ainda aparecer a imagem do relatÃ³rio dentro da pÃ¡gina, esconda o canvas */
+/* (REMOVIDO: nÃ£o forÃ§ar display none no #pcCanvas para nÃ£o impactar geraÃ§Ã£o de PNG) */
+
+/* em telas pequenas vocÃª jÃ¡ usa â€œdrawerâ€; aqui,
+   se o drawer estiver aberto, priorize o drawer (ignora colapso) */
+@media (max-width: 900px){
+  body.sb-open { --sb-w: 260px; }          /* jÃ¡ Ã© o seu drawer aberto */
+  body.sb-open #sidebar{ opacity: 1; pointer-events: auto; }
+}
+/* ====== SIDEBAR: modos normal, compacto e oculto ====== */
+
+/* transiÃ§Ãµes suaves */
+.layout{ transition: grid-template-columns .18s ease; }
+#sidebar{ transition: opacity .18s ease; }
+
+/* MOBILE: mantÃ©m seu drawer funcionando normalmente */
+@media (max-width: 900px){
+  body.sb-open { --sb-w: 260px; }
+  body.sb-open #sidebar{ opacity: 1; pointer-events: auto; }
+
+  /* no mobile, ignoramos compacto/oculto quando o drawer estÃ¡ aberto */
+}
+
+/* Dica visual para o botÃ£o da topbar, opcional */
+#sbToggle { min-width: 36px; }
+
+/* === Sidebar compacto (apenas Ã­cones) === */
+/* Quando estiver compacto, sÃ³ mudamos a variÃ¡vel de largura */
+body.sidebar-compact { --sb-w: 72px; }
+
+body.sidebar-compact #sidebar .label { display: none !important; }
+body.sidebar-compact #sidebar .chev  { display: none !important; }
+/* Compacto: submenu vira popover Ã  direita do sidebar estreito */
+body.sidebar-compact #sidebar .sb-sub{
+  position: absolute;
+  left: 72px;                 /* largura do sidebar compacto */
+  min-width: 220px;
+  background: var(--sb-bg);
+  border: 1px solid var(--sb-border);
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.3);
+  display: none;              /* fica oculto por padrÃ£o */
+  z-index: 60;
+}
+
+/* mostra o submenu quando o grupo estÃ¡ expandido */
+body.sidebar-compact #sidebar .sb-group[aria-expanded="true"] + .sb-sub{
+  display: grid !important;
+}
+/* --- CORREÃ‡ÃƒO: impedir corte do submenu no compacto --- */
+body.sidebar-compact #sidebar .sb-nav {
+  position: relative;
+  overflow: visible;   /* deixa o popover vazar sem cortar */
+}
+
+
+/* botÃµes centralizados no compacto (pode manter) */
+body.sidebar-compact #sidebar .sb-item,
+body.sidebar-compact #sidebar .sb-subitem,
+body.sidebar-compact #sidebar .sb-group {
+  justify-content: center;
+  padding: 10px;
+}
+
+/* Ajusta rodapÃ© do sidebar no compacto */
+body.sidebar-compact #sidebar .sb-bottom {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* Manter botÃµes com boa largura no compacto */
+body.sidebar-compact #sidebar .btn.secondary {
+  justify-content: center;
+}
+/* Compacto: centraliza os botÃµes e esconde a seta dos grupos */
+body.sidebar-compact #sidebar .sb-item,
+body.sidebar-compact #sidebar .sb-subitem,
+body.sidebar-compact #sidebar .sb-group {
+  justify-content: center;
+  padding: 10px;
+}
+
+body.sidebar-compact #sidebar .chev {
+  display: none !important;
+}
+/* ===== Sidebar: rodapÃ© sem "quadradÃ£o" ===== */
+/* === Ajustes rodapÃ© Sidebar === */
+#sidebar .sb-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 10px;
+}
+
+#sidebar .user-badge {
+  text-align: center;
+  width: 100%;
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+/* BotÃµes rodapÃ© alinhados como os do menu */
+#sidebar .sb-bottom .btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;  /* Ã­cone + texto colados */
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  width: 100%;   /* ocupa toda a largura do menu */
+  box-sizing: border-box;
+}
+
+/* Ãcone do botÃ£o */
+#sidebar .sb-bottom .btn .ico {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ====== COMPACTO ====== */
+body.sidebar-compact #sidebar .sb-bottom .btn .label,
+body.sidebar-compact #sidebar .user-badge {
+  display: none; /* esconde textos e badge */
+}
+
+/* no compacto, centraliza sÃ³ os Ã­cones */
+body.sidebar-compact #sidebar .sb-bottom .btn {
+  justify-content: center;
+  padding: 10px;
+}
+
+/* tooltips no compacto */
+body.sidebar-compact #sidebar .sb-bottom .btn[title] {
+  position: relative;
+}
+body.sidebar-compact #sidebar .sb-bottom .btn[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  left: 110%;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #111;
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 100;
+}
+/* ===== Itens do menu: Ã­cone + texto colados ===== */
+#sidebar .sb-item, #sidebar .sb-subitem, #sidebar .sb-group{
+  justify-content:flex-start; gap:10px;
+}
+
+/* Container .sb-actions - não usar no desktop */
+#sidebar .sb-bottom .sb-actions {
+  display: contents; /* Faz os filhos aparecerem como se não houvesse container */
+}
+
+/* ===== MODO COMPACTO ===== */
+/* esconde labels e badge, ficam sÃ³ Ã­cones */
+body.sidebar-compact #sidebar .label,
+body.sidebar-compact #sidebar .user-badge{ display:none !important; }
+body.sidebar-compact #sidebar .sb-item,
+body.sidebar-compact #sidebar .sb-subitem,
+body.sidebar-compact #sidebar .sb-group,
+body.sidebar-compact #sidebar .sb-bottom .btn{
+  justify-content:center; padding:10px;
+}
+
+/* tooltips no compacto (usa o title do botÃ£o) */
+body.sidebar-compact #sidebar .sb-item[title],
+body.sidebar-compact #sidebar .sb-subitem[title],
+body.sidebar-compact #sidebar .sb-group[title],
+body.sidebar-compact #sidebar .sb-bottom .btn[title]{ position:relative; }
+body.sidebar-compact #sidebar .sb-item[title]:hover::after,
+body.sidebar-compact #sidebar .sb-subitem[title]:hover::after,
+body.sidebar-compact #sidebar .sb-group[title]:hover::after,
+body.sidebar-compact #sidebar .sb-bottom .btn[title]:hover::after{
+  content: attr(title);
+  position: absolute;
+  left: 110%;
+  top: 50%;
+  transform: translateY(-50%);
+  background:#111; color:#fff; font-size:12px;
+  padding:4px 8px; border-radius:6px; white-space:nowrap; z-index:100;
+}
+
+/* submenu no compacto: NÃƒO fica aberto; sÃ³ aparece no hover */
+body.sidebar-compact #sidebar .sb-sub{
+  position:absolute; left:72px; min-width:220px;
+  background: var(--sb-bg); border:1px solid var(--sb-border);
+  border-radius:8px; padding:6px; box-shadow:0 8px 24px rgba(0,0,0,.3);
+  display:none; z-index:60;
+}
+body.sidebar-compact #sidebar .sb-nav{ position:relative; overflow:visible; }
+body.sidebar-compact #sidebar .sb-group + .sb-sub{ display:none !important; }
+body.sidebar-compact #sidebar .sb-group:hover + .sb-sub{ display:grid !important; }
+
+/* === COMPACTO: no popover (.sb-sub) mostrar Ã­cone + nome normalmente === */
+body.sidebar-compact #sidebar .sb-sub .label{
+  display: inline !important;           /* volta a exibir o texto */
+}
+body.sidebar-compact #sidebar .sb-sub .sb-subitem{
+  justify-content: flex-start;          /* Ã­cone + texto alinhados Ã  esquerda */
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+/* Se quiser, desativa o tooltip do botÃ£o do grupo quando o popover estiver aberto */
+body.sidebar-compact #sidebar .sb-group:hover::after{
+  content: none !important;
+}
+/* === BotÃµes do rodapÃ© no mesmo amarelo da marca === */
+#sidebar .sb-bottom #btnToggleSidebar,
+#sidebar .sb-bottom #btnLogout {
+  background-color: var(--brand);
+  color: #000;                 /* preto para contraste */
+  font-weight: 600;
+  border: none;
+}
+
+#sidebar .sb-bottom #btnToggleSidebar:hover,
+#sidebar .sb-bottom #btnLogout:hover {
+  background-color: var(--brand-2);  /* jÃ¡ definida como tom mais escuro */
+}
+/* ==== FINANCEIRO â€” SUBMENU E TABELA (BL0CO ÃšNICO LIMPO) ==== */
+#pageFinanceiro .submenu{
+  display: flex;               /* garante que apareÃ§a */
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 10px;
+  background: var(--brand-2);
+  position: relative;          /* cria contexto de empilhamento */
+  z-index: 9;                  /* acima de cabeÃ§alhos/overlays */
+  overflow-x: auto;            /* rolagem horizontal se precisar */
+  -webkit-overflow-scrolling: touch;
+  pointer-events: auto;        /* clique sempre habilitado */
+}
+
+#pageFinanceiro .submenu .btn,
+#pageFinanceiro .submenu button{
+  display: inline-flex;
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;        /* garante clique nos botÃµes */
+  position: relative;
+  z-index: 10;
+}
+
+/* Evita que o thead â€œgrudeâ€ e cubra a faixa amarela no FINANCEIRO */
+#pageFinanceiro thead th{
+  position: static !important;
+  top: auto !important;
+  z-index: auto !important;
+}
+
+/* Qualquer wrapper de tabela fica abaixo da faixa de aÃ§Ãµes */
+#pageFinanceiro [style*="overflow:auto"]{
+  position: relative;
+  z-index: 1;
+}
+/* Financeiro: tira a faixa amarela e deixa como uma barrinha simples */
+#pageFinanceiro .submenu{
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
+  padding: 0 !important;
+  margin: 0 0 12px 0 !important;
+  display: flex;
+  gap: 8px;
+}
+
+/* Se quiser os botÃµes encostando no topo (mais clean) */
+#pageFinanceiro .submenu .btn{
+  background: #111;   /* opcional: cor dos botÃµes */
+  color: #fff;
+}
+/* --- CorreÃ§Ã£o de empilhamento/cliques (Financeiro) --- */
+body, #app, .layout, main, #content, #pageFinanceiro {
+  pointer-events: auto !important;
+  position: relative;
+}
+
+/* CabeÃ§alho acima, mas sem cobrir cliques abaixo */
+.topbar { z-index: 10; }
+.topbar::after, .topbar::before { pointer-events: none !important; }
+
+/* BotÃµes/filtros do Financeiro acima de qualquer faixa/overlay */
+#pageFinanceiro .submenu,
+#pageFinanceiro .filters {
+  position: relative !important;
+  z-index: 100 !important;
+  pointer-events: auto !important;
+}
+
+/* Se ainda existir alguma â€œfaixaâ€ antiga, neutraliza o clique */
+.fin-legacy-bar, .toolbar-old, .top-strip, .yellow-bar,
+.layout::before, .layout::after {
+  pointer-events: none !important;
+}
+
+/* Centraliza o total e mantÃ©m tudo dentro da largura */
+#pcTotalDespesas {
+  text-align: right;
+  font-weight: bold;
+  white-space: nowrap;
+}
+/* ===== PRESTAÃ‡Ã•ES > DESPESAS (layout fixo e alinhado) ===== */
+
+/* A tabela de despesas precisa â€œrespeitarâ€ as larguras fixadas */
+#pcDespesasTable {             /* coloque este id na tabela das Despesas */
+  width: 100%;
+  table-layout: fixed;
+}
+
+/* Larguras das colunas (1: Ficha | 2: InformaÃ§Ãµes | 3: Valor | 4: AÃ§Ãµes) */
+#pcDespesasBody tr > td:nth-child(1),
+#pcDespesasHead tr > th:nth-child(1) { width: 92px; }    /* Ficha (curto) */
+
+#pcDespesasBody tr > td:nth-child(2),
+#pcDespesasHead tr > th:nth-child(2) { width: auto; }    /* InformaÃ§Ãµes (flex) */
+
+#pcDespesasBody tr > td:nth-child(3),
+#pcDespesasHead tr > th:nth-child(3) { width: 120px; }   /* Valor (curto) */
+
+#pcDespesasBody tr > td:nth-child(4),
+#pcDespesasHead tr > th:nth-child(4) { width: 140px; }   /* AÃ§Ãµes (botÃ£o) */
+
+/* Inputs ocupam a cÃ©lula por completo, sem vazar */
+#pcDespesasBody input[data-field="ficha"],
+#pcDespesasBody input[data-field="info"],
+#pcDespesasBody input[data-field="valor"]{
+  width: 100%;
+  box-sizing: border-box;
+}
+/* ===== FICHAS — Vendas por Ficha: compacto + scroll ===== */
+
+/* container com altura fixa e rolagem vertical */
+#vendasWrap{
+  max-height: 56vh;           /* ou 380px / 420px, ajuste como preferir */
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+}
+
+/* deixa o cabeçalho grudado dentro do container ao rolar */
+#tblVendas thead th{
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* linhas mais “baixinhas” */
+#tblVendas td, 
+#tblVendas th{
+  padding: 8px 10px;          /* antes era maior */
+  line-height: 1.25;
+  white-space: nowrap;        /* evita quebrar valores de R$ e mês */
+}
+
+/* texto um pouco menor só nessa tabela */
+#tblVendas{
+  font-size: 13px;
+}
+
+/* permite quebrar o nome da área em 2 linhas se precisar */
+#tblVendas td:nth-child(2){
+  white-space: normal;
+}
+
+/* botões de ação compactos */
+#tblVendas td:last-child .btn{
+  padding: 6px 10px;
+  min-width: 88px;
+}
+
+
+/* FICHA â€” mÃ¡ximo ~5 dÃ­gitos, centralizado */
+#pcDespesasBody input[data-field="ficha"]{
+  max-width: 90px;
+  text-align: center;
+}
+
+/* INFORMAÃ‡Ã•ES â€” deixa flexÃ­vel (fica na coluna â€œautoâ€) */
+#pcDespesasBody input[data-field="info"]{
+  min-width: 0;     /* evita empurrar a tabela */
+}
+
+/* VALOR â€” curto, Ã  direita e sÃ³ nÃºmeros/decimal */
+#pcDespesasBody input[data-field="valor"]{
+  max-width: 110px;
+  text-align: right;
+}
+
+/* CÃ©lulas mais compactas e alinhadas */
+#pcDespesasBody td, #pcDespesasHead th{
+  padding: 8px 10px;
+  vertical-align: middle;
+}
+
+/* BotÃ£o Excluir: tamanho contido */
+#pcDespesasBody .btn.danger{
+  padding: 6px 10px;
+  font-size: 13px;
+  min-width: 84px;
+}
+
+/* Total alinhado Ã  direita sem quebrar */
+#pcTotalDespesas{
+  text-align: right;
+  white-space: nowrap;
+  font-weight: 700;
+}
+.fa-cell{ display:flex; align-items:center; gap:8px; justify-content:center; }
+.fa-cell input[ data-field="ficha"]{ width:90px; text-align:center; }
+.fa-badge{
+  min-width: 36px;
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 1;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #f3f4f6;
+  color: #374151;
+  text-align: center;
+}
+/* Link mini dentro da cÃ©lula (nÃ£o muda a altura/largura da linha) */
+.btn-mini-toggle{
+  display:inline-block;
+  font-size:inherit;
+  line-height:1;
+  padding:0;
+  border:0;
+  background:transparent;
+  text-decoration:underline;
+  cursor:pointer;
+  margin:0 0 0 6px; /* pequeno espaÃ§o depois do valor */
+}
+
+/* Linhas de detalhe (tipo Excel): comeÃ§am ocultas */
+.tr-det{ display:none; }
+
+/* CÃ©lula de "InformaÃ§Ãµes" com leve indentaÃ§Ã£o nas linhas-filhas */
+.td-info-indent{ padding-left:16px; position:relative; }
+
+
+#aiPanel{
+  position: fixed; right: 16px; bottom: 16px; width: 360px; max-width: 92vw;
+  background: #0f172a; color: #e5e7eb; border:1px solid #1f2937; border-radius:12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.38); display:flex; flex-direction:column; z-index:120;
+}
+#aiPanel.hidden{ display:none; }
+#aiPanel .ai-head{ display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px solid #1f2937;}
+#aiPanel .ai-msgs{ padding:12px; height: 46vh; overflow:auto; display:flex; flex-direction:column; gap:10px; }
+.ai-bubble{ padding:10px 12px; border-radius:10px; max-width: 92%; line-height:1.35; }
+.ai-bubble.user{ background:#111827; align-self:flex-end; }
+.ai-bubble.bot{ background:#0b1322; border:1px solid #1f2937; }
+.ai-form{ display:flex; gap:8px; padding:10px; border-top:1px solid #1f2937; }
+#aiInput{ flex:1; padding:10px 12px; border-radius:10px; border:1px solid #334155; background:#0b1220; color:#e5e7eb; }
+/* Badges (Financeiro) */
+.badge.ok{
+  color:#86efac; border-color:rgba(22,163,74,.4); background:rgba(22,163,74,.12);
+}
+.badge.dark{
+  color:#e5e7eb; border-color:rgba(148,163,184,.35); background:#0f172a;
+}
+
+/* Dropdown de ações (Relatórios) — versão única */
+.rel-dd{ position:relative; display:inline-block; }
+.rel-dd > [data-dd-menu]{
+  position:absolute; right:0; top:calc(100% + 6px);
+  min-width:180px; background:#fff; border:1px solid #e5e7eb; border-radius:10px;
+  box-shadow:0 10px 20px rgba(0,0,0,.08); padding:6px; display:none; z-index:30;
+}
+.rel-dd.open > [data-dd-menu]{ display:block; }
+
+.rel-dd .rel-menu{
+  position:absolute; right:0; top:calc(100% + 6px);
+  min-width:180px; max-width:260px; background:#fff; border:1px solid #e5e7eb; border-radius:10px;
+  box-shadow:0 12px 28px rgba(0,0,0,.12); padding:6px; display:none; z-index:999;
+}
+.rel-dd.open .rel-menu{ display:flex; flex-direction:column; gap:4px; }
+
+.rel-dd .mi{
+  display:block; width:100%; text-align:left; padding:8px 10px;
+  background:transparent; border:0; border-radius:8px; cursor:pointer; white-space:nowrap;
+}
+.rel-dd .mi:hover{ background:#f3f4f6; }
+.rel-dd .mi.danger{ color:#b91c1c; }
+
+.rel-acts{ display:flex; align-items:center; justify-content:flex-end; gap:8px; white-space:nowrap; }
+.rel-acts > *{ flex:0 0 auto; }
+
+.btn.sm{ padding:6px 10px; font-size:.92rem; }
+
+/* DESPESAS — coluna ações + largura/scroll */
+table:has(#tbodyDespesas) thead th:last-child,
+table:has(#tbodyDespesas) tbody td:last-child{ width:110px; text-align:center; white-space:nowrap; }
+table:has(#tbodyDespesas) tbody td:last-child{ padding-left:8px; padding-right:8px; }
+table:has(#tbodyDespesas) tbody td:last-child .rel-acts{ justify-content:center; }
+table:has(#tbodyDespesas) tbody td:last-child .btn.sm{ padding:6px 10px; font-size:14px; line-height:1.1; }
+
+#pageDespesas .container, #pageDespesas main{ max-width:100% !important; }
+#pageDespesas .table-wrap, #pageDespesas .table-scroll, #pageDespesas .desp-table-wrap{ overflow-x:auto; }
+#pageDespesas .desp-table-wrap > table, #pageDespesas table{
+  width:max-content; min-width:100%; table-layout:auto;
+}
+#pageDespesas table thead th, #pageDespesas table tbody td{
+  display:table-cell !important; white-space:nowrap; padding:0 10px;
+}
+
+/* PENDÊNCIAS (Financeiro) */
+.pill-editado{ display:inline-block; padding:2px 6px; border-radius:999px; background:#fee2e2; color:#991b1b; font-size:12px; font-weight:600; margin-left:6px; }
+.fin-pend-table td input[type="number"]{ width:120px; padding:6px 8px; }
+.fin-pend-wrap{ border:1px solid #e5e7eb; border-radius:8px; margin:12px 0 18px; overflow:auto; }
+.fin-pend-head{ padding:10px 12px; border-bottom:1px solid #e5e7eb; background:#f9fafb; font-weight:600; }
+.fin-pend-table{ width:100%; border-collapse:collapse; }
+.fin-pend-table th, .fin-pend-table td{ border-bottom:1px solid #eee; padding:8px 10px; text-align:left; }
+.fin-pend-table th{ background:#111827; color:#fff; }
+.fin-actions .btn{ margin-right:6px; }
+
+/* Sidebar: submenu » hover */
+.sb-item.has-sub{ position:relative; }
+.sb-item.has-sub > .sb-sub,
+.sb-item.has-sub > .sb-submenu,
+.sb-item.has-sub > .submenu,
+.sb-item.has-sub > .sb-subitems{
+  position:absolute; top:0; left:100%; min-width:220px; background:#0f172a; border-radius:8px; padding:8px 0;
+  box-shadow:0 8px 24px rgba(0,0,0,.18); opacity:0; visibility:hidden; transform:translateY(4px);
+  pointer-events:none; transition:opacity .12s, transform .12s, visibility 0s linear .12s; z-index:50;
+}
+.sb-item.has-sub.open > .sb-sub,
+.sb-item.has-sub.open > .sb-submenu,
+.sb-item.has-sub.open > .submenu,
+.sb-item.has-sub.open > .sb-subitems{ opacity:1; visibility:visible; transform:translateY(0); pointer-events:auto; }
+@media (hover:hover){
+  .sb-item.has-sub:hover > .sb-sub,
+  .sb-item.has-sub:hover > .sb-submenu,
+  .sb-item.has-sub:hover > .submenu,
+  .sb-item.has-sub:hover > .sb-subitems{ opacity:1; visibility:visible; transform:translateY(0); pointer-events:auto; }
+}
+
+/* Popover “Opções” (fora da tabela) */
+.prest-pop{
+  position:absolute; z-index:9999; background:#fff; border-radius:12px; padding:6px; min-width:220px;
+  box-shadow:0 12px 30px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.12);
+  max-width:min(420px, calc(100vw - 24px));
+}
+.prest-pop .item{ display:flex; align-items:center; gap:8px; padding:10px 12px; border-radius:8px; cursor:pointer; font-weight:500; }
+.prest-pop .item:hover{ background:#f5f7fa; }
+.prest-pop .danger{ color:#c7352b; }
+
+/* Fecha menus embutidos ao abrir o popover externo */
+[data-dd-toggle].is-open + .rel-menu,
+[data-dd-toggle].is-open ~ .rel-menu,
+[data-dd-toggle].is-open + [data-dd-menu],
+[data-dd-toggle].is-open ~ [data-dd-menu],
+[data-dd-toggle].is-open + .dd,
+[data-dd-toggle].is-open + .dd-menu,
+[data-dd-toggle].is-open ~ .dd,
+[data-dd-toggle].is-open ~ .dd-menu{ display:none !important; }
+
+/* Dropdown “despesas” simples */
+.desp-dd{ position:relative; display:inline-block; }
+.desp-menu{
+  position:absolute; right:0; top:100%; min-width:180px; display:none; background:#fff; border:1px solid #e5e7eb;
+  border-radius:8px; padding:6px; z-index:50; box-shadow:0 6px 20px rgba(0,0,0,.08);
+}
+.desp-dd.open .desp-menu{ display:block; }
+.mi{ display:block; width:100%; text-align:left; padding:8px 10px; background:none; border:0; cursor:pointer; }
+.mi.danger{ color:#b91c1c; }
+
+/* Sidebar topo + logo com neon (animação renomeada) */
+#sidebar .sb-top{
+  position:relative; display:flex; align-items:center; justify-content:center; padding:12px 14px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+#sidebar .sb-top .sb-close{
+  position:absolute; right:10px; top:50%; transform:translateY(-50%);
+  background:transparent; border:0; font-size:22px; line-height:1; color:inherit; opacity:.7; cursor:pointer;
+}
+#sidebar .sb-top .sb-close:hover{ opacity:1; }
+#sidebar .logo{ font:800 20px/1 "Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; letter-spacing:.8px; text-transform:uppercase; color:#fff; }
+#sidebar .logo .dot{ color:#FACC15; }
+#sidebar .logo.neon{
+  --neon:#FACC15; --gW:rgba(255,255,255,.55); --g1:rgba(250,204,21,.40); --g2:rgba(250,204,21,.28); --g3:rgba(250,204,21,.18);
+  text-shadow:0 0 1px var(--gW),0 0 3px var(--g1),0 0 8px var(--g2),0 0 16px var(--g3);
+  filter:drop-shadow(0 0 .5px var(--g2));
+  animation: neonPulseLogo 2.2s ease-in-out infinite;
+}
+@keyframes neonPulseLogo{
+  0%,100%{ text-shadow:0 0 1px var(--gW),0 0 3px var(--g1),0 0 8px var(--g2),0 0 16px var(--g3); filter:drop-shadow(0 0 .5px var(--g2)); }
+  50%{    text-shadow:0 0 1.5px var(--gW),0 0 4px var(--g1),0 0 10px var(--g2),0 0 18px var(--g3); filter:drop-shadow(0 0 .7px var(--g2)); }
+}
+
+/* Título com neon (animação própria) */
+.brand-title{
+  position:relative; margin:0 0 18px; text-align:center; text-transform:uppercase; letter-spacing:1.2px;
+  font:900 28px/1.1 "Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; color:#111827;
+}
+.brand-title .dot{ color:#FACC15; }
+.brand-title.neon{
+  --neon:#FACC15; --gW:rgba(255,255,255,.45); --g1:rgba(250,204,21,.36); --g2:rgba(250,204,21,.24); --g3:rgba(250,204,21,.14);
+  text-shadow:0 0 1px var(--gW),0 0 3px var(--g1),0 0 9px var(--g2),0 0 16px var(--g3);
+  filter:drop-shadow(0 0 .6px var(--g2));
+  animation: neonPulseTitle 2.8s ease-in-out infinite;
+}
+.brand-title.neon::after{
+  content:""; position:absolute; left:50%; transform:translateX(-50%); bottom:-10px; width:60%; height:2px;
+  background:linear-gradient(90deg, transparent, var(--neon), transparent);
+  filter:blur(1.2px) saturate(120%); box-shadow:0 0 6px var(--neon),0 0 18px var(--neon); opacity:.75;
+}
+@keyframes neonPulseTitle{
+  0%,100%{ text-shadow:0 0 1px var(--gW),0 0 3px var(--g1),0 0 9px var(--g2),0 0 16px var(--g3); filter:drop-shadow(0 0 .6px var(--g2)); }
+  50%{    text-shadow:0 0 1.5px var(--gW),0 0 4px var(--g1),0 0 11px var(--g2),0 0 20px var(--g3); filter:drop-shadow(0 0 .9px var(--g2)); }
+}
+
+/* ==== Design tokens (ok manter) ========================================= */
+:root{
+  --bg:#f6f7fb; --card:#ffffff; --muted:#6b7280; --ink:#0f172a; --line:#e5e7eb;
+  --primary:#16a34a; --primary-2:#059669; --warning:#f59e0b; --danger:#b91c1c;
+  --shadow:0 6px 20px rgba(2,6,23,.07); --radius:14px;
+}
+
+/* ==== Cards (ESCOPADO) =================================================== */
+#pageInicio .card{
+  background:var(--card); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow);
+}
+#pageInicio .card-title{
+  font-weight:800; color:var(--ink); margin:0 0 10px; letter-spacing:.2px;
+}
+
+/* ==== CAIXA (hero verde) — ESCOPADO ===================================== */
+#pageInicio .card-caixa{
+  grid-area:caixa; padding:0; overflow:hidden; position:relative;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-2) 100%);
+  color:#fff;
+}
+#pageInicio .card-caixa .hero{
+  display:flex; gap:16px; align-items:center; justify-content:space-between; padding:18px;
+}
+#pageInicio .card-caixa .hero .title{ display:flex; align-items:center; gap:10px; opacity:.95; font-weight:700; }
+#pageInicio .card-caixa .hero .saldo{ font-size:28px; font-weight:900; letter-spacing:.3px; text-shadow:0 1px 0 rgba(0,0,0,.15); }
+#pageInicio .card-caixa .bar{
+  display:flex; gap:12px; align-items:center; justify-content:space-between;
+  padding:12px 18px; background:rgba(255,255,255,.12); backdrop-filter: blur(3px);
+  border-top:1px solid rgba(255,255,255,.18);
+}
+#pageInicio .card-caixa #dashMes{
+  appearance:none; border:none; background:#fff; color:#111; padding:8px 10px; border-radius:10px; font-weight:600; inline-size:190px;
+}
+#pageInicio .card-caixa .badge{
+  font-size:12px; font-weight:700; padding:6px 10px; border-radius:999px;
+  background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.28);
+}
+
+/* ==== Painel (KPI) — ESCOPADO =========================================== */
+#pageInicio .card-painel{ grid-area:painel; }
+#pageInicio .card-painel .kpis{ display:grid; grid-template-columns:1fr; gap:8px; list-style:none; margin:0; padding:0; }
+#pageInicio .card-painel .kpis li{
+  display:flex; justify-content:space-between; align-items:center;
+  background:#f8fafc; border:1px solid var(--line); padding:10px 12px; border-radius:12px;
+}
+#pageInicio .card-painel .kpis span{ color:var(--muted); font-weight:600; }
+#pageInicio .card-painel .kpis strong{ font-weight:800; color:#0a0f1f; }
+#pageInicio .card-painel hr{ border:none; border-top:1px dashed var(--line); margin:12px 0; }
+#pageInicio .card-painel .maior strong{ font-weight:800; }
+
+/* ==== Alertas — ESCOPADO ================================================= */
+#pageInicio .card-alertas{ grid-area:alertas; }
+#pageInicio .card-alertas .alert-item{
+  background:#fff8e1; border:1px solid #fde68a; border-radius:12px; padding:12px; margin:10px 0;
+}
+#pageInicio .card-alertas .alert-title{ display:flex; align-items:center; gap:8px; margin-bottom:6px; font-weight:800; }
+#pageInicio .card-alertas .alert-badge{
+  margin-left:auto; font-size:12px; background:#fde68a; color:#6b4f00;
+  padding:4px 8px; border-radius:999px; border:1px solid #facc15;
+}
+#pageInicio .card-alertas .alert-list{ margin:0; padding-left:18px; }
+#pageInicio .card-alertas .tag{ display:inline-block; background:#eef2ff; color:#4338ca; padding:2px 8px; border-radius:999px; font-size:12px; margin-right:6px; border:1px solid #c7d2fe; }
+#pageInicio .alert-critico{ background:#fff1f2; border-left:4px solid #ef4444; }
+#pageInicio .alert-aviso{   background:#fff7ed; border-left:4px solid #f59e0b; }
+
+/* ==== Tabela — ESCOPADO ================================================== */
+#pageInicio .card-tabela{ grid-area:tabela; }
+#pageInicio .tool-row{ display:flex; gap:8px; align-items:center; margin-bottom:10px; }
+#pageInicio .tool-row input{ padding:8px 10px; border:1px solid var(--line); border-radius:10px; }
+
+#pageInicio .table-wrap{ overflow:auto; border-radius:12px; border:1px solid var(--line); }
+#pageInicio .table{ width:100%; border-collapse:separate; border-spacing:0; }
+#pageInicio .table thead th{
+  position:sticky; top:0; z-index:1; background:#0f172a; color:#fff; text-align:left; padding:12px 14px; letter-spacing:.2px;
+}
+#pageInicio .table tbody tr:hover td{ background:#f8fafc; }
+#pageInicio .table tbody td, 
+#pageInicio .table tfoot td{
+  padding:12px 14px; border-bottom:1px solid var(--line); vertical-align:middle;
+}
+#pageInicio .table tfoot td{ background:#f3f4f6; font-weight:800; }
+
+/* ==== Grid do Dashboard — ESCOPADO ======================================= */
+#pageInicio .dash-grid{
+  display:grid; gap:18px; align-items:start;
+  grid-template-columns: 1.05fr .95fr;
+  grid-template-areas:
+    "caixa   alertas"
+    "painel  alertas"
+    "tabela  tabela";
+}
+@media (max-width:1100px){
+  #pageInicio .dash-grid{
+    grid-template-columns:1fr;
+    grid-template-areas:"caixa" "painel" "alertas" "tabela";
+  }
+}
+/* Responsivo do .grid apenas no dashboard */
+@media (max-width:900px){
+  #pageInicio .grid{ grid-template-columns:1fr; }
+}
+
+/* Router fix: qualquer coisa marcada como escondida deve sumir de verdade */
+[hidden],
+.hidden { 
+  display: none !important;
+}
+
+/* Seletor de empresa (desktop + mobile) */
+.emp-label{ 
+  color:#e5e7eb; font-size:12px; opacity:.85; margin-left:4px; 
+}
+.emp-select{
+  appearance:none; -webkit-appearance:none;
+  background:#111; color:#fff; border:1px solid #2e2e2e;
+  border-radius:10px; padding:10px 12px; font-weight:700; cursor:pointer;
+}
+.emp-select:focus{ outline:2px solid #8b5cf6; outline-offset:2px; }
+
+@media (max-width:768px){
+  .emp-label{ display:none; }
+  .emp-select{ min-height:44px; font-size:16px; }
+}
+/* menu flutuante que aparece sobre a tabela */
+.floating-menu{
+  position: fixed;
+  z-index: 9999;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.18);
+  padding: 6px;
+  min-width: 180px;
+}
+.floating-menu .mi{
+  display:block; width:100%; text-align:left;
+  background:none; border:0; padding:8px 10px; cursor:pointer;
+}
+.floating-menu .mi:hover{ background:#f3f4f6; }
+.floating-menu .mi.danger{ color:#b91c1c; }
+
+/* === Users page (layout & usabilidade) === */
+#pageUsers.container{
+  display:grid;
+  grid-template-columns: 1.1fr 1fr;   /* form | tabela */
+  gap:16px;
+}
+#pageUsers.container > .card{ margin:0; }
+@media (max-width:1100px){
+  #pageUsers.container{ grid-template-columns:1fr; }
+}
+
+/* Form grid básico */
+#pageUsers .form-grid{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap:10px;
+}
+
+/* Permissões e Empresas como "chips" */
+#pageUsers #permGrid .row,
+#pageUsers #companiesBlock{
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap:8px;
+  margin:8px 0 12px;
+}
+#pageUsers #permGrid strong,
+#pageUsers #companiesBlock strong{
+  grid-column:1/-1;
+  font-size:12px; text-transform:uppercase; letter-spacing:.04em;
+  color:#6b7280; margin-top:4px;
+}
+#pageUsers #permGrid label,
+#pageUsers #companiesBlock label{
+  display:flex; align-items:center; gap:8px;
+  padding:8px 10px; border:1px solid #e5e7eb; border-radius:10px;
+  background:#fff;
+}
+#pageUsers #permGrid input,
+#pageUsers #companiesBlock input{ margin:0; }
+
+/* Toolbar sobre a tabela */
+#pageUsers .users-toolbar{
+  display:flex; align-items:center; gap:8px; margin:6px 0 10px;
+}
+
+#pageUsers .users-toolbar input[type="search"]{
+  flex:1; padding:8px 10px; border:1px solid #e5e7eb; border-radius:10px;
+}
+#pageUsers .users-toolbar label{ display:flex; align-items:center; gap:6px; color:#374151; }
+/* ===== Users: permissões em grade fixa ===== */
+#pageUsers .perm-grid{
+  display:grid;
+  grid-template-columns: repeat(3, minmax(230px, 1fr)); /* 3 colunas iguais */
+  gap:10px;
+  align-items:start;
+}
+@media (max-width: 1100px){
+  #pageUsers .perm-grid{ grid-template-columns: repeat(2, minmax(230px,1fr)); }
+}
+#pageUsers .perm-grid > strong{
+  grid-column: 1 / -1;
+  margin-top: 8px;
+}
+#pageUsers .perm-grid > label{
+  display:flex; align-items:center; gap:8px;
+  background:#fff; border:1px solid #e5e7eb; border-radius:10px;
+  padding:10px 12px;
+  min-height:48px;   /* aparência de “botão” */
+}
+
+
+/* Tabela com cabeçalho sticky */
+#pageUsers .table-wrap{ max-height:480px; overflow:auto; border-radius:12px; border:1px solid #e5e7eb; }
+#pageUsers #userTable{ width:100%; border-collapse:separate; border-spacing:0; }
+#pageUsers #userTable thead th{
+  position:sticky; top:0; z-index:1;
+  background:#0f172a; color:#fff; /* mesma pegada da sua topbar escura */
+}
+/* ===== Users: menu de Opções ===== */
+#userTable td { vertical-align: middle; }
+
+.user-actions { position: relative; }
+
+.user-actions .users-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  display: none;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 10px 24px rgba(0,0,0,.12);
+  min-width: 160px;
+  padding: 6px;
+  z-index: 50;
+}
+.user-actions .users-menu.open { display: block; }
+
+.users-menu .menu-item {
+  width: 100%;
+  display: block;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+}
+.users-menu .menu-item:hover { background: #f3f4f6; }
+.users-menu .menu-item.danger { color: #b91c1c; }
+/* ===== Users: menu de Opções (portal) ===== */
+.user-actions { position: relative; }
+
+.users-menu {
+  position: absolute;            /* estado "guardado" dentro da célula */
+  right: 0;
+  top: calc(100% + 6px);
+  display: none;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 10px 24px rgba(0,0,0,.12);
+  min-width: 160px;
+  padding: 6px;
+  z-index: 50;
+}
+
+.users-menu.open { display: block; }
+
+.users-menu.portal {             /* quando “teleportado” para o <body> */
+  position: fixed !important;
+  z-index: 9999 !important;
+  right: auto; top: auto;        /* (left/top serão setados via JS) */
+}
+
+.users-menu .menu-item {
+  width: 100%;
+  display: block;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+}
+.users-menu .menu-item:hover { background: #f3f4f6; }
+.users-menu .menu-item.danger { color: #b91c1c; }
+
+/* --- Users page: evitar que o card da direita cubra a coluna de permissões --- */
+
+/* Coluna de permissões sempre por cima */
+#pageUsers .card:not(.users-pane) {
+  position: relative;
+  z-index: 2;
+}
+
+/* Card da tabela “Usuários” NÃO deve sobrepor nada */
+#pageUsers .users-pane {
+  position: sticky;              /* fica visível ao rolar, mas dentro da coluna */
+  top: 72px;                     /* ajuste se o topo fixo tiver altura diferente */
+  align-self: start;
+  max-height: calc(100vh - 96px);
+  overflow: hidden;              /* o scroll fica só dentro da tabela */
+  z-index: 0;                    /* fica atrás das permissões */
+}
+
+/* Altura de scroll da tabela dentro do card */
+#pageUsers .users-pane .table-wrap {
+  overflow: auto;
+  max-height: calc(100vh - 96px - 56px); /* - título/toolbar do card */
+  overscroll-behavior: contain;
+  padding-bottom: 8px;
+}
+
+/* Fallback para quem não adicionou .users-pane (usa :has, suportado no Chrome/Edge/Safari) */
+#pageUsers .card:has(#userTable) {
+  position: sticky;
+  top: 72px;
+  align-self: start;
+  max-height: calc(100vh - 96px);
+  overflow: hidden;
+  z-index: 0;
+}
+#pageUsers .card:has(#userTable) .table-wrap {
+  overflow: auto;
+  max-height: calc(100vh - 96px - 56px);
+}
+
+/* Garante que nada “extra” do card da direita projete sobre a coluna da esquerda */
+#pageUsers .card:has(#userTable)::before,
+#pageUsers .users-pane::before {
+  content: none !important;
+}
+
+/* ===== Users page: layout em grid, sem sobreposição ===== */
+
+/* 2 colunas (permissões | usuários) em telas largas */
+#pageUsers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;  /* ajuste se quiser: 1.2fr 0.8fr */
+  gap: 16px;
+  align-items: start;
+}
+
+/* Em telas menores, vira 1 coluna: o card “Usuários” desce */
+@media (max-width: 1280px) {
+  #pageUsers {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Remover qualquer sticky/z-index do card da tabela (classe users-pane) */
+#pageUsers .users-pane {
+  position: static !important;
+  top: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  z-index: auto !important;
+}
+
+/* Fallback para quem não adicionou .users-pane ao card da tabela */
+#pageUsers .card:has(#userTable) {
+  position: static !important;
+  top: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  z-index: auto !important;
+}
+
+/* Garante que o card de permissões também não “flutue” por cima de nada */
+#pageUsers .card {
+  position: static !important;
+  z-index: auto !important;
+}
+
+/* (Opcional) melhora a responsividade da grade de checkboxes */
+#pageUsers .perm-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+}
+@media (min-width: 1400px) {
+  #pageUsers .perm-grid {
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+  }
+}
+/* ===== AI Chat (novo) ===== */
+.ai{position:fixed;right:24px;bottom:24px;z-index:9999;display:flex;flex-direction:column;
+  width:380px;max-width:92vw;height:520px;max-height:82vh;background:#0b1220;color:#e8eefc;
+  border:1px solid #1f2a44;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);overflow:hidden}
+.ai.is-hidden{display:none}
+.ai__head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;
+  background:linear-gradient(180deg,#0f172a,#0b1220);border-bottom:1px solid #1f2a44;cursor:grab}
+.ai__head:active{cursor:grabbing}
+.ai__title strong{font-weight:700}
+.ai__title small{margin-left:8px;color:#9fb0d9;opacity:.9}
+.ai__actions .btn{padding:4px 8px}
+.ai__msgs{flex:1;overflow:auto;padding:12px 12px 0}
+.ai__msg{display:flex;margin:8px 0;gap:10px}
+.ai__msg .bubble{max-width:85%;padding:10px 12px;border-radius:12px;line-height:1.45}
+.ai__msg.me{justify-content:flex-end}
+.ai__msg.me .bubble{background:#1d2a52;color:#e8eefc;border-top-right-radius:4px}
+.ai__msg.bot .bubble{background:#0f172a;border:1px solid #1f2a44;border-top-left-radius:4px}
+.ai__msg .meta{display:block;margin-top:4px;font-size:12px;color:#9fb0d9;opacity:.75}
+.ai__typing{display:flex;gap:6px;align-items:center;padding:6px 12px 8px}
+.ai__typing .dot{width:8px;height:8px;border-radius:50%;background:#9fb0d9;opacity:.5;
+  animation:aidot 1.2s infinite}
+.ai__typing .dot:nth-child(2){animation-delay:.15s}
+.ai__typing .dot:nth-child(3){animation-delay:.3s}
+@keyframes aidot{0%,100%{transform:translateY(0);opacity:.35}50%{transform:translateY(-4px);opacity:.9}}
+.ai__footer{padding:8px 10px 10px;border-top:1px solid #1f2a44;background:#0b1220}
+.ai__chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.ai__chip{font-size:12px;padding:6px 8px;border:1px solid #243257;border-radius:999px;cursor:pointer;
+  background:#0f172a;color:#cdd8ff}
+.ai__chip:hover{background:#172143}
+.ai__form{display:flex;gap:8px}
+.ai__form input{flex:1;background:#0f172a;border:1px solid #243257;border-radius:10px;padding:10px 12px;
+  color:#e8eefc;outline:none}
+.ai__form input:focus{border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.2)}
+.ai__form .btn{background:#3b82f6;border:none;border-radius:10px;padding:10px 12px;color:#fff}
+.ai__form .btn:hover{filter:brightness(1.07)}
+.ai__resize{position:absolute;width:14px;height:14px;right:6px;bottom:6px;cursor:nwse-resize;
+  border-right:2px solid #30406e;border-bottom:2px solid #30406e;border-radius:2px}
+@media (max-width:640px){
+  .ai{right:12px;bottom:12px;width:95vw;height:65vh;border-radius:12px}
+}
+
+#aiPanel.is-hidden{display:none !important;}
+/* Botão "Fechar" com a mesma cor do label BETPLAY */
+.ai__head #aiClose,
+.ai__head .ai__close,
+.ai__head [data-ai-close]{
+  color: #9fb0d9 !important;   /* mesma cor usada no .ai__title small */
+  font-weight: 600;
+}
+
+.ai__head #aiClose:hover,
+.ai__head .ai__close:hover,
+.ai__head [data-ai-close]:hover{
+  color: #c8d6ff !important;   /* leve realce no hover (opcional) */
+}
+.coletas-info {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 10px 0;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-row.highlight {
+  background: #fff;
+  margin: 0 -12px;
+  padding: 12px;
+  border-radius: 6px;
+  font-weight: bold;
+}
+
+.info-row.negative {
+  opacity: 0.6;
+  background: #fee2e2;
+  padding: 8px;
+  margin: 4px 0;
+  border-radius: 4px;
+}
+
+.info-row .label {
+  color: #374151;
+  font-weight: 500;
+}
+
+.info-row .value {
+  font-weight: 600;
+  color: #111827;
+}
+
+.info-row .value.success {
+  color: #16a34a;
+}
+
+.info-row .value.danger {
+  color: #dc2626;
+}
+
+.info-row small {
+  color: #ef4444;
+  font-size: 11px;
+  margin-left: 8px;
+}
+
+.coletores-list {
+  margin-bottom: 10px;
+}
+
+.coletas-section hr {
+  margin: 10px 0;
+  border: none;
+  border-top: 2px dashed #e5e7eb;
+}
+
+
+.sync-indicator {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 8px 16px;
+  background: #4caf50;
+  color: white;
+  border-radius: 20px;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.sync-indicator.show {
+  opacity: 1;
+}
+.pill-editado {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 8px;
+}
+
+tr[data-pend-id] {
+  transition: background-color 0.2s;
+}
+
+tr[data-pend-id]:hover {
+  background-color: #f9fafb !important;
+}
+/* Destaque para valores negativos */
+input[id="pcRestam"] {
+  font-size: 18px;
+  font-weight: 600;
+  text-align: right;
+  transition: color 0.3s;
+}
+
+.valor-negativo {
+  color: #b91c1c !important;
+  background-color: #fee !important;
+  border-color: #fca5a5 !important;
+}
+
+.valor-positivo {
+  color: #16a34a !important;
+}
+
+
+/* Estilos para pendências */
+.pill-editado {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  background: #fef3c7;
+  color: #92400e;
+  margin-left: 8px;
+}
+
+.fin-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.fin-table th,
+.fin-table td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.fin-table th {
+  background: #f3f4f6;
+  font-weight: 600;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #374151;
+}
+
+.fin-table tbody tr {
+  transition: background 0.15s;
+}
+
+.fin-table tbody tr:hover {
+  background: #f9fafb;
+}
+
+/* Linha de pagamento (vermelho) */
+.fin-table tbody tr[style*="background: #fff3f3"] {
+  border-left: 4px solid #ef4444;
+}
+
+.fin-table input[type="number"] {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  padding: 6px 10px;
+  border: 2px solid #d1d5db;
+  border-radius: 6px;
+  width: 120px;
+}
+
+.fin-table input[type="number"]:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+/* Botões dentro das tabelas */
+.fin-table .btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.fin-table .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+/* ===== PÁGINA DE HISTÓRICO/AUDITORIA ===== */
+#pageHistorico .audit-filters { margin-bottom: 20px; }
+#pageHistorico .audit-actions { 
+  display: flex; 
+  gap: 10px; 
+  flex-wrap: wrap; 
+}
+
+#pageHistorico .table-wrap {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+#pageHistorico table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#pageHistorico thead th {
+  background: var(--primary);
+  color: white;
+  padding: 14px 16px;
+  text-align: left;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+#pageHistorico tbody td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+#pageHistorico tbody tr:hover {
+  background-color: #f9fafb;
+}
+
+/* Badges de ação */
+.badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.badge-success {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.badge-danger {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.badge-info {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.badge-warning {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.badge-secondary {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.badge-primary {
+  background-color: var(--accent-light, #e0e7ff);
+  color: var(--accent, #4f46e5);
+}
+
+#auditStats {
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-radius: 10px;
+  border-left: 4px solid var(--accent, #4f46e5);
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+#auditStats strong {
+  color: var(--primary, #1f2937);
+  margin-right: 8px;
+}
+
+#auditStatsText {
+  color: #495057;
+}
+
+/* ===== ALERTAS DE DESPESAS (Dashboard) ===== */
+.card-alertas {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.card-alertas .card-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  color: #1f2937;
+}
+
+.card-alertas .muted {
+  color: #6b7280;
+  font-size: 14px;
+  text-align: center;
+  padding: 20px;
+}
+
+.alert-item {
+  background: #fef3c7;
+  border-left: 4px solid #f59e0b;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.alert-item:last-child {
+  margin-bottom: 0;
+}
+
+.alert-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.alert-ico {
+  font-size: 20px;
+}
+
+.alert-title strong {
+  font-size: 16px;
+  color: #92400e;
+  flex: 0 0 auto;
+}
+
+.alert-badge {
+  background: #f59e0b;
+  color: white;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.alert-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.alert-ficha {
+  background: white;
+  border: 1px solid #fbbf24;
+  border-radius: 6px;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.ficha-numero {
+  font-weight: 700;
+  color: #92400e;
+}
+
+.ficha-rota {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.alert-item .btn {
+  width: 100%;
+  justify-content: center;
+  background: #f59e0b;
+  color: white;
+  border: none;
+  font-weight: 600;
+}
+
+.alert-item .btn:hover {
+  background: #d97706;
+}
+
+/* Responsivo */
+@media (max-width: 768px) {
+  .alert-title {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .alert-badge {
+    align-self: flex-start;
+  }
+  
+  .alert-list {
+    flex-direction: column;
+  }
+  
+  .alert-ficha {
+    width: 100%;
+  }
+}
+/* Histórico visível - CORRIGIDO */
+#sidebar .sb-nav [data-page="historico"],
+#sidebar .sb-item[data-page="historico"] {
+  color: #070707 !important; /* Texto claro para fundo escuro */
+}
+
+/* Se o histórico tiver ícone */
+#sidebar .sb-nav [data-page="historico"] .icon,
+#sidebar .sb-item[data-page="historico"] .icon {
+  opacity: 1;
+  color: #f59e0b; /* Ícone laranja para destaque */
+}
+
+/* Estado ativo */
+#sidebar .sb-nav [data-page="historico"].active,
+#sidebar .sb-item[data-page="historico"].active {
+  background: rgba(245, 158, 11, 0.15) !important;
+  border-color: rgba(245, 158, 11, 0.3) !important;
+  color: #fff !important;
+}
+
+/* Hover */
+#sidebar .sb-nav [data-page="historico"]:hover,
+#sidebar .sb-item[data-page="historico"]:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+}
+
+/* ========================================
+   HEADER HISTÓRICO FIXO - VERSÃO CORRIGIDA
+   Fica abaixo do topbar, não sobrepõe IA e seletor
+   ======================================== */
+
+/* Container da página - espaço para o header fixo */
+#pageHistorico {
+  padding-top: 100px; /* Espaço maior para não sobrepor */
+}
+
+/* Header fixo - ABAIXO do topbar */
+#pageHistorico > header {
+  position: fixed;
+  top: var(--header-height, 56px); /* Abaixo do topbar */
+  left: 0;
+  right: 0;
+  z-index: 25; /* MENOR que o topbar (que tem z-index: 60) */
+  background: #f6f7fb; /* Mesmo fundo da página */
+  padding: 16px 24px;
+  border-bottom: 2px solid #e5e7eb;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  margin: 0 !important;
+}
+
+/* Título do header em preto */
+#pageHistorico > header h2 {
+  color: #111827 !important; /* Preto */
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 !important;
+}
+
+/* Desktop - considera a sidebar */
+@media (min-width: 901px) {
+  #pageHistorico {
+    padding-top: 90px;
+  }
+  
+  #pageHistorico > header {
+    left: var(--sb-w, 230px); /* Largura da sidebar */
+    top: 0; /* No topo da área de conteúdo */
+  }
+}
+
+/* Mobile - ajustes */
+@media (max-width: 900px) {
+  #pageHistorico {
+    padding-top: 115px; /* Espaço para topbar (56px) + header (~45px) */
+  }
+  
+  #pageHistorico > header {
+    top: 56px; /* Logo abaixo do topbar mobile */
+    padding: 12px 16px;
+  }
+  
+  #pageHistorico > header h2 {
+    font-size: 20px;
+  }
+}
+
+/* Micro mobile */
+@media (max-width: 480px) {
+  #pageHistorico {
+    padding-top: 105px;
+  }
+  
+  #pageHistorico > header {
+    padding: 10px 14px;
+  }
+  
+  #pageHistorico > header h2 {
+    font-size: 18px;
+  }
+}
+
+/* Cards abaixo do header fixo */
+#pageHistorico > .card {
+  margin-top: 0 !important;
+}
+
+#pageHistorico > .card:first-of-type {
+  margin-top: 0 !important;
+}
+
+/* Garante que o topbar fique sempre acima */
+.topbar {
+  z-index: 60 !important;
+}
+
+/* ===== FIM DO ARQUIVO ===== */
+
+/* ========================================
+   CORREÇÃO SIDEBAR DESKTOP - VERSÃO FORTE
+   ======================================== */
+
+   @media (min-width: 901px) {
+  
+    /* Rodapé - força layout correto */
+    body:not(.sidebar-compact) #sidebar .sb-bottom {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      gap: 10px !important;
+      padding: 12px !important;
+    }
+  
+    /* Saudação */
+    body:not(.sidebar-compact) #sidebar .sb-bottom .user-badge {
+      background: #1f2937 !important;
+      color: #fff !important;
+      padding: 10px 12px !important;
+      border-radius: 8px !important;
+      font-size: 14px !important;
+      font-weight: 600 !important;
+      text-align: left !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+      display: block !important;
+    }
+  
+    /* Botões - força alinhamento à esquerda */
+    body:not(.sidebar-compact) #sidebar .sb-bottom .btn {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+      gap: 10px !important;
+      padding: 10px 12px !important;
+      border-radius: 8px !important;
+      font-size: 14px !important;
+      font-weight: 600 !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+  
+    /* Ícones */
+    body:not(.sidebar-compact) #sidebar .sb-bottom .btn .ico {
+      width: 18px !important;
+      height: 18px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      flex-shrink: 0 !important;
+    }
+  
+    /* Labels */
+    body:not(.sidebar-compact) #sidebar .sb-bottom .btn .label {
+      flex: 1 !important;
+      text-align: left !important;
+      display: inline !important;
+    }
+  }
+  
+  /* Modo compacto */
+  @media (min-width: 901px) {
+    body.sidebar-compact #sidebar .sb-bottom .user-badge {
+      display: none !important;
+    }
+  
+    body.sidebar-compact #sidebar .sb-bottom .btn {
+      justify-content: center !important;
+      padding: 10px !important;
+    }
+  
+    body.sidebar-compact #sidebar .sb-bottom .btn .label {
+      display: none !important;
+    }
+  }
+
+
+
+
+

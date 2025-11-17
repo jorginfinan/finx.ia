@@ -1,318 +1,184 @@
 // ============================================
-// AUTH SUPABASE ADAPTER - VERSÃO CORRIGIDA
+// AUTH SUPABASE ADAPTER - VERSÃO SUPABASE
 // ============================================
 
-(function() {
+(function () {
     'use strict';
-    
-    // ============================================
-    // FUNÇÃO SHA256 GLOBAL (SEMPRE DISPONÍVEL)
-    // ============================================
-    
+  
+    // SHA-256 compatível com browsers modernos
     async function sha256(message) {
-      if (window.crypto && window.crypto.subtle) {
-        const msgBuffer = new TextEncoder().encode(message);
+      if (window.crypto?.subtle) {
+        const msgBuffer = new TextEncoder().encode(String(message));
         const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        return hashHex;
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
       }
-      
-      // Fallback simples
+      // fallback bem simples
       let hash = 0;
-      for (let i = 0; i < message.length; i++) {
-        const char = message.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash;
+      const str = String(message || '');
+      for (let i = 0; i < str.length; i++) {
+        const c = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + c;
+        hash |= 0;
       }
       return Math.abs(hash).toString(16);
     }
-    
-    // Disponibiliza SHA256 IMEDIATAMENTE em todos os lugares
+  
+    // Disponibiliza SHA globalmente
     window.sha256 = sha256;
     window.SHA256 = sha256;
     window.sha = sha256;
-    
-    // ============================================
-    // AGUARDA DEPENDÊNCIAS
-    // ============================================
-    
-    function waitForDependencies(callback) {
-      let attempts = 0;
-      const maxAttempts = 50;
-      
-      function check() {
-        attempts++;
-        
-        if (window.SupabaseAPI && window.UserAuth) {
-          // Força SHA no UserAuth
-          window.UserAuth.sha = sha256;
-          window.UserAuth.sha256 = sha256;
-          
-          console.log('✅ Dependências prontas, SHA256 anexada');
-          callback();
-          return;
-        }
-        
-        if (attempts >= maxAttempts) {
-          console.error('❌ Timeout aguardando dependências');
-          return;
-        }
-        
-        setTimeout(check, 100);
-      }
-      
-      check();
-    }
-    
-    // ============================================
-    // FUNÇÃO PRINCIPAL DO ADAPTER
-    // ============================================
-    
+  
     function initAdapter() {
+      if (!window.UserAuth) {
+        console.error('[AuthAdapter] window.UserAuth ainda está indisponível.');
+        return;
+      }
+      if (!window.SupabaseAPI?.usuarios) {
+        console.error('[AuthAdapter] SupabaseAPI.usuarios ainda está indisponível.');
+        return;
+      }
+  
       const API = window.SupabaseAPI.usuarios;
-      
-      // Garante SHA em UserAuth novamente
+  
+      // Garante SHA no UserAuth
       window.UserAuth.sha = sha256;
       window.UserAuth.sha256 = sha256;
-      
-      // ============================================
-      // LISTA USUÁRIOS
-      // ============================================
-      
+  
+      // LIST → sempre vindo do Supabase
       const originalList = window.UserAuth.list;
-      window.UserAuth.list = async function() {
+      window.UserAuth.list = async function () {
         try {
           const users = await API.getAll();
-          
-          if (!Array.isArray(users)) {
-            console.warn('API retornou não-array, convertendo...');
-            return [];
-          }
-          
+          if (!Array.isArray(users)) return [];
           return users.map(u => ({
             id: u.id,
             username: u.username,
+            nome: u.nome,
+            role: u.role || 'operador',
             pass: u.password,
-            role: u.role,
             perms: u.permissoes || {},
             companies: [],
-            active: u.ativo
+            ativo: u.ativo !== false
           }));
-        } catch (error) {
-          console.error('Erro ao listar usuários:', error);
-          
-          if (originalList) {
-            try {
-              const result = originalList();
-              return Array.isArray(result) ? result : [];
-            } catch (e) {
-              console.error('Fallback também falhou:', e);
-            }
-          }
+        } catch (err) {
+          console.error('[AuthAdapter] erro em list():', err);
           return [];
         }
       };
-      
-      // ============================================
-      // LOGIN
-      // ============================================
-      
-      const originalLogin = window.UserAuth.login;
-      window.UserAuth.login = async function(username, password) {
+  
+      // CREATE → grava no Supabase
+      const originalCreate = window.UserAuth.createUser;
+      window.UserAuth.createUser = async function (data) {
         try {
-          console.log('🔐 Tentando login via Supabase...');
-          
-          // Busca usuário no Supabase
+          const username = String(data?.username || '').trim().toLowerCase();
+          const password = String(data?.password || '');
+          const role = data?.role || 'operador';
+          const nome = data?.nome || data?.name || username;
+  
+          const hash = await sha256(password);
+  
+          const payload = {
+            username,
+            password: hash,
+            role,
+            nome,
+            empresa_id: data?.empresa_id || null,
+            permissoes: data?.perms || data?.permissoes || {},
+            ativo: data?.ativo ?? true
+          };
+  
+          const user = await API.create(payload);
+          return user;
+        } catch (err) {
+          console.error('[AuthAdapter] erro em createUser():', err);
+          if (typeof originalCreate === 'function') {
+            return originalCreate(data);
+          }
+          throw err;
+        }
+      };
+  
+      // LOGIN → valida hash com coluna password
+      const originalLogin = window.UserAuth.login;
+      window.UserAuth.login = async function (username, password) {
+        username = String(username || '').trim().toLowerCase();
+        password = String(password || '');
+  
+        try {
           const user = await API.getByUsername(username);
-          
-          if (!user) {
-            console.log('Usuário não encontrado no Supabase, tentando localStorage...');
-            
-            if (originalLogin) {
-              return await originalLogin(username, password);
-            }
-            
-            return { ok: false, msg: 'Usuário não encontrado' };
+          if (!user || user.ativo === false) {
+            throw new Error('Usuário não encontrado ou inativo');
           }
-          
-          if (!user.ativo) {
-            return { ok: false, msg: 'Usuário inativo' };
+  
+          const hash = await sha256(password);
+          if (user.password !== hash) {
+            throw new Error('Senha inválida');
           }
-          
-          // USA A FUNÇÃO SHA256 GLOBAL
-          const passHash = await sha256(password);
-          
-          // Verifica senha
-          if (user.password !== passHash) {
-            console.log('Senha incorreta');
-            return { ok: false, msg: 'Senha inválida' };
-          }
-          
-          // Monta permissões
-          const perms = (user.role === 'admin') 
-            ? window.UserAuth.permsAllTrue()
+  
+          const perms = (user.role === 'admin')
+            ? (window.UserAuth.permsAllTrue ? window.UserAuth.permsAllTrue() : {})
             : (user.permissoes || {});
-          
-          // Cria sessão
-          window.UserAuth.setSession({
+  
+          const session = {
             id: user.id,
             username: user.username,
-            role: user.role,
-            perms,
-            companies: []
-          });
-          
-          // Dispara evento
-          document.dispatchEvent(new CustomEvent('auth:login', { 
-            detail: { user: window.UserAuth.current() } 
-          }));
-          
-          console.log('✅ Login bem sucedido via Supabase!');
-          return { ok: true };
-          
-        } catch (error) {
-          console.error('❌ Erro no login Supabase:', error);
-          console.log('Tentando fallback para localStorage...');
-          
-          if (originalLogin) {
-            try {
-              return await originalLogin(username, password);
-            } catch (e) {
-              console.error('Fallback também falhou:', e);
-            }
+            nome: user.nome,
+            role: user.role || 'operador',
+            empresa_id: user.empresa_id || null,
+            perms
+          };
+  
+          if (typeof window.UserAuth.setSession === 'function') {
+            window.UserAuth.setSession(session);
+          } else {
+            window.UserAuth._session = session;
           }
-          
-          return { ok: false, msg: 'Erro ao fazer login: ' + error.message };
+  
+          try {
+            const evt = new CustomEvent('auth:login', { detail: session });
+            document.dispatchEvent(evt);
+          } catch (_) {}
+  
+          return session;
+        } catch (err) {
+          console.error('[AuthAdapter] Erro no login via Supabase:', err);
+          if (typeof originalLogin === 'function') {
+            return originalLogin(username, password);
+          }
+          throw err;
         }
       };
-      
-      // ============================================
-      // CRIAR USUÁRIO
-      // ============================================
-      
-      const originalCreate = window.UserAuth.createUser;
-      window.UserAuth.createUser = async function({ username, password, role, perms, companies }) {
-        try {
-          username = String(username||'').trim().toLowerCase();
-          if (!username || !password) {
-            return { ok: false, msg: 'Preencha usuário e senha' };
-          }
-          
-          const existing = await API.getByUsername(username);
-          if (existing) {
-            return { ok: false, msg: 'Usuário já existe' };
-          }
-          
-          const passHash = await sha256(password);
-          
-          await API.create({
-            username,
-            password: passHash,
-            role: role || 'operador',
-            permissoes: perms || {},
-            nome: username
-          });
-          
-          console.log('✅ Usuário criado no Supabase');
-          return { ok: true };
-          
-        } catch (error) {
-          console.error('Erro ao criar usuário:', error);
-          
-          if (originalCreate) {
-            return originalCreate({ username, password, role, perms, companies });
-          }
-          
-          return { ok: false, msg: error.message };
-        }
-      };
-      
-      // ============================================
-      // ATUALIZAR USUÁRIO
-      // ============================================
-      
-      const originalUpdate = window.UserAuth.updateUser;
-      window.UserAuth.updateUser = async function(id, patch) {
-        try {
-          const updateData = {};
-          
-          if (patch.role !== undefined) updateData.role = patch.role;
-          if (patch.perms !== undefined) updateData.permissoes = patch.perms;
-          if (patch.active !== undefined) updateData.ativo = patch.active;
-          
-          await API.update(id, updateData);
-          
-          return { ok: true };
-        } catch (error) {
-          console.error('Erro ao atualizar usuário:', error);
-          
-          if (originalUpdate) {
-            return originalUpdate(id, patch);
-          }
-          
-          return { ok: false, msg: error.message };
-        }
-      };
-      
-      // ============================================
-      // REMOVER USUÁRIO
-      // ============================================
-      
-      const originalRemove = window.UserAuth.removeUser;
-      window.UserAuth.removeUser = async function(id) {
-        try {
-          await API.delete(id);
-          return { ok: true };
-        } catch (error) {
-          console.error('Erro ao remover usuário:', error);
-          
-          if (originalRemove) {
-            return originalRemove(id);
-          }
-          
-          return { ok: false, msg: error.message };
-        }
-      };
-      
-      // ============================================
-      // TROCAR SENHA
-      // ============================================
-      
-      const originalChangePassword = window.UserAuth.changePassword;
-      window.UserAuth.changePassword = async function(id, newPassword) {
-        try {
-          const passHash = await sha256(newPassword);
-          await API.changePassword(id, passHash);
-          return { ok: true };
-        } catch (error) {
-          console.error('Erro ao trocar senha:', error);
-          
-          if (originalChangePassword) {
-            return originalChangePassword(id, newPassword);
-          }
-          
-          return { ok: false, msg: error.message };
-        }
-      };
-      
-      console.log('✅ Auth Supabase Adapter carregado!');
-      console.log('🔑 UserAuth.sha disponível:', typeof window.UserAuth.sha);
+  
+      console.log('[AuthAdapter] ✅ Adapter Supabase aplicado em UserAuth.');
     }
-    
-    // ============================================
-    // INICIALIZAÇÃO
-    // ============================================
-    
-    // Corrige APP_DB se não existir
-    if (!window.APP_DB) {
-      window.APP_DB = {
-        users: 'APP_USERS_V3',
-        session: 'APP_SESSION_V3'
-      };
+  
+    // Espera UserAuth + SupabaseAPI ficarem prontos
+    function waitForDeps(retries) {
+      retries = retries ?? 50;
+  
+      const ready =
+        window.UserAuth &&
+        window.SupabaseAPI &&
+        window.SupabaseAPI.usuarios;
+  
+      if (ready) {
+        initAdapter();
+        return;
+      }
+  
+      if (retries <= 0) {
+        console.error('[AuthAdapter] Falha ao inicializar: dependências não ficaram prontas.');
+        return;
+      }
+  
+      setTimeout(() => waitForDeps(retries - 1), 100);
     }
-    
-    // Inicia quando tudo estiver pronto
-    waitForDependencies(initAdapter);
-    
-})();
+  
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => waitForDeps());
+    } else {
+      waitForDeps();
+    }
+  })();
+  

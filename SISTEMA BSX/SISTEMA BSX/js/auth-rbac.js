@@ -431,8 +431,22 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
 
   /* --- Persistência & sessão --- */
   async function loadUsers() {
-    return await window.SupabaseAPI.users.getAll();
+    try {
+      // Se a API ainda não estiver pronta, retorna array vazio
+      if (!window.SupabaseAPI || (!window.SupabaseAPI.users && !window.SupabaseAPI.usuarios)) {
+        console.warn('[RBAC] SupabaseAPI.users ainda não disponível. Retornando [].');
+        return [];
+      }
+  
+      const api = window.SupabaseAPI.users || window.SupabaseAPI.usuarios;
+      const users = await api.getAll();
+      return Array.isArray(users) ? users : [];
+    } catch (error) {
+      console.error('[RBAC] Erro ao carregar usuários do Supabase:', error);
+      return [];
+    }
   }
+  
   
   async function saveUsers(arr) {
     // Não precisa mais salvar array completo
@@ -514,32 +528,12 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
   function setSession(s){ jset(K_SESS, s); }
   function current(){ return jget(K_SESS, null); }
 
-  // Garante admin e migra permissão antiga (array) p/ objeto
   async function ensureAdmin(){
-    let arr = loadUsers();
-    if (!arr.some(u=>u.role==='admin')){
-      arr.push({
-        id: uid(), username:'admin', pass: await sha('admin'),
-        role:'admin', active:true, perms:permsAllTrue(), createdAt: new Date().toISOString()
-      });
-      saveUsers(arr);
-      console.info('[RBAC] admin/admin criado');
-    } else {
-      arr = arr.map(u=>{
-        if (Array.isArray(u.perms)) u.perms = (u.role==='admin') ? permsAllTrue() : toPermObject(u.perms);
-        if (u.role==='admin') u.perms = permsAllTrue();
-        return u;
-      });
-      saveUsers(arr);
-    }
-    // normaliza sessão antiga
-    const s = current();
-    if (s && Array.isArray(s.perms)){
-      s.perms = (s.role==='admin') ? permsAllTrue() : toPermObject(s.perms);
-      setSession(s);
-    }
+    console.log('[RBAC] ensureAdmin: usando Supabase, admin deve ser criado via SQL (já existe).');
+    return;
   }
-
+  
+  
   /* --- API pública --- */
   function list(){ return loadUsers(); }
   function listUsers(){ return list(); }
@@ -672,15 +666,22 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
   // Exposição
 // Exposição
 window.UserAuth = Object.assign(window.UserAuth || {}, {
-  list, listUsers,
-  createUser, updateUser, removeUser,
-  login, logout, currentUser: current,
+  list,
+  listUsers,
+  createUser,
+  updateUser,
+  removeUser,
+  login,
+  logout,
+  current: current,
+  currentUser: current,
+  setSession,       // <- para o adapter usar
+  permsAllTrue,     // <- para o adapter montar perms de admin
   can: (p) => hasPerm(current(), p),
-  has: (p) => hasPerm(current(), p),       // <- NOVO (alias usado em prestacoes.js)
-  isAdmin: () => (current()?.role === 'admin'), // <- NOVO (helper chamado em prestacoes.js)
-  guard,
-  changePassword
+  has: (p) => hasPerm(current(), p)
 });
+
+
 
   /* ====== ENFORCE DE EMPRESAS (operador só vê/troca o que tiver permissão) ====== */
 (function(){
@@ -764,9 +765,8 @@ window.UserAuth = Object.assign(window.UserAuth || {}, {
 })();
 
 
-  // Boot no estilo antigo: sobe já
-  ensureAdmin().then(guard);
-  window.addEventListener('pageshow', guard);
-  document.addEventListener('auth:login', guard);
-  document.addEventListener('auth:logout', guard);
+ensureAdmin().then(guard);
+window.addEventListener('pageshow', guard);
+document.addEventListener('auth:login', guard);
+document.addEventListener('auth:logout', guard);
 })();

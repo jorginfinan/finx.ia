@@ -12,7 +12,7 @@
     
     // ❗ COLE SUAS CREDENCIAIS AQUI:
     const SUPABASE_URL = 'https://ttdwmbwiapkjbjbepeza.supabase.co';
-    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0ZHdtYndpYXBramJqYmVwZXphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzE4MDcyMDQsImV4cCI6MjA0NzM4MzIwNH0.RlHzE41kl5k8F5gzr6H-t6PoYzv6aYgX3LxQp-gzIZI';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0ZHdtYndpYXBramJqYmVwZXpheyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0ZHdtYndpYXBramJqYmVwZXphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzMjg4NDgsImV4cCI6MjA3ODkwNDg0OH0.NZxm-ZQbQFVceO6yUABKAIj7XY7qN6RXSLi-8NF-BAwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzE4MDcyMDQsImV4cCI6MjA0NzM4MzIwNH0.RlHzE41kl5k8F5gzr6H-t6PoYzv6aYgX3LxQp-gzIZI';
     
     if (!window.supabase) {
       console.error('❌ Supabase não carregado! Adicione o CDN ao HTML.');

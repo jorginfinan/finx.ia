@@ -431,8 +431,22 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
 
   /* --- Persistência & sessão --- */
   async function loadUsers() {
-    return await window.SupabaseAPI.users.getAll();
+    try {
+      // Se a API ainda não estiver pronta, retorna array vazio
+      if (!window.SupabaseAPI || (!window.SupabaseAPI.users && !window.SupabaseAPI.usuarios)) {
+        console.warn('[RBAC] SupabaseAPI.users ainda não disponível. Retornando [].');
+        return [];
+      }
+  
+      const api = window.SupabaseAPI.users || window.SupabaseAPI.usuarios;
+      const users = await api.getAll();
+      return Array.isArray(users) ? users : [];
+    } catch (error) {
+      console.error('[RBAC] Erro ao carregar usuários do Supabase:', error);
+      return [];
+    }
   }
+  
   
   async function saveUsers(arr) {
     // Não precisa mais salvar array completo
@@ -515,30 +529,36 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
   function current(){ return jget(K_SESS, null); }
 
   // Garante admin e migra permissão antiga (array) p/ objeto
-  async function ensureAdmin(){
-    let arr = loadUsers();
-    if (!arr.some(u=>u.role==='admin')){
-      arr.push({
-        id: uid(), username:'admin', pass: await sha('admin'),
-        role:'admin', active:true, perms:permsAllTrue(), createdAt: new Date().toISOString()
-      });
-      saveUsers(arr);
-      console.info('[RBAC] admin/admin criado');
-    } else {
-      arr = arr.map(u=>{
-        if (Array.isArray(u.perms)) u.perms = (u.role==='admin') ? permsAllTrue() : toPermObject(u.perms);
-        if (u.role==='admin') u.perms = permsAllTrue();
+  async function ensureAdmin() {
+    let arr = await loadUsers();
+    if (!Array.isArray(arr)) arr = [];
+  
+    // Se já existe admin, só ajusta permissões e sessão
+    if (arr.some(u => u.role === 'admin')) {
+      console.log('[RBAC] Admin já existe (via Supabase).');
+  
+      arr = arr.map(u => {
+        if (u.role === 'admin') {
+          u.perms = permsAllTrue();
+        } else if (Array.isArray(u.perms)) {
+          u.perms = toPermObject(u.perms);
+        }
         return u;
       });
-      saveUsers(arr);
+  
+    } else {
+      // Em teoria o supabase-init já criou o admin,
+      // então aqui só logamos o estado.
+      console.warn('[RBAC] Nenhum admin encontrado na lista de usuários.');
     }
-    // normaliza sessão antiga
+  
     const s = current();
-    if (s && Array.isArray(s.perms)){
-      s.perms = (s.role==='admin') ? permsAllTrue() : toPermObject(s.perms);
+    if (s && Array.isArray(s.perms)) {
+      s.perms = (s.role === 'admin') ? permsAllTrue() : toPermObject(s.perms);
       setSession(s);
     }
   }
+  
 
   /* --- API pública --- */
   function list(){ return loadUsers(); }
@@ -672,15 +692,31 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
   // Exposição
 // Exposição
 window.UserAuth = Object.assign(window.UserAuth || {}, {
-  list, listUsers,
-  createUser, updateUser, removeUser,
-  login, logout, currentUser: current,
+  // lista / CRUD
+  list, 
+  listUsers,
+  createUser, 
+  updateUser, 
+  removeUser,
+  
+  // sessão / auth
+  login, 
+  logout, 
+  currentUser: current,
+  current,          // <– exposto para o adapter
+  setSession,       // <– exposto para o adapter
+  
+  // permissões
+  permsAllTrue,     // <– exposto para o adapter
   can: (p) => hasPerm(current(), p),
-  has: (p) => hasPerm(current(), p),       // <- NOVO (alias usado em prestacoes.js)
-  isAdmin: () => (current()?.role === 'admin'), // <- NOVO (helper chamado em prestacoes.js)
+  has: (p) => hasPerm(current(), p),
+  isAdmin: () => (current()?.role === 'admin'),
+  
+  // extras
   guard,
   changePassword
 });
+
 
   /* ====== ENFORCE DE EMPRESAS (operador só vê/troca o que tiver permissão) ====== */
 (function(){
@@ -764,9 +800,8 @@ window.UserAuth = Object.assign(window.UserAuth || {}, {
 })();
 
 
-  // Boot no estilo antigo: sobe já
-  ensureAdmin().then(guard);
-  window.addEventListener('pageshow', guard);
-  document.addEventListener('auth:login', guard);
-  document.addEventListener('auth:logout', guard);
+ensureAdmin().then(guard);
+window.addEventListener('pageshow', guard);
+document.addEventListener('auth:login', guard);
+document.addEventListener('auth:logout', guard);
 })();

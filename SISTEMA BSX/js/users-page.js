@@ -216,8 +216,16 @@ function openUsersMenu(triggerBtn, menu, parentCell){
 
 
   // ---------- tabela ----------
-  function renderTable() {
-    let users = (window.UserAuth?.list() || []);             // já existe
+  async function renderTable() {
+    // Aguarda a Promise do Supabase
+    let users = await (window.UserAuth?.list?.() || []);
+  
+    // Garante que é array
+    if (!Array.isArray(users)) {
+      console.warn('[Users] UserAuth.list não retornou array, usando fallback.', users);
+      users = [];
+    }
+  
     const q = (page.querySelector('#userSearch')?.value || '').toLowerCase();
     const onlyOps = !!page.querySelector('#userOnlyOps')?.checked;
   
@@ -230,6 +238,7 @@ function openUsersMenu(triggerBtn, menu, parentCell){
         return (`${u.username} ${u.role} ${permsText}`).toLowerCase().includes(q);
       });
     }
+  
     tblBody.innerHTML = '';
     users.forEach(u => {
       const tr = document.createElement('tr');

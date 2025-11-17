@@ -117,74 +117,52 @@
       }
     }
     
-    // ✅ ATUALIZAR render:
-    async function render() {
-      const arr = await read();
-      arr.sort(function(a,b) { 
-        return String(a.nome||'').localeCompare(String(b.nome||'')); 
-      });
-    
-      const tb = document.getElementById('tbodyGerentes');
-      if (tb) {
-        tb.innerHTML = arr.length ? arr.map(function(g) {
-          const com = (Number(g.comissao)||0).toFixed(0);
-          const com2 = g.tem_segunda_comissao ? (' + ' + (Number(g.comissao2)||0).toFixed(0) + '%') : '';
-          
-          return '<tr data-context="gerentes" data-uid="' + g.uid + '">' +
-            '<td>' + esc(g.nome) + '</td>' +
-            '<td>' + esc(g.numero||'') + '</td>' +
-            '<td>' + esc(g.endereco||'') + '</td>' +
-            '<td>' + esc(g.telefone||'') + '</td>' +
-            '<td>' + esc(g.email||'') + '</td>' +
-            '<td>' + com + '%' + com2 + '</td>' +
-            '<td>' + esc(g.obs||'') + '</td>' +
-            '<td class="tv-right">' +
-              '<button type="button" class="btn btn-gerente-edit" data-edit-gerente="' + g.uid + '">EDITAR</button> ' +
-              '<button type="button" class="btn danger btn-gerente-del" data-del-gerente="' + g.uid + '">EXCLUIR</button>' +
-            '</td>' +
-          '</tr>';
-        }).join('') : '<tr><td colspan="8">Nenhum gerente cadastrado.</td></tr>';
-      }
-    
-      // Atualiza datalist
-      const dl = document.getElementById('listGerentes');
-      if (dl) {
-        dl.innerHTML = arr.map(function(g) { 
-          return '<option value="' + esc(g.nome) + '"></option>'; 
-        }).join('');
-      }
-    
-    
-    // Remove duplicados baseado no UID antes de salvar
-    const uniqueMap = new Map();
-    safe.forEach(function(g) {
-      const uid = g.uid || g.id;
-      if (uid && !uniqueMap.has(uid)) {
-        uniqueMap.set(uid, g);
-      }
-    });
-    
-    const deduplicated = Array.from(uniqueMap.values());
-    
-    // Salva na chave principal
-    jset(KEY, deduplicated);
-    
-    // Cria backup (apenas se não estiver vazio - evita restaurar array vazio)
-    if (deduplicated.length > 0) {
-      jset(KEY_BACKUP, deduplicated);
-    }
-    
-    // Atualiza referência global
-    try { window.gerentes = deduplicated; } catch(_) {}
-    
-    // Dispara evento
-    try { window.dispatchEvent(new Event('gerentes:updated')); } catch(_){}
+// ✅ ATUALIZAR render:
+async function render() {
+  const arr = await read();
+  arr.sort(function(a,b) { 
+    return String(a.nome||'').localeCompare(String(b.nome||'')); 
+  });
 
-    // ✅ NOTIFICA SINCRONIZAÇÃO
-if (typeof window.SyncManager !== 'undefined') {
-  window.SyncManager.notify('gerentes', { count: deduplicated.length });
-}
+  const tb = document.getElementById('tbodyGerentes');
+  if (tb) {
+    tb.innerHTML = arr.length ? arr.map(function(g) {
+      const com = (Number(g.comissao)||0).toFixed(0);
+      const com2 = g.tem_segunda_comissao ? (' + ' + (Number(g.comissao2)||0).toFixed(0) + '%') : '';
+      
+      return '<tr data-context="gerentes" data-uid="' + g.uid + '">' +
+        '<td>' + esc(g.nome) + '</td>' +
+        '<td>' + esc(g.numero||'') + '</td>' +
+        '<td>' + esc(g.endereco||'') + '</td>' +
+        '<td>' + esc(g.telefone||'') + '</td>' +
+        '<td>' + esc(g.email||'') + '</td>' +
+        '<td>' + com + '%' + com2 + '</td>' +
+        '<td>' + esc(g.obs||'') + '</td>' +
+        '<td class="tv-right">' +
+          '<button type="button" class="btn btn-gerente-edit" data-edit-gerente="' + g.uid + '">EDITAR</button> ' +
+          '<button type="button" class="btn danger btn-gerente-del" data-del-gerente="' + g.uid + '">EXCLUIR</button>' +
+        '</td>' +
+      '</tr>';
+    }).join('') : '<tr><td colspan="8">Nenhum gerente cadastrado.</td></tr>';
   }
+
+  // Atualiza datalist
+  const dl = document.getElementById('listGerentes');
+  if (dl) {
+    dl.innerHTML = arr.map(function(g) { 
+      return '<option value="' + esc(g.nome) + '"></option>'; 
+    }).join('');
+  }
+
+  // 🔄 Atualiza referência global + eventos (usando o próprio arr)
+  try { window.gerentes = arr; } catch(_) {}
+
+  try { window.dispatchEvent(new Event('gerentes:updated')); } catch(_) {}
+
+  if (typeof window.SyncManager !== 'undefined') {
+    window.SyncManager.notify('gerentes', { count: arr.length });
+  }
+}
 
 
   function esc(s) {
@@ -195,42 +173,6 @@ if (typeof window.SyncManager !== 'undefined') {
     return String(s ?? '').replace(/[&<>"'`=\/]/g, function(m) { return map[m]; });
   }
 
-  // Renderiza tabela e datalist
-  function render(){
-    const arr = read().slice().sort(function(a,b) { 
-      return String(a.nome||'').localeCompare(String(b.nome||'')); 
-    });
-
-    const tb = document.getElementById('tbodyGerentes');
-    if (tb){
-      tb.innerHTML = arr.length ? arr.map(function(g) {
-        const com = (Number(g.comissao)||0).toFixed(0);
-        const com2 = g.temSegundaComissao ? (' + ' + (Number(g.comissao2)||0).toFixed(0) + '%') : '';
-        
-        return '<tr data-context="gerentes" data-uid="' + g.uid + '">' +
-          '<td>' + esc(g.nome) + '</td>' +
-          '<td>' + esc(g.numero||'') + '</td>' +
-          '<td>' + esc(g.endereco||'') + '</td>' +
-          '<td>' + esc(g.telefone||'') + '</td>' +
-          '<td>' + esc(g.email||'') + '</td>' +
-          '<td>' + com + '%' + com2 + '</td>' +
-          '<td>' + esc(g.obs||'') + '</td>' +
-          '<td class="tv-right">' +
-            '<button type="button" class="btn btn-gerente-edit" data-edit-gerente="' + g.uid + '">EDITAR</button> ' +
-            '<button type="button" class="btn danger btn-gerente-del" data-del-gerente="' + g.uid + '">EXCLUIR</button>' +
-          '</td>' +
-        '</tr>';
-      }).join('') : '<tr><td colspan="8">Nenhum gerente cadastrado.</td></tr>';
-    }
-
-    // Atualiza datalist
-    const dl = document.getElementById('listGerentes');
-    if (dl){
-      dl.innerHTML = arr.map(function(g) { 
-        return '<option value="' + esc(g.nome) + '"></option>'; 
-      }).join('');
-    }
-  }
 
   // Adiciona função de notificação se não existir
   if (typeof window.showNotification !== 'function') {
@@ -253,7 +195,7 @@ if (typeof window.SyncManager !== 'undefined') {
   }
 
 // Função de submit do formulário
-function onSubmit(e) {
+function onSubmitLocal(e) {
   e.preventDefault();
   e.stopPropagation();
   e.stopImmediatePropagation(); // ✅ IMPORTANTE: Para propagação imediata
@@ -501,8 +443,7 @@ function onSubmit(e) {
   }
 
   function init(){
-    // Carrega gerentes
-    try { window.gerentes = read(); } catch(_) {}
+  
     
     const form = document.getElementById('formGerente');
     if (form && !form.__wired_gerentes){

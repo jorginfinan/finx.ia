@@ -192,37 +192,35 @@ async function loadGerentes(){
   }
 }
   // === Atualiza gerentes quando a empresa mudar (emitido pelo empresa-shim)
-document.addEventListener('empresa:change', ()=>{
-  try {
-    loadGerentes();
-    fillPcGerentes?.();
-    renderValesPrestacao?.();   // atualiza lista de vales do gerente atual
-  } catch(e){
-    console.warn('[prestacoes] empresa:change handler:', e);
-  }
-});
-
-window.addEventListener('gerentes:updated', loadGerentes);
-
-
-
-// garante ordem: load -> fill
-document.addEventListener('DOMContentLoaded', ()=>{
-  loadGerentes();
-  fillPcGerentes?.();
-});
-
-// se os gerentes forem atualizados em outra aba/página, reflita aqui
-window.addEventListener('storage', (e)=>{
-  try{
-    if (lsKeyEndsWith(e, 'bsx_gerentes_v2')) {
-      loadGerentes();
+  document.addEventListener('empresa:change', async ()=>{
+    try {
+      await loadGerentes();
       fillPcGerentes?.();
+      renderValesPrestacao?.();
+    } catch(e){
+      console.warn('[prestacoes] empresa:change handler:', e);
     }
-  }catch(err){
-    console.warn('[prestacoes] storage handler:', err);
-  }
-});
+  });
+
+  window.addEventListener('gerentes:updated', () => loadGerentes());
+
+
+
+  document.addEventListener('DOMContentLoaded', async ()=>{
+    await loadGerentes();
+    fillPcGerentes?.();
+  });
+
+  window.addEventListener('storage', async (e)=>{
+    try{
+      if (lsKeyEndsWith(e, 'bsx_gerentes_v2')) {
+        await loadGerentes();
+        fillPcGerentes?.();
+      }
+    }catch(err){
+      console.warn('[prestacoes] storage handler:', err);
+    }
+  });
 
 // ===== Helper de hora SEGURO (use em telas e logs) =====
 window.fmtHora = window.fmtHora || function fmtHora(d){

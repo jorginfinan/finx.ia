@@ -145,23 +145,20 @@ function lsKeyEndsWith(e, suffix){
 }
 
 
-function loadGerentes(){
-    try{
-      const raw = localStorage.getItem(window.DB_GERENTES);
-      let arr = [];
-  
-      if (raw) {
-        const parsed = JSON.parse(raw);
-  
-        // aceita: array | objeto único | objeto-mapa
-        if (Array.isArray(parsed)) {
-          arr = parsed;
-        } else if (parsed && typeof parsed === 'object') {
-          // se veio um único objeto ou um "mapa", vira array
-          arr = Array.isArray(parsed) ? parsed : Object.values(parsed);
-        }
+async function loadGerentes(){
+  try{
+    console.log('[Prestações] Carregando gerentes do Supabase...');
+    
+    // Busca do Supabase
+    if (window.SupabaseAPI && window.SupabaseAPI.gerentes) {
+      const arr = await window.SupabaseAPI.gerentes.getAtivos();
+      
+      if (!Array.isArray(arr)) {
+        console.warn('[prestacoes] SupabaseAPI não retornou array:', arr);
+        window.gerentes = [];
+        return;
       }
-  
+      
       // normaliza
       window.gerentes = arr.map(g => ({
         uid:      g.uid ?? g.id ?? uid(),
@@ -169,18 +166,31 @@ function loadGerentes(){
         comissao: Number(g.comissao ?? g.percent ?? 0),
         comissao2: Number(g.comissao2) || 0,
         comissaoModo: (g.comissaoModo || (g.comissaoSequencial ? 'sequencial' : 'simples')),     
-        comissaoPorRotaPositiva: !!g.comissaoPorRotaPositiva,
+        comissaoPorRotaPositiva: !!g.comissao_por_rota_positiva || !!g.comissaoPorRotaPositiva,
+        temSegundaComissao: !!g.tem_segunda_comissao || !!g.temSegundaComissao,
         numero:   g.numero ?? g.rota ?? '',
         endereco: g.endereco ?? '',
         telefone: g.telefone ?? '',
         email:    g.email ?? '',
-        obs:      g.obs ?? ''
+        obs:      g.obs ?? g.observacoes ?? '',
+        baseCalculo: g.base_calculo ?? g.baseCalculo ?? 'COLETAS_MENOS_DESPESAS'
       }));
-    } catch (e){
-      console.warn('[prestacoes] falha ao carregar gerentes:', e);
+      
+      console.log('[Prestações] ✅ Gerentes carregados:', window.gerentes.length);
+      
+    } else {
+      console.warn('[prestacoes] SupabaseAPI não disponível ainda, aguardando...');
       window.gerentes = [];
+      
+      // Tenta novamente após 1 segundo
+      setTimeout(() => loadGerentes(), 1000);
     }
+    
+  } catch (e){
+    console.warn('[prestacoes] falha ao carregar gerentes:', e);
+    window.gerentes = [];
   }
+}
   // === Atualiza gerentes quando a empresa mudar (emitido pelo empresa-shim)
 document.addEventListener('empresa:change', ()=>{
   try {

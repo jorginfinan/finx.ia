@@ -176,6 +176,8 @@ async function loadGerentes(){
         baseCalculo: g.base_calculo ?? g.baseCalculo ?? 'COLETAS_MENOS_DESPESAS'
       }));
       
+      fillPcGerentes();
+
       console.log('[Prestações] ✅ Gerentes carregados:', window.gerentes.length);
       
     } else {

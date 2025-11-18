@@ -528,38 +528,12 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
   function setSession(s){ jset(K_SESS, s); }
   function current(){ return jget(K_SESS, null); }
 
-  // Garante admin e migra permissão antiga (array) p/ objeto
-  async function ensureAdmin() {
-    let arr = await loadUsers();
-    if (!Array.isArray(arr)) arr = [];
-  
-    // Se já existe admin, só ajusta permissões e sessão
-    if (arr.some(u => u.role === 'admin')) {
-      console.log('[RBAC] Admin já existe (via Supabase).');
-  
-      arr = arr.map(u => {
-        if (u.role === 'admin') {
-          u.perms = permsAllTrue();
-        } else if (Array.isArray(u.perms)) {
-          u.perms = toPermObject(u.perms);
-        }
-        return u;
-      });
-  
-    } else {
-      // Em teoria o supabase-init já criou o admin,
-      // então aqui só logamos o estado.
-      console.warn('[RBAC] Nenhum admin encontrado na lista de usuários.');
-    }
-  
-    const s = current();
-    if (s && Array.isArray(s.perms)) {
-      s.perms = (s.role === 'admin') ? permsAllTrue() : toPermObject(s.perms);
-      setSession(s);
-    }
+  async function ensureAdmin(){
+    console.log('[RBAC] ensureAdmin: usando Supabase, admin deve ser criado via SQL (já existe).');
+    return;
   }
   
-
+  
   /* --- API pública --- */
   function list(){ return loadUsers(); }
   function listUsers(){ return list(); }
@@ -692,30 +666,21 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
   // Exposição
 // Exposição
 window.UserAuth = Object.assign(window.UserAuth || {}, {
-  // lista / CRUD
-  list, 
+  list,
   listUsers,
-  createUser, 
-  updateUser, 
+  createUser,
+  updateUser,
   removeUser,
-  
-  // sessão / auth
-  login, 
-  logout, 
+  login,
+  logout,
+  current: current,
   currentUser: current,
-  current,          // <– exposto para o adapter
-  setSession,       // <– exposto para o adapter
-  
-  // permissões
-  permsAllTrue,     // <– exposto para o adapter
+  setSession,       // <- para o adapter usar
+  permsAllTrue,     // <- para o adapter montar perms de admin
   can: (p) => hasPerm(current(), p),
-  has: (p) => hasPerm(current(), p),
-  isAdmin: () => (current()?.role === 'admin'),
-  
-  // extras
-  guard,
-  changePassword
+  has: (p) => hasPerm(current(), p)
 });
+
 
 
   /* ====== ENFORCE DE EMPRESAS (operador só vê/troca o que tiver permissão) ====== */

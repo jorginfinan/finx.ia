@@ -216,30 +216,37 @@ function openUsersMenu(triggerBtn, menu, parentCell){
 
 
   // ---------- tabela ----------
-  async function renderTable() {
-    // Aguarda a Promise do Supabase
-    let users = await (window.UserAuth?.list?.() || []);
-  
-    // Garante que é array
-    if (!Array.isArray(users)) {
-      console.warn('[Users] UserAuth.list não retornou array, usando fallback.', users);
+// ---------- tabela ----------
+async function renderTable() {
+  let users = [];
+
+  if (window.UserAuth?.list) {
+    try {
+      users = await window.UserAuth.list();
+    } catch (e) {
+      console.error('[Users] erro ao carregar usuários:', e);
       users = [];
     }
-  
-    const q = (page.querySelector('#userSearch')?.value || '').toLowerCase();
-    const onlyOps = !!page.querySelector('#userOnlyOps')?.checked;
-  
-    if (onlyOps) users = users.filter(u => u.role !== 'admin');
-    if (q) {
-      users = users.filter(u => {
-        const permsText = Array.isArray(u.perms)
-          ? u.perms.join(' ')
-          : Object.keys(u.perms || {}).filter(k => u.perms[k]).join(' ');
-        return (`${u.username} ${u.role} ${permsText}`).toLowerCase().includes(q);
-      });
-    }
-  
-    tblBody.innerHTML = '';
+  }
+
+  if (!Array.isArray(users)) {
+    console.warn('[Users] UserAuth.list não retornou array, usando [].', users);
+    users = [];
+  }
+
+  const q = (page.querySelector('#userSearch')?.value || '').toLowerCase();
+  const onlyOps = !!page.querySelector('#userOnlyOps')?.checked;
+
+  if (onlyOps) users = users.filter(u => u.role !== 'admin');
+  if (q) {
+    users = users.filter(u => {
+      const permsText = Array.isArray(u.perms)
+        ? u.perms.join(' ')
+        : Object.keys(u.perms || {}).filter(k => u.perms[k]).join(' ');
+      return (`${u.username} ${u.role} ${permsText}`).toLowerCase().includes(q);
+    });
+  }
+  tblBody.innerHTML = '';
     users.forEach(u => {
       const tr = document.createElement('tr');
       tr.dataset.role = u.role;

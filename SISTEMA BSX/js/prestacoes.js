@@ -242,7 +242,7 @@ window.fmtHora = window.fmtHora || function fmtHora(d){
 // ==== PRESTAÇÃO DE CONTAS ====
 function fillPcGerentes(){
   const sel = document.getElementById('pcGerente'); if (!sel) return;
-  const list = gerentes || [];
+  const list = Array.isArray(window.gerentes) ? window.gerentes.slice() : [];
   sel.innerHTML = '<option value="">Selecione</option>' +
     list.map(g => `<option value="${esc(g.uid||g.id)}">${esc(g.nome||'(sem nome)')}</option>`).join('');
 }

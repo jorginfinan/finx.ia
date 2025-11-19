@@ -1530,7 +1530,7 @@ baseComissao = calculoSaldo.baseCalculo;
 valorComissao1 = calculoSaldo.valorComissao;
 // Se resultado negativo, não desconta comissão; se positivo, desconta
 const resultadoBruto = calculoSaldo.resultado;
-resultado = resultadoBruto < 0 ? resultadoBruto : (resultadoBruto - valorComissao1);
+resultado = calculoSaldo.resultado - valorComissao1;
     
     // Atualiza o snapshot com informações do saldo
     prestacaoAtual.saldoInfo = {
@@ -1566,10 +1566,17 @@ resultado = resultadoBruto < 0 ? resultadoBruto : (resultadoBruto - valorComissa
     } else {
       baseComissao = coletas - despesasTot;
     }
-    valorComissao1 = (baseComissao * perc1) / 100;
-    resultado = (coletas - despesasTot) - valorComissao1;
-  }
-
+    
+    // Se base negativa E comissão menor que 50%, NÃO calcula comissão
+    if (baseComissao < 0 && perc1 < 50) {
+      valorComissao1 = 0;
+      resultado = baseComissao;
+    } else {
+      // Comissão 50% calcula SEMPRE (mesmo negativo)
+      valorComissao1 = (baseComissao * perc1) / 100;
+      resultado = baseComissao - valorComissao1;
+    }
+  } 
 // Quando resultado é negativo (empresa deve), adiantamento reduz a dívida (soma)
 // Quando resultado é positivo (gerente deve), adiantamento reduz o que gerente deve pagar (subtrai)
 const aPagar = resultado < 0 

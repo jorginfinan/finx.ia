@@ -1525,13 +1525,11 @@ for(let i = 0; i < listaPg.length; i++){
       saldoAnterior: saldoParaCalcular  // ✅ Usa o saldo correto
     });
     
-  // ✅ USA os valores do cálculo de saldo
+ // ✅ USA os valores do cálculo de saldo
 baseComissao = calculoSaldo.baseCalculo;
 valorComissao1 = calculoSaldo.valorComissao;
-// Se resultado negativo, não desconta comissão; se positivo, desconta
-const resultadoBruto = calculoSaldo.resultado;
 resultado = calculoSaldo.resultado - valorComissao1;
-    
+
     // Atualiza o snapshot com informações do saldo
     prestacaoAtual.saldoInfo = {
       saldoCarregarAnterior: calculoSaldo.saldoCarregarAnterior,

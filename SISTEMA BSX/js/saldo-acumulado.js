@@ -157,7 +157,7 @@
       }
   
       const valorComissao = (baseCalculo * comissao) / 100;
-      const aPagar = resultado < 0 ? resultado : valorComissao;
+      const aPagar = resultado - valorComissao;
   
       return {
         coletas,

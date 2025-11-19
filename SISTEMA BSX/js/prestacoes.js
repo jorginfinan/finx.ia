@@ -1930,7 +1930,7 @@ if (!dataURL) {
   ctx.fillStyle='#000'; ctx.font='bold 22px Arial';
 
   const gidSel = document.getElementById('pcGerente')?.value || '';
-  const g = gerentes.find(x=>x.uid===gidSel);
+  const g = (window.gerentes || []).find(x=>String(x.uid||x.id)===String(gidSel));
   const periodo = `${fmtData(document.getElementById('pcIni')?.value||'')} a ${fmtData(document.getElementById('pcFim')?.value||'')}`;
   drawText(ctx, 'Gerente', 20, 50, 'left');
   const coletorLinha = g ? (g.nome || '') : '';
@@ -2302,7 +2302,7 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
   const ini = document.getElementById('pcIni').value;
   const fim = document.getElementById('pcFim').value || new Date().toISOString().slice(0,10);
   const gerenteId = document.getElementById('pcGerente').value;
-  const g = gerentes.find(x=>x.uid===gerenteId) || {};
+  const g = (window.gerentes || []).find(x=>String(x.uid||x.id)===String(gerenteId)) || {};
   
   if(!gerenteId || !ini || !fim){ 
     alert('Selecione Gerente e informe o período.'); 
@@ -2415,7 +2415,7 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
   } catch(_){}
 
   try {
-    const gSel = gerentes.find(x => x.uid === gerenteId);
+    const gSel = (window.gerentes || []).find(x => String(x.uid||x.id) === String(gerenteId));
     const percSel = Number(gSel?.comissao || 0);
     if (percSel > 0 && percSel < 50) {
       const saldoNovo = Number(recPrest?.resumo?.saldoNegAcarreado) || 0;
@@ -3200,7 +3200,7 @@ document.getElementById('btnPcPng')?.addEventListener('click', ()=>{
       return;
     }
 
-    const g = gerentes.find(x => x.uid === rec.gerenteId);
+    const g = (window.gerentes || []).find(x => String(x.uid||x.id) === String(rec.gerenteId));
     const nomeGer = (g?.nome || 'Sem Gerente').trim();
     const nomeGerSafe = nomeGer.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 

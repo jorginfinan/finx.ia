@@ -90,4 +90,53 @@
   } else {
     ensureAdminExists();
   }
+  
+  // ===== CARREGAR GERENTES AUTOMATICAMENTE =====
+  async function carregarGerentes() {
+    try {
+      console.log('[Init] 📥 Carregando gerentes...');
+      
+      if (!window.SupabaseAPI?.gerentes) {
+        console.warn('[Init] SupabaseAPI.gerentes não disponível ainda');
+        setTimeout(carregarGerentes, 1000);
+        return;
+      }
+      
+      const gerentes = await window.SupabaseAPI.gerentes.getAll();
+      
+      if (Array.isArray(gerentes)) {
+        window.gerentes = gerentes.map(g => ({
+          uid: g.uid || g.id,
+          id: g.uid || g.id,
+          nome: g.nome || '(sem nome)',
+          numero: g.numero || '',
+          comissao: Number(g.comissao) || 0,
+          comissao2: Number(g.comissao2) || 0,
+          comissaoModo: g.comissao_modo || g.comissaoModo || 'simples',
+          comissaoPorRotaPositiva: g.comissao_por_rota_positiva || false,
+          temSegundaComissao: g.tem_segunda_comissao || false,
+          baseCalculo: g.base_calculo || g.baseCalculo || 'COLETAS_MENOS_DESPESAS',
+          ativo: g.ativo !== false
+        }));
+        
+        console.log(`[Init] ✅ ${window.gerentes.length} gerentes carregados`);
+        
+        document.dispatchEvent(new CustomEvent('gerentes:loaded', { 
+          detail: window.gerentes 
+        }));
+      }
+    } catch (error) {
+      console.error('[Init] Erro ao carregar gerentes:', error);
+    }
+  }
+  
+  // Carrega gerentes após 1 segundo
+  setTimeout(carregarGerentes, 1000);
+  
+  // Recarrega a cada 30 segundos
+  setInterval(carregarGerentes, 30000);
+  
+  // Função global para forçar reload
+  window.recarregarGerentes = carregarGerentes;
+
 })();

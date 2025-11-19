@@ -151,7 +151,7 @@ async function loadGerentes(){
     
     // Busca do Supabase
     if (window.SupabaseAPI && window.SupabaseAPI.gerentes) {
-      const arr = await window.SupabaseAPI.gerentes.getAtivos();
+      const arr = await window.SupabaseAPI.gerentes.getAll();
       
       if (!Array.isArray(arr)) {
         console.warn('[prestacoes] SupabaseAPI não retornou array:', arr);

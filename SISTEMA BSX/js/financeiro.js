@@ -840,7 +840,7 @@ function formatDate(date) {
         
         const gerenteNome = (window.gerentes||[]).find(g => 
           String(g.uid) === String(p.gerenteId)
-        )?.nome || p?.gerenteNome || '(excluído)';
+        )?.nome || p?.gerenteNome || (window.gerentes?.length ? '(excluído)' : '(carregando...)');
 
 // 1) Pagamentos normais (ENTRADA) - EXCETO DIVIDA_PAGA
 const pagamentos = []

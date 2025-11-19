@@ -1568,8 +1568,11 @@ for(let i = 0; i < listaPg.length; i++){
     resultado = (coletas - despesasTot) - valorComissao1;
   }
 
-// À pagar / Restam
-const aPagar = resultado + deveAnt - adiant + valorExtra + divida - credito + valePg;
+// Quando resultado é negativo (empresa deve), adiantamento reduz a dívida (soma)
+// Quando resultado é positivo (gerente deve), adiantamento reduz o que gerente deve pagar (subtrai)
+const aPagar = resultado < 0 
+  ? resultado + deveAnt + adiant + valorExtra + divida - credito + valePg
+  : resultado + deveAnt - adiant + valorExtra + divida - credito + valePg;
 
 // ✅ Calcula RESTAM baseado no sinal do À PAGAR
 let restam;

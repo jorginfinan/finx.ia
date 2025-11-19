@@ -1447,7 +1447,7 @@ function pcCalcular(){
   // gerente / % principal
   const sel = document.getElementById('pcGerente');
   const gerenteId = sel ? sel.value : '';
-  const g = (Array.isArray(window.gerentes) ? gerentes : []).find(function(x) { 
+  const g = (Array.isArray(window.gerentes) ? window.gerentes : []).find(function(x) { 
     return String(x.uid) === String(gerenteId); 
   });
   

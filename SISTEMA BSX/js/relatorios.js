@@ -593,10 +593,23 @@ function findGerenteInfo(gerenteId){
   return L.find(x => String(x?.uid ?? x?.id ?? '') === gid) || null;
 }
 
-// Nome seguro do gerente: tenta lista -> snapshot salvo na prestação -> "(excluído)"
+// Nome seguro do gerente: tenta lista -> snapshot salvo na prestação -> fallback adequado
 function getNomeGerente(recPrest){
+  // 1. Tenta buscar na lista de gerentes ativos
   const g = findGerenteInfo(recPrest?.gerenteId);
-  return safe(g?.nome || recPrest?.gerenteNome || '(excluído)');
+  if (g?.nome) return safe(g.nome);
+  
+  // 2. Usa nome salvo na prestação (sempre salvo no snapshot)
+  if (recPrest?.gerenteNome) return safe(recPrest.gerenteNome);
+  
+  // 3. Se window.gerentes não carregou ainda, indica isso
+  if (!window.gerentes || window.gerentes.length === 0) {
+    console.warn('[Relatórios] Gerentes não carregados - usando nome da prestação');
+    return safe(recPrest?.gerenteNome || '(carregando...)');
+  }
+  
+  // 4. Gerente realmente foi removido
+  return safe('(removido)');
 }
 
 

@@ -1443,7 +1443,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-function pcCalcular(){
+async function pcCalcular(){
   // gerente / % principal
   const sel = document.getElementById('pcGerente');
   const gerenteId = sel ? sel.value : '';
@@ -1516,7 +1516,7 @@ for(let i = 0; i < listaPg.length; i++){
       console.log('🔄 Editando - usando saldo anterior da prestação:', saldoParaCalcular);
     }
     
-    const calculoSaldo = window.SaldoAcumulado.calcular({
+    const calculoSaldo = await window.SaldoAcumulado.calcular({
       gerenteId: g.uid,
       empresaId: window.getCompany ? window.getCompany() : 'BSX',
       coletas: coletas,

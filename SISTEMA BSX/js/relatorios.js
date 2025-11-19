@@ -586,16 +586,26 @@ function safe(s){
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-// Procura um gerente por uid/id (string)
 function findGerenteInfo(gerenteId){
   const gid = String(gerenteId ?? '');
+  
+  // 1) Tenta window.gerentes (carregado do Supabase)
   const L = Array.isArray(window.gerentes) ? window.gerentes : [];
-  return L.find(x => String(x?.uid ?? x?.id ?? '') === gid) || null;
+  const found = L.find(x => String(x?.uid ?? x?.id ?? '') === gid);
+  if (found) return found;
+  
+  // 2) Tenta cache do GerentesLoader
+  if (window.GerentesLoader?.getCache) {
+    const cache = window.GerentesLoader.getCache();
+    const foundInCache = cache.find(x => String(x?.uid ?? x?.id ?? '') === gid);
+    if (foundInCache) return foundInCache;
+  }
+  
+  return null;
 }
 
-// Nome seguro do gerente: tenta lista -> snapshot salvo na prestação -> fallback adequado
 function getNomeGerente(recPrest){
-  // 1. Tenta buscar na lista de gerentes ativos
+  // 1. Tenta buscar na lista de gerentes ativos do Supabase
   const g = findGerenteInfo(recPrest?.gerenteId);
   if (g?.nome) return safe(g.nome);
   
@@ -604,7 +614,7 @@ function getNomeGerente(recPrest){
   
   // 3. Se window.gerentes não carregou ainda, indica isso
   if (!window.gerentes || window.gerentes.length === 0) {
-    console.warn('[Relatórios] Gerentes não carregados - usando nome da prestação');
+    console.warn('[Relatórios] Gerentes não carregados do Supabase - usando nome da prestação');
     return safe(recPrest?.gerenteNome || '(carregando...)');
   }
   

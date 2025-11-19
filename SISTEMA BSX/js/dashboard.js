@@ -143,21 +143,21 @@ function renderSaldo(ym){
 function gerenteNome(uid){
   const uidS = String(uid);
 
-  // 1) tentar na lista já carregada (se existir)
+  // 1) tentar na lista já carregada do Supabase
   if (Array.isArray(window.gerentes) && window.gerentes.length){
     const g = window.gerentes.find(x => String(x.uid ?? x.id) === uidS);
     if (g?.nome) return g.nome;
   }
 
-  // 2) ler direto do banco oficial
-  try {
-    const KEY = (typeof window.DB_GERENTES === 'string' && window.DB_GERENTES) ? window.DB_GERENTES : 'bsx_gerentes_v2';
-    const arr = JSON.parse(localStorage.getItem(KEY) || '[]') || [];
-    const g = arr.find(x => String(x.uid ?? x.id) === uidS);
+  // 2) Se ainda não carregou, tentar buscar do GerentesLoader
+  if (window.GerentesLoader?.getCache) {
+    const cache = window.GerentesLoader.getCache();
+    const g = cache.find(x => String(x.uid ?? x.id) === uidS);
     if (g?.nome) return g.nome;
-  } catch(_) {}
+  }
 
-  return '(excluído)';
+  // 3) Não encontrou - retorna carregando ou excluído
+  return window.gerentes ? '(excluído)' : '(carregando...)';
 }
 
 /* -------------------- 2) Resultado – prestações Abertas -------------------- */

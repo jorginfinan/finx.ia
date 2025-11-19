@@ -588,6 +588,27 @@
                 <label>Gerente</label>
                 <select id="pcGerente"></select>
               </div>
+              <label for="pcGerente">
+                Gerente
+                <button 
+                  type="button"
+                  onclick="abrirModalAjusteSaldo()"
+                  title="Ajustar saldo manualmente"
+                  style="
+                    background: transparent;
+                    border: 1px solid #ddd;
+                    padding: 6px 10px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 12px;
+                    color: #666;
+                    margin-left: 8px;
+                  "
+                >
+                  ⚙️
+                </button>
+              </label>
+              
               <div class="field">
                 <label>Período (início)</label>
                 <input type="date" id="pcIni" />
@@ -1582,6 +1603,7 @@ function pgDivAddFromForm(){
 <script src="js/fichas.js" defer></script>
 <script src="js/saldo-acumulado.js"></script>
 <script src="js/saldo-acumulado-ui.js"></script>
+<script src="ajuste-saldo-manual.js"></script>
 <script src="js/prestacoes.js" defer></script>
 <script src="js/relatorios.js" defer></script>
 <script src="js/financeiro.js" defer></script>

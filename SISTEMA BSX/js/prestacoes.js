@@ -1448,7 +1448,7 @@ function pcCalcular(){
   const sel = document.getElementById('pcGerente');
   const gerenteId = sel ? sel.value : '';
   const g = (Array.isArray(window.gerentes) ? window.gerentes : []).find(function(x) { 
-    return String(x.uid) === String(gerenteId); 
+    return String(x.uid || x.id) === String(gerenteId); 
   });
   
   if (!g) {

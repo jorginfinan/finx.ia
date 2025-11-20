@@ -82,10 +82,41 @@ function __setDespesas(arr) {
 
 // Inicializa despesas ao carregar
 (async function initDespesas() {
-  await loadDespesas();
-  if (typeof renderDespesas === 'function') {
-    renderDespesas();
+  console.log('[Despesas] 🔄 Iniciando carregamento...');
+  
+  // Aguardar API estar disponível
+  let tentativas = 0;
+  while (!window.SupabaseAPI?.despesas && tentativas < 20) {
+    console.log('[Despesas] ⏳ Aguardando API Supabase...');
+    await new Promise(resolve => setTimeout(resolve, 500));
+    tentativas++;
   }
+  
+  if (!window.SupabaseAPI?.despesas) {
+    console.error('[Despesas] ❌ API Supabase não disponível!');
+    window.despesas = [];
+    return;
+  }
+  
+  // Carregar despesas
+  await loadDespesas();
+  
+  // Aguardar DOM estar pronto
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('[Despesas] 📊 DOM pronto, renderizando...');
+      if (typeof renderDespesas === 'function') {
+        renderDespesas();
+      }
+    });
+  } else {
+    console.log('[Despesas] 📊 DOM já pronto, renderizando...');
+    if (typeof renderDespesas === 'function') {
+      renderDespesas();
+    }
+  }
+  
+  console.log('[Despesas] ✅ Inicialização completa');
 })();
 
 
@@ -202,7 +233,8 @@ const list = __getDespesas().filter(r=>{
     // 2) Agrupa por ficha
     const groups = new Map();
     for(const r of list){
-      const key = String(r.ficha||'');
+      // Tratar ficha vazia como "(sem ficha)"
+      const key = String(r.ficha || '').trim() || '(sem ficha)';
       if(!groups.has(key)) groups.set(key, []);
       groups.get(key).push(r);
     }
@@ -226,9 +258,9 @@ const list = __getDespesas().filter(r=>{
       const itens = groups.get(ficha).slice().sort((a,b)=> (a.data||'').localeCompare(b.data||''));
       const qtd   = itens.length;
   
-      const rota  = getRotaByFicha(ficha) || '—';
-      const gerentesSet = Array.from(new Set(itens.map(x=> (x.gerenteNome||'').trim()).filter(Boolean)));
-      const gerenteNome = gerentesSet.length <= 1 ? (gerentesSet[0]||'') : 'Vários';
+      const rota  = getRotaByFicha(ficha) || '(sem rota)';
+      const gerentesSet = Array.from(new Set(itens.map(x=> (x.gerenteNome||'(sem gerente)').trim()).filter(Boolean)));
+      const gerenteNome = gerentesSet.length <= 1 ? (gerentesSet[0]||'(sem gerente)') : 'Vários';
   
       if(qtd === 1){
         // === 1 despesa → igual antes
@@ -1407,3 +1439,64 @@ document.addEventListener('DOMContentLoaded', () => {
   buildDespesasFilterOptions();
   renderDespesas();
 });
+
+// ============================================
+// FORÇAR RENDERIZAÇÃO AO ABRIR PÁGINA DESPESAS
+// ============================================
+(function observarPaginaDespesas() {
+  // Observer para detectar quando página despesas fica visível
+  const observer = new MutationObserver(() => {
+    const pageDespesas = document.getElementById('pageDespesas');
+    if (pageDespesas && pageDespesas.style.display !== 'none') {
+      console.log('[Despesas] 👁️ Página visível, renderizando...');
+      
+      if (typeof buildDespesasFilterOptions === 'function') {
+        buildDespesasFilterOptions();
+      }
+      
+      if (typeof renderDespesas === 'function') {
+        renderDespesas();
+      }
+    }
+  });
+  
+  // Observar mudanças no body
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['style', 'class']
+  });
+  
+  // Também escutar hash changes (se usa navegação por hash)
+  window.addEventListener('hashchange', () => {
+    if (window.location.hash === '#despesas') {
+      console.log('[Despesas] 🔗 Navegou para #despesas');
+      setTimeout(() => {
+        if (typeof buildDespesasFilterOptions === 'function') {
+          buildDespesasFilterOptions();
+        }
+        if (typeof renderDespesas === 'function') {
+          renderDespesas();
+        }
+      }, 100);
+    }
+  });
+  
+  // Escutar evento customizado de navegação (se existir)
+  document.addEventListener('page:change', (e) => {
+    if (e.detail?.page === 'despesas') {
+      console.log('[Despesas] 📄 Evento page:change para despesas');
+      setTimeout(() => {
+        if (typeof buildDespesasFilterOptions === 'function') {
+          buildDespesasFilterOptions();
+        }
+        if (typeof renderDespesas === 'function') {
+          renderDespesas();
+        }
+      }, 100);
+    }
+  });
+  
+  console.log('[Despesas] 👁️ Observer de página ativado');
+})();

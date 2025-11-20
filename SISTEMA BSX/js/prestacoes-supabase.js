@@ -1,5 +1,5 @@
 // ============================================
-// PRESTAÇÕES SUPABASE - MIGRAÇÃO E SYNC
+// PRESTAÇÕES SUPABASE V2 - ESTRUTURA ADAPTADA
 // ============================================
 
 (function() {
@@ -31,6 +31,74 @@
   }
   
   // ============================================
+  // CONVERTER FORMATO LOCAL → SUPABASE
+  // ============================================
+  
+  function converterParaSupabase(prestacao) {
+    const resumo = prestacao.resumo || {};
+    
+    return {
+      uid: prestacao.id,
+      gerente_id: prestacao.gerenteId,
+      gerente_nome: prestacao.gerenteNome,
+      periodo: `${prestacao.ini} a ${prestacao.fim}`,
+      periodo_ini: prestacao.ini,
+      periodo_fim: prestacao.fim,
+      data: prestacao.fim || prestacao.ini,
+      status: prestacao.fechado ? 'fechada' : 'aberta',
+      // Valores numéricos extraídos
+      coletas: Number(resumo.coletas) || 0,
+      despesas: Number(resumo.despesas) || 0,
+      vales: Number(resumo.totalVales) || 0,
+      comissao_perc: Number(resumo.perc) || 0,
+      base_calculo: Number(resumo.baseComissao) || 0,
+      valor_comissa: Number(resumo.comissaoVal) || 0,
+      saldo_carrega: Number(resumo.saldoNegAcarreado) || 0,
+      a_pagar: Number(resumo.aPagar) || 0,
+      observacoes: prestacao.saldoInfo?.observacao || null,
+      fechada: prestacao.fechado || false,
+      // Dados completos em JSONB
+      dados: {
+        coletas: prestacao.coletas || [],
+        despesas: prestacao.despesas || [],
+        pagamentos: prestacao.pagamentos || [],
+        vales: prestacao.vales || [],
+        valesSel: prestacao.valesSel || [],
+        resumo: prestacao.resumo || {},
+        saldoInfo: prestacao.saldoInfo || null,
+        valeParcAplicado: prestacao.valeParcAplicado || []
+      },
+      pago: prestacao.pagamentos || [],
+      created_at: new Date().toISOString()
+    };
+  }
+  
+  // ============================================
+  // CONVERTER FORMATO SUPABASE → LOCAL
+  // ============================================
+  
+  function converterParaLocal(registro) {
+    const dados = registro.dados || {};
+    
+    return {
+      id: registro.uid,
+      gerenteId: registro.gerente_id,
+      gerenteNome: registro.gerente_nome,
+      ini: registro.periodo_ini,
+      fim: registro.periodo_fim,
+      coletas: dados.coletas || [],
+      despesas: dados.despesas || [],
+      pagamentos: dados.pagamentos || registro.pago || [],
+      vales: dados.vales || [],
+      valesSel: dados.valesSel || [],
+      resumo: dados.resumo || {},
+      saldoInfo: dados.saldoInfo || null,
+      valeParcAplicado: dados.valeParcAplicado || [],
+      fechado: registro.fechada || false
+    };
+  }
+  
+  // ============================================
   // SALVAR PRESTAÇÃO NO SUPABASE
   // ============================================
   
@@ -39,25 +107,9 @@
       const empresaId = await getEmpresaId();
       if (!empresaId) throw new Error('Empresa não encontrada');
       
-      // Prepara dados para o Supabase
-      const payload = {
-        uid: prestacao.id,
-        gerente_id: prestacao.gerenteId,
-        gerente_nome: prestacao.gerenteNome,
-        empresa_id: empresaId,
-        data_inicio: prestacao.ini,
-        data_fim: prestacao.fim,
-        coletas: prestacao.coletas || [],
-        despesas: prestacao.despesas || [],
-        pagamentos: prestacao.pagamentos || [],
-        vales: prestacao.vales || [],
-        resumo: prestacao.resumo || {},
-        saldo_info: prestacao.saldoInfo || null,
-        vale_parc_aplicado: prestacao.valeParcAplicado || [],
-        fechado: prestacao.fechado || false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
+      // Converte para estrutura do Supabase
+      const payload = converterParaSupabase(prestacao);
+      payload.empresa_id = empresaId;
       
       // Verifica se já existe
       const { data: existing } = await window.SupabaseAPI.client
@@ -110,27 +162,12 @@
         .from('prestacoes')
         .select('*')
         .eq('empresa_id', empresaId)
-        .order('data_fim', { ascending: false });
+        .order('periodo_fim', { ascending: false });
       
       if (error) throw error;
       
       // Converte para formato local
-      return (data || []).map(p => ({
-        id: p.uid,
-        gerenteId: p.gerente_id,
-        gerenteNome: p.gerente_nome,
-        ini: p.data_inicio,
-        fim: p.data_fim,
-        coletas: p.coletas || [],
-        despesas: p.despesas || [],
-        pagamentos: p.pagamentos || [],
-        vales: p.vales || [],
-        valesSel: [],
-        resumo: p.resumo || {},
-        saldoInfo: p.saldo_info || null,
-        valeParcAplicado: p.vale_parc_aplicado || [],
-        fechado: p.fechado || false
-      }));
+      return (data || []).map(converterParaLocal);
     } catch(e) {
       console.error('[Prestações] Erro ao carregar do Supabase:', e);
       return [];
@@ -196,7 +233,7 @@
       
       if (erros === 0) {
         console.log('🎉 Todas as prestações foram migradas com sucesso!');
-        console.log('💡 Você pode limpar o localStorage depois com: localStorage.removeItem("bsx_prestacoes_v1")');
+        console.log('💡 Agora as prestações estarão disponíveis em todos os dispositivos!');
       }
       
       return { sucesso, erros, total: prestsLocal.length };
@@ -279,7 +316,7 @@
     migrar: migrarPrestacoesParaSupabase
   };
   
-  console.log('✅ Módulo Prestações Supabase carregado!');
-  console.log('📌 Use: window.PrestacoesSupabase.migrar() para migrar');
+  console.log('✅ Módulo Prestações Supabase V2 carregado!');
+  console.log('📌 Use: await window.PrestacoesSupabase.migrar()');
   
 })();

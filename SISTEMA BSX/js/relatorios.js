@@ -1,9 +1,22 @@
+// === HELPER: Carregar prestações do Supabase ===
+async function carregarPrestacoes() {
+  if (typeof window.carregarPrestacoesGlobal === 'function') {
+    try {
+      return await window.carregarPrestacoesGlobal();
+    } catch(e) {
+      console.warn('[Relatórios] Erro ao carregar do Supabase, usando localStorage:', e);
+    }
+  }
+  // Fallback para localStorage
+  return JSON.parse(localStorage.getItem(DB_PREST)||'[]')||[];
+}
+
 // === PRESTAÇÕES SALVAS (com filtro De/Até) ===
-function renderRelPrestacoes(){
+async function renderRelPrestacoes(){
   const de  = document.getElementById('relDe')?.value || '';
   const ate = document.getElementById('relAte')?.value || '';
 
-  const arr = (JSON.parse(localStorage.getItem(DB_PREST)||'[]')||[])
+  const arr = (await carregarPrestacoes())
     .filter(p=>{
       // REMOVIDO: filtro por empresa
       if (p.fechado) return false;
@@ -66,11 +79,11 @@ if (typeof window.canDeletePrest !== 'function') {
   };
 }
 
-function renderPrestFechadas(){
+async function renderPrestFechadas(){
   const de  = document.getElementById('fechDe')?.value || '';
   const ate = document.getElementById('fechAte')?.value || '';
 
-  const arr = (JSON.parse(localStorage.getItem(DB_PREST)||'[]')||[])
+  const arr = (await carregarPrestacoes())
     .filter(p=>{
       // REMOVIDO: filtro por empresa
       if (!p.fechado) return false;
@@ -126,8 +139,8 @@ window.renderPrestFechadas = renderPrestFechadas;
 // Colocar ANTES de qualquer chamada a esta função
 window.viewPrestImage = viewPrestImage;
 
-function viewPrestImage(id){
-  const arr = JSON.parse(localStorage.getItem(DB_PREST) || '[]');
+async function viewPrestImage(id){
+  const arr = await carregarPrestacoes();
   const r = arr.find(x => x.id === id);
   if(!r){ alert("Prestação não encontrada."); return; }
 
@@ -208,8 +221,8 @@ document.getElementById('btnFechAplicar')?.addEventListener('click', renderPrest
 
   // EDITAR: carrega TUDO na tela de prestações (ordem segura)
 // EDITAR: carrega TUDO na tela de prestações (ordem segura)
-function editPrest(id){
-  const arr = JSON.parse(localStorage.getItem(DB_PREST)||'[]');
+async function editPrest(id){
+  const arr = await carregarPrestacoes();
   const r = arr.find(function(x) { return x.id === id; });
   if(!r){ alert("Prestação não encontrada."); return; }
 
@@ -281,7 +294,7 @@ function editPrest(id){
 }
 
 // ===== EXCLUIR PRESTAÇÃO (APENAS ADMIN) =====
-function deletePrest(id) {
+async function deletePrest(id) {
   // Verifica se é admin
   const currentUser = window.UserAuth?.currentUser?.();
   if (!currentUser || currentUser.role !== 'admin') {
@@ -289,7 +302,7 @@ function deletePrest(id) {
     return;
   }
 
-  const arr = JSON.parse(localStorage.getItem(DB_PREST) || '[]');
+  const arr = await carregarPrestacoes();
   const idx = arr.findIndex(x => x.id === id);
   
   if (idx === -1) {
@@ -335,11 +348,14 @@ function deletePrest(id) {
       });
     }
 
-    // ✅ 2. REMOVER DA ARRAY
-    arr.splice(idx, 1);
-    
-    // ✅ 3. SALVAR NO LOCALSTORAGE
-    localStorage.setItem(DB_PREST, JSON.stringify(arr));
+    // ✅ 2. DELETAR DO SUPABASE E LOCALSTORAGE
+    if (typeof window.deletarPrestacaoGlobal === 'function') {
+      await window.deletarPrestacaoGlobal(id);
+    } else {
+      // Fallback para localStorage
+      arr.splice(idx, 1);
+      localStorage.setItem(DB_PREST, JSON.stringify(arr));
+    }
 
     // ✅ 4. REGISTRAR NO HISTÓRICO/AUDITORIA
     if (window.AuditLog && typeof window.AuditLog.log === 'function') {
@@ -390,12 +406,12 @@ window.relExcluirPrest = deletePrest;
 window.excluirPrestacaoRel = deletePrest;
   
    // CALCULO RELATÓRIO DE RECEBIMENTOS DAS PRESTAÇÕES
-   function renderResultado(){
+   async function renderResultado(){
     const de  = document.getElementById('resDataDe')?.value || '';
     const ate = document.getElementById('resDataAte')?.value || '';
     const q   = (document.getElementById('resBusca')?.value || '').toLowerCase();
   
-    const arr = (JSON.parse(localStorage.getItem(DB_PREST) || '[]') || [])
+    const arr = (await carregarPrestacoes())
   .filter(p=>{
     const d = p.ini || '';
     if (de && d < de) return false;
@@ -682,9 +698,9 @@ function __consumeCarry(gerenteId, periodoIni, periodoFim){
 
 
 // ====== FECHAR SEMANA ======
-function fecharSemanaById(prestId, {forcar=false}={}){
+async function fecharSemanaById(prestId, {forcar=false}={}){
   // Lê do mesmo DB das prestações salvas
-  const arr = (JSON.parse(localStorage.getItem(DB_PREST)||'[]')||[]);
+  const arr = (await carregarPrestacoes());
   const idx = arr.findIndex(p => String(p.id)===String(prestId));
   if (idx<0){ alert('Prestação não encontrada.'); return; }
 
@@ -905,14 +921,14 @@ renderPrestFechadas?.();
   }
 
   // ---------- POPS ESPECÍFICOS ----------
-  function openPrestPop(btn){
+  async function openPrestPop(btn){
     // monta menu de PRESTAÇÕES (aberta x fechada)
     closePop();
     btnRef = btn; btnRef.setAttribute('aria-expanded','true'); btnRef.classList.add('is-open');
     killLegacyDropdown(btnRef);
 
     const id = getRowId(btnRef);
-    const list = JSON.parse(localStorage.getItem(DB_PREST)||'[]');
+    const list = await carregarPrestacoes();
     const rec  = list.find(x => [x.id,x.uid,x.key,x._id].some(v=> String(v)===String(id))) || null;
     const isClosed = !!rec?.fechado;
 
@@ -938,8 +954,8 @@ renderPrestFechadas?.();
     positionPop();
     setTimeout(()=>{ document.addEventListener('click', onDocClick, true); window.addEventListener('scroll', onRelayout, true); window.addEventListener('resize', onRelayout); },0);
   }
-  function reopenWeek(id){
-    const arr = JSON.parse(localStorage.getItem(DB_PREST)||'[]')||[];
+  async function reopenWeek(id){
+    const arr = await carregarPrestacoes();
     const i = arr.findIndex(p => String(p.id)===String(id));
     if (i < 0) { alert('Prestação não encontrada.'); return; }
   
@@ -954,8 +970,12 @@ renderPrestFechadas?.();
     prest.fechado = false;
     delete prest.fechadoEm;
   
-    // salva e re-render
-    localStorage.setItem(DB_PREST, JSON.stringify(arr));
+    // salva no Supabase e localStorage
+    if (typeof window.salvarPrestacaoGlobal === 'function') {
+      await window.salvarPrestacaoGlobal(prest);
+    } else {
+      localStorage.setItem(DB_PREST, JSON.stringify(arr));
+    }
     renderRelPrestacoes?.();
     renderPrestFechadas?.();
   

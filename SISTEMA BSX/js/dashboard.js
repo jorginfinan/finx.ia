@@ -24,7 +24,16 @@ function getLancs(){
 
 
 
-function getPrestacoes(){
+async function getPrestacoes(){
+  // Tenta carregar do Supabase primeiro
+  if (typeof window.carregarPrestacoesGlobal === 'function') {
+    try {
+      return await window.carregarPrestacoesGlobal();
+    } catch(e) {
+      console.warn('[Dashboard] Erro ao carregar do Supabase, usando localStorage:', e);
+    }
+  }
+  // Fallback para localStorage
   return fromLS([window.DB_PREST, 'bsx_prest_contas_v1', 'DB_PREST']) || [];
 }
 
@@ -162,10 +171,9 @@ function gerenteNome(uid){
 
 /* -------------------- 2) Resultado – prestações Abertas -------------------- */
 /* ========= Resultado – prestações ABERTAS (detalhado, 1 linha por gerente) ========= */
-function renderDashboardResultado(){
+async function renderDashboardResultado(){
   const q = (document.getElementById('dashResBusca')?.value || '').toLowerCase();
-  const KEY = (typeof window.DB_PREST !== 'undefined') ? window.DB_PREST : 'bsx_prest_contas_v1';
-  const arr = (JSON.parse(localStorage.getItem(KEY) || '[]') || []).filter(p => !p.fechado);
+  const arr = (await getPrestacoes()).filter(p => !p.fechado);
 
 
   const rows = arr.map(p=>{

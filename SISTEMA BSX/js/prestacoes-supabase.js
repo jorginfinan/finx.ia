@@ -5,7 +5,8 @@
 (function() {
   'use strict';
   
-  const DB_PREST_LOCAL = 'bsx_prestacoes_v1';
+  const DB_PREST_LOCAL = window.DB_PREST || 'bsx_prest_contas_v1';
+  const DB_EMPRESA_KEY = `${window.getCompany ? window.getCompany() : 'BSX'}__${DB_PREST_LOCAL}`;
   
   // ============================================
   // FUNÇÕES DE SUPABASE
@@ -168,8 +169,8 @@
     try {
       console.log('🔄 Iniciando migração de prestações...');
       
-      // Carrega do localStorage
-      const prestsLocal = JSON.parse(localStorage.getItem(DB_PREST_LOCAL) || '[]');
+      // Carrega do localStorage com chave da empresa
+      const prestsLocal = JSON.parse(localStorage.getItem(DB_EMPRESA_KEY) || '[]');
       
       if (!Array.isArray(prestsLocal) || prestsLocal.length === 0) {
         console.log('📭 Nenhuma prestação para migrar');
@@ -216,7 +217,7 @@
       await salvarPrestacaoSupabase(prestacao);
       
       // Também salva no localStorage como backup
-      const arr = JSON.parse(localStorage.getItem(DB_PREST_LOCAL) || '[]');
+      const arr = JSON.parse(localStorage.getItem(DB_EMPRESA_KEY) || '[]');
       const idx = arr.findIndex(p => p.id === prestacao.id);
       
       if (idx > -1) {
@@ -225,7 +226,7 @@
         arr.push(prestacao);
       }
       
-      localStorage.setItem(DB_PREST_LOCAL, JSON.stringify(arr));
+      localStorage.setItem(DB_EMPRESA_KEY, JSON.stringify(arr));
       
       return true;
     } catch(e) {
@@ -240,12 +241,12 @@
       const prestacoes = await carregarPrestacoesSupabase();
       
       // Atualiza localStorage como cache
-      localStorage.setItem(DB_PREST_LOCAL, JSON.stringify(prestacoes));
+      localStorage.setItem(DB_EMPRESA_KEY, JSON.stringify(prestacoes));
       
       return prestacoes;
     } catch(e) {
       console.error('[Prestações] Erro ao carregar, usando localStorage:', e);
-      return JSON.parse(localStorage.getItem(DB_PREST_LOCAL) || '[]');
+      return JSON.parse(localStorage.getItem(DB_EMPRESA_KEY) || '[]');
     }
   };
   
@@ -256,9 +257,9 @@
       await deletarPrestacaoSupabase(uid);
       
       // Deleta do localStorage
-      const arr = JSON.parse(localStorage.getItem(DB_PREST_LOCAL) || '[]');
+      const arr = JSON.parse(localStorage.getItem(DB_EMPRESA_KEY) || '[]');
       const filtered = arr.filter(p => p.id !== uid);
-      localStorage.setItem(DB_PREST_LOCAL, JSON.stringify(filtered));
+      localStorage.setItem(DB_EMPRESA_KEY, JSON.stringify(filtered));
       
       return true;
     } catch(e) {

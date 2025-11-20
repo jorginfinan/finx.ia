@@ -62,6 +62,27 @@ if (typeof window.fmtHora !== 'function') {
 
 console.log('✅ [Prestações] Helpers globais carregados');
 
+async function carregarPrestacoesIniciais() {
+  console.log('🔄 Carregando prestações...');
+  
+  if (typeof window.carregarPrestacoesGlobal === 'function') {
+    try {
+      const prestacoes = await window.carregarPrestacoesGlobal();
+      console.log('✅ Prestações carregadas do Supabase:', prestacoes.length);
+      window.dispatchEvent(new Event('prestacoes:loaded'));
+      return prestacoes;
+    } catch(e) {
+      console.error('❌ Erro ao carregar do Supabase, usando localStorage:', e);
+      return JSON.parse(localStorage.getItem(window.DB_PREST) || '[]');
+    }
+  } else {
+    console.warn('⚠️ Funções Supabase não disponíveis, usando localStorage');
+    return JSON.parse(localStorage.getItem(window.DB_PREST) || '[]');
+  }
+}
+
+window.carregarPrestacoesIniciais = carregarPrestacoesIniciais;
+console.log('✅ [Prestações] Função de carregamento Supabase disponível');
 
 // ===== SISTEMA DE PROTEÇÃO DE EVENT LISTENERS =====
 const __pcListeners = new WeakMap();
@@ -2307,8 +2328,8 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
   if (!btn || btn.__pcWired) return;
   btn.__pcWired = true;
   
-  addPcListener(btn, 'click', function() {
-  pcCalcular();
+  addPcListener(btn, 'click', async function() {  
+    pcCalcular();
   const ini = document.getElementById('pcIni').value;
   const fim = document.getElementById('pcFim').value || new Date().toISOString().slice(0,10);
   const gerenteId = document.getElementById('pcGerente').value;
@@ -2411,7 +2432,22 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
   }
 
   arr.push(recPrest);
-  localStorage.setItem(DB_PREST, JSON.stringify(arr));
+
+  // ✅ Salva no Supabase + localStorage
+  if (typeof window.salvarPrestacaoGlobal === 'function') {
+    try {
+      await window.salvarPrestacaoGlobal(recPrest);
+      console.log('✅ Prestação salva no Supabase:', recPrest.id);
+    } catch(e) {
+      console.error('❌ Erro ao salvar no Supabase:', e);
+      // Fallback: salva apenas no localStorage
+      localStorage.setItem(DB_PREST, JSON.stringify(arr));
+    }
+  } else {
+    // Fallback se Supabase não estiver carregado
+    localStorage.setItem(DB_PREST, JSON.stringify(arr));
+  }
+  
   try { window.__syncAbertasMirror(); } catch {}
 
   try {
@@ -3128,7 +3164,7 @@ window.getPrestacaoFromForm = getPrestacaoFromForm;
 window.viewPrestImage = viewPrestImage;
 
 // Excluir prestação salva (e reverter efeitos nos vales)
-function deletePrest(id){
+async function deletePrest(id){
   const arr = JSON.parse(localStorage.getItem(DB_PREST) || '[]');
   const r   = arr.find(x => x.id === id);
   if(!r){ alert('Prestação não encontrada.'); return; }
@@ -3165,10 +3201,25 @@ function deletePrest(id){
     }
   } catch(e){ console.warn('Estorno de vales ao excluir prestação:', e); }
 
-  // 2) Remove a prestação
-  const novo = arr.filter(x => x.id !== id);
+// 2) Remove a prestação
+const novo = arr.filter(x => x.id !== id);
+
+// ✅ Deleta do Supabase + localStorage
+if (typeof window.deletarPrestacaoGlobal === 'function') {
+  try {
+    await window.deletarPrestacaoGlobal(id);
+    console.log('✅ Prestação deletada do Supabase:', id);
+  } catch(e) {
+    console.error('❌ Erro ao deletar do Supabase:', e);
+    // Fallback: deleta apenas do localStorage
+    localStorage.setItem(DB_PREST, JSON.stringify(novo));
+  }
+} else {
+  // Fallback se Supabase não estiver carregado
   localStorage.setItem(DB_PREST, JSON.stringify(novo));
-  try { window.__syncAbertasMirror(); } catch {}
+}
+
+try { window.__syncAbertasMirror(); } catch {}
 
    // ✅ NOTIFICA SINCRONIZAÇÃO
    if (typeof window.SyncManager !== 'undefined') {

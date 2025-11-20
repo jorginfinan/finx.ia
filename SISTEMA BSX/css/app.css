@@ -2213,7 +2213,250 @@ input[id="pcRestam"] {
       display: none !important;
     }
   }
+/* ============================================
+   CSS PARA MENU DROPDOWN DE DESPESAS
+   ============================================ */
 
+/* Container do dropdown */
+.desp-acts {
+  position: relative;
+  display: inline-block;
+}
+
+.desp-dd {
+  position: relative;
+  display: inline-block;
+}
+
+/* Botão "Opções" */
+.desp-dd button[data-desp-dd-toggle] {
+  padding: 6px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.desp-dd button[data-desp-dd-toggle]:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.desp-dd button[data-desp-dd-toggle]:active {
+  background: #e5e7eb;
+}
+
+/* Menu dropdown (inicialmente oculto) */
+.desp-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  min-width: 160px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
+              0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-10px);
+  transition: all 0.2s ease;
+}
+
+/* Menu aberto */
+.desp-menu.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+/* Itens do menu */
+.desp-menu button.mi {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 14px;
+  text-align: left;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #374151;
+  transition: all 0.15s ease;
+  border-radius: 0;
+}
+
+.desp-menu button.mi:first-child {
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+}
+
+.desp-menu button.mi:last-child {
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+.desp-menu button.mi:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.desp-menu button.mi:active {
+  background: #e5e7eb;
+}
+
+/* Botão de excluir (vermelho) */
+.desp-menu button.mi.danger {
+  color: #dc2626;
+  font-weight: 600;
+  border-top: 1px solid #e5e7eb;
+  margin-top: 4px;
+  padding-top: 10px;
+}
+
+.desp-menu button.mi.danger:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.desp-menu button.mi.danger:active {
+  background: #fecaca;
+}
+
+/* Botão mini toggle (+ detalhes / - detalhes) */
+.btn-mini-toggle {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #2563eb;
+  background: transparent;
+  border: 1px solid #2563eb;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-mini-toggle:hover {
+  background: #2563eb;
+  color: #fff;
+}
+
+.btn-mini-toggle:active {
+  background: #1d4ed8;
+}
+
+/* Linha de despesa oculta */
+tr.row-oculta {
+  opacity: 0.5;
+  background: #f9fafb;
+}
+
+tr.row-oculta td {
+  color: #6b7280;
+}
+
+/* Pill de "ocultada" */
+.pill-oculta {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #dc2626;
+  background: #fee2e2;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Linhas de detalhes (filhas) */
+tr.tr-det {
+  background: #f9fafb;
+}
+
+tr.tr-det td {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+tr.tr-det td.td-info-indent {
+  padding-left: 24px;
+}
+
+/* Responsividade Mobile */
+@media (max-width: 768px) {
+  .desp-menu {
+    right: auto;
+    left: 0;
+    min-width: 140px;
+  }
+  
+  .desp-menu button.mi {
+    padding: 12px 16px;
+    font-size: 15px;
+  }
+  
+  .btn-mini-toggle {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+}
+
+/* Wrapper da tabela com scroll */
+.desp-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Aviso de despesas ocultas */
+#despAvisoOcultas {
+  padding: 12px;
+  margin-bottom: 16px;
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  border-radius: 6px;
+  color: #92400e;
+  font-size: 14px;
+}
+
+#despAvisoOcultas a {
+  color: #2563eb;
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+#despAvisoOcultas a:hover {
+  color: #1d4ed8;
+}
+
+#despAvisoOcultas.hidden {
+  display: none;
+}
+
+/* Estado de loading */
+.desp-loading {
+  text-align: center;
+  padding: 40px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.desp-loading::before {
+  content: "⏳";
+  display: block;
+  font-size: 32px;
+  margin-bottom: 12px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 
 

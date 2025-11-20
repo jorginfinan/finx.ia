@@ -361,6 +361,24 @@
           throw error;
         }
       }
+      
+      async deleteByUid(uid) {
+        try {
+          const empresaId = await getEmpresaId();
+          
+          const { error } = await this.client
+            .from(this.table)
+            .delete()
+            .eq('uid', uid)
+            .eq('empresa_id', empresaId);
+          
+          if (error) throw error;
+          return true;
+        } catch (error) {
+          console.error('Erro ao deletar despesa:', error);
+          return false;
+        }
+      }
     }
     
     // ============================================

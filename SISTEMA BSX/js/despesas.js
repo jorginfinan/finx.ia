@@ -3,11 +3,21 @@
 // ✅ CARREGAR DESPESAS DO SUPABASE
 async function loadDespesas() {
   try {
-    window.despesas = await window.SupabaseAPI.despesas.getAll();
+    const despesas = await window.SupabaseAPI.despesas.getAll();
+    window.despesas = despesas.map(d => ({
+      ...d,
+      // Garante que campos essenciais existam
+      id: d.id || d.uid,
+      uid: d.uid || d.id,
+      valor: Number(d.valor) || 0,
+      isHidden: d.isHidden || d.is_hidden || false
+    }));
     console.log('[Despesas] Carregadas do Supabase:', window.despesas.length);
+    return window.despesas;
   } catch (error) {
     console.error('[Despesas] Erro ao carregar:', error);
     window.despesas = [];
+    return [];
   }
 }
 
@@ -34,51 +44,25 @@ async function saveDespesa(despesa) {
 }
 
 // Substituir window.saveDesp
-window.saveDesp = saveDespesas;
+window.saveDesp = saveDespesa;
 
-(function initDespesasGlobal() {
-  const KEY = 'bsx_despesas_v1';
-  
-  // Inicializa array global
-  if (!Array.isArray(window.despesas)) {
-    try {
-      const raw = localStorage.getItem(KEY);
-      window.despesas = raw ? JSON.parse(raw) : [];
-      
-      // Garante que é array
-      if (!Array.isArray(window.despesas)) {
-        window.despesas = [];
-      }
-      
-      console.log('[Despesas] Inicializado:', window.despesas.length, 'itens');
-    } catch(e) {
-      console.error('[Despesas] Erro ao carregar:', e);
-      window.despesas = [];
-    }
+// Helper functions para compatibilidade
+function __getDespesas() {
+  return window.despesas || [];
+}
+
+function __setDespesas(arr) {
+  window.despesas = arr;
+}
+
+// Inicializa despesas ao carregar
+(async function initDespesas() {
+  await loadDespesas();
+  if (typeof renderDespesas === 'function') {
+    renderDespesas();
   }
-  
-  // Função de salvar global
-  if (typeof window.saveDesp !== 'function') {
-    window.saveDesp = function() {
-      try {
-        const arr = Array.isArray(window.despesas) ? window.despesas : [];
-        localStorage.setItem(KEY, JSON.stringify(arr));
-        console.log('[Despesas] Salvou:', arr.length, 'itens');
-        
-        // Notifica outras abas
-        try {
-          if (window.BroadcastChannel) {
-            const bc = new BroadcastChannel('bsx-sync');
-            bc.postMessage({ key: KEY });
-          }
-        } catch(e) {}
-      } catch(e) {
-        console.error('[Despesas] Erro ao salvar:', e);
-      }
-    };
-  }
-  
 })();
+
 
 (function  ()  {
     'use strict';
@@ -1037,6 +1021,124 @@ function ensureSelect(id, placeholder){
 }
 
 
+// ============================================
+// ✅ EVENT LISTENERS PARA MENU DROPDOWN
+// ============================================
+
+// 1️⃣ Abrir/Fechar Menu Dropdown "Opções"
+if (!window.__despDropdownBound) {
+  document.addEventListener('click', (e) => {
+    const toggle = e.target.closest('[data-desp-dd-toggle]');
+    
+    if (toggle) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const dropdown = toggle.closest('[data-desp-dd]');
+      const menu = dropdown?.querySelector('[data-desp-dd-menu]');
+      
+      if (menu) {
+        const isOpen = menu.classList.contains('show');
+        
+        // Fecha todos os menus abertos
+        document.querySelectorAll('[data-desp-dd-menu].show').forEach(m => {
+          m.classList.remove('show');
+          const btn = m.closest('[data-desp-dd]')?.querySelector('[data-desp-dd-toggle]');
+          if (btn) btn.setAttribute('aria-expanded', 'false');
+        });
+        
+        // Abre/fecha o menu clicado
+        if (!isOpen) {
+          menu.classList.add('show');
+          toggle.setAttribute('aria-expanded', 'true');
+        }
+      }
+      return;
+    }
+    
+    // Fecha menus ao clicar fora
+    if (!e.target.closest('[data-desp-dd]')) {
+      document.querySelectorAll('[data-desp-dd-menu].show').forEach(m => {
+        m.classList.remove('show');
+        const btn = m.closest('[data-desp-dd]')?.querySelector('[data-desp-dd-toggle]');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
+      });
+    }
+  }, true);
+  
+  window.__despDropdownBound = true;
+}
+
+// 2️⃣ Processar Ações do Menu (Toggle Hide, Editar, Excluir)
+if (!window.__despMenuActionsBound) {
+  document.addEventListener('click', async (e) => {
+    const actionBtn = e.target.closest('[data-desp-act]');
+    if (!actionBtn) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const action = actionBtn.getAttribute('data-desp-act');
+    const id = actionBtn.getAttribute('data-id');
+    
+    // Fecha o menu
+    const menu = actionBtn.closest('[data-desp-dd-menu]');
+    if (menu) {
+      menu.classList.remove('show');
+      const btn = menu.closest('[data-desp-dd]')?.querySelector('[data-desp-dd-toggle]');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
+    
+    const arr = __getDespesas();
+    const idx = arr.findIndex(x => String(x.id) === String(id) || String(x.uid) === String(id));
+    
+    if (idx === -1) {
+      alert('Despesa não encontrada.');
+      return;
+    }
+    
+    // TOGGLE HIDE
+    if (action === 'toggle-hide') {
+      arr[idx].isHidden = !arr[idx].isHidden;
+      __setDespesas(arr);
+      await saveDespesa(arr[idx]);
+      renderDespesas();
+    }
+    
+    // EDITAR
+    else if (action === 'editar') {
+      console.log('[Despesas] Editar:', arr[idx]);
+      alert('Função de editar em desenvolvimento.');
+      // TODO: Implementar modal de edição
+    }
+    
+    // EXCLUIR
+    else if (action === 'excluir') {
+      if (!confirm('Tem certeza que deseja excluir esta despesa?')) return;
+      
+      try {
+        const uid = arr[idx].uid || arr[idx].id;
+        
+        // Remove do array local
+        const novo = arr.filter(x => String(x.id) !== String(id) && String(x.uid) !== String(id));
+        __setDespesas(novo);
+        
+        // Remove do Supabase
+        await window.SupabaseAPI.despesas.deleteByUid(uid);
+        
+        alert('Despesa excluída com sucesso!');
+        renderDespesas();
+      } catch (error) {
+        console.error('[Despesas] Erro ao excluir:', error);
+        alert('Erro ao excluir despesa: ' + error.message);
+      }
+    }
+  }, true);
+  
+  window.__despMenuActionsBound = true;
+}
+
+
 // Delegação global para expandir/contrair grupos (não depende do render)
 if (!window.__despInlineGroupBound) {
   document.addEventListener('click', (e)=>{
@@ -1057,9 +1159,9 @@ if (!window.__despInlineGroupBound) {
   window.__despInlineGroupBound = true;
 }
 
-// Ações admin: Ocultar/Desocultar e Excluir
+// Ações admin: Ocultar/Desocultar e Excluir (botões antigos - manter compatibilidade)
 if (!window.__despAdminActionsBound) {
-  document.addEventListener('click', (e)=>{
+  document.addEventListener('click', async (e)=>{
     // Toggle ocultar/desocultar
     const hideBtn = e.target.closest('button[data-toggle-hide]');
     if (hideBtn) {
@@ -1078,8 +1180,8 @@ if (!window.__despAdminActionsBound) {
 
       arr[idx].isHidden = !arr[idx].isHidden;
       __setDespesas(arr);
-      if (typeof saveDesp === 'function') saveDesp();
-      if (typeof renderDespesas === 'function') renderDespesas();
+      await saveDespesa(arr[idx]);
+      renderDespesas();
       return;
     }
 
@@ -1093,17 +1195,29 @@ if (!window.__despAdminActionsBound) {
       if (!confirm('Excluir despesa?')) return;
 
       const arr  = __getDespesas();
-      const novo = arr.filter(x => String(x.id) !== String(id));
+      const idx = arr.findIndex(x => String(x.id) === String(id));
 
-      if (novo.length === arr.length) {
+      if (idx === -1) {
         console.warn('[DESPESAS] id não encontrado para excluir:', id, arr.map(x=>x.id));
         alert('Não foi possível localizar esta despesa para excluir.');
         return;
       }
 
-      __setDespesas(novo);
-      if (typeof saveDesp === 'function') saveDesp();
-      if (typeof renderDespesas === 'function') renderDespesas();
+      try {
+        const uid = arr[idx].uid || arr[idx].id;
+        
+        // Remove do array
+        const novo = arr.filter(x => String(x.id) !== String(id));
+        __setDespesas(novo);
+        
+        // Remove do Supabase
+        await window.SupabaseAPI.despesas.deleteByUid(uid);
+        
+        renderDespesas();
+      } catch (error) {
+        console.error('[DESPESAS] Erro ao excluir:', error);
+        alert('Erro ao excluir: ' + error.message);
+      }
     }
   }, true);
   window.__despAdminActionsBound = true;
@@ -1168,7 +1282,7 @@ if (!window.__despGroupHideBound) {
     }
   }
 
-  document.addEventListener('click', (e)=>{
+  document.addEventListener('click', async (e)=>{
     // 3.1 — Entrar no modo seleção
     const btnGroup = e.target.closest('[data-ocultar-grupo]');
     if (btnGroup){
@@ -1214,18 +1328,28 @@ if (!window.__despGroupHideBound) {
 
       const arr = __getDespesas();
       let changed = 0;
-      ids.forEach(id=>{
+      
+      for (const id of ids) {
         const i = arr.findIndex(x => String(x.id) === String(id));
-        if (i > -1 && !arr[i].isHidden){ arr[i].isHidden = true; changed++; }
-      });
+        if (i > -1 && !arr[i].isHidden) { 
+          arr[i].isHidden = true; 
+          changed++;
+          
+          // Salva no Supabase
+          try {
+            await saveDespesa(arr[i]);
+          } catch (error) {
+            console.error('[Despesas] Erro ao ocultar:', error);
+          }
+        }
+      }
 
       if (changed > 0){
         __setDespesas(arr);
-        if (typeof saveDesp === 'function') saveDesp();
       }
 
       // re-render e volta ao modo normal
-      if (typeof renderDespesas === 'function') renderDespesas();
+      renderDespesas();
       setTimeout(()=> setSelectionMode(groupId, false), 0);
     }
   }, true);
@@ -1239,18 +1363,22 @@ if (!window.__despGroupHideBound) {
     renderDespesas();
   });
 });
-buildDespesasFilterOptions();
-renderDespesas();
+
+// Event listeners para filtros
+['despBuscaGerente', 'despBuscaFicha', 'despBuscaRota'].forEach(id => {
+  document.getElementById(id)?.addEventListener('change', renderDespesas);
+});
+
 document.getElementById('despMostrarOcultas')?.addEventListener('change', ()=>{
-  // Se quiser que as opções de Gerente/Rota/Ficha também considerem as ocultas quando ligar o checkbox,
-  // descomente a próxima linha:
-  // buildDespesasFilterOptions();
   renderDespesas();
 });
+
 document.addEventListener('DOMContentLoaded', () => {
   const tbl = document.querySelector('#pageDespesas table');
   if (tbl && tbl.parentElement) {
     tbl.parentElement.classList.add('desp-table-wrap');
   }
+  
+  buildDespesasFilterOptions();
+  renderDespesas();
 });
-

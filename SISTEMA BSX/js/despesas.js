@@ -82,41 +82,10 @@ function __setDespesas(arr) {
 
 // Inicializa despesas ao carregar
 (async function initDespesas() {
-  console.log('[Despesas] 🔄 Iniciando carregamento...');
-  
-  // Aguardar API estar disponível
-  let tentativas = 0;
-  while (!window.SupabaseAPI?.despesas && tentativas < 20) {
-    console.log('[Despesas] ⏳ Aguardando API Supabase...');
-    await new Promise(resolve => setTimeout(resolve, 500));
-    tentativas++;
-  }
-  
-  if (!window.SupabaseAPI?.despesas) {
-    console.error('[Despesas] ❌ API Supabase não disponível!');
-    window.despesas = [];
-    return;
-  }
-  
-  // Carregar despesas
   await loadDespesas();
-  
-  // Aguardar DOM estar pronto
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      console.log('[Despesas] 📊 DOM pronto, renderizando...');
-      if (typeof renderDespesas === 'function') {
-        renderDespesas();
-      }
-    });
-  } else {
-    console.log('[Despesas] 📊 DOM já pronto, renderizando...');
-    if (typeof renderDespesas === 'function') {
-      renderDespesas();
-    }
+  if (typeof renderDespesas === 'function') {
+    renderDespesas();
   }
-  
-  console.log('[Despesas] ✅ Inicialização completa');
 })();
 
 
@@ -1438,64 +1407,3 @@ document.addEventListener('DOMContentLoaded', () => {
   buildDespesasFilterOptions();
   renderDespesas();
 });
-
-// ============================================
-// FORÇAR RENDERIZAÇÃO AO ABRIR PÁGINA DESPESAS
-// ============================================
-(function observarPaginaDespesas() {
-  // Observer para detectar quando página despesas fica visível
-  const observer = new MutationObserver(() => {
-    const pageDespesas = document.getElementById('pageDespesas');
-    if (pageDespesas && pageDespesas.style.display !== 'none') {
-      console.log('[Despesas] 👁️ Página visível, renderizando...');
-      
-      if (typeof buildDespesasFilterOptions === 'function') {
-        buildDespesasFilterOptions();
-      }
-      
-      if (typeof renderDespesas === 'function') {
-        renderDespesas();
-      }
-    }
-  });
-  
-  // Observar mudanças no body
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ['style', 'class']
-  });
-  
-  // Também escutar hash changes (se usa navegação por hash)
-  window.addEventListener('hashchange', () => {
-    if (window.location.hash === '#despesas') {
-      console.log('[Despesas] 🔗 Navegou para #despesas');
-      setTimeout(() => {
-        if (typeof buildDespesasFilterOptions === 'function') {
-          buildDespesasFilterOptions();
-        }
-        if (typeof renderDespesas === 'function') {
-          renderDespesas();
-        }
-      }, 100);
-    }
-  });
-  
-  // Escutar evento customizado de navegação (se existir)
-  document.addEventListener('page:change', (e) => {
-    if (e.detail?.page === 'despesas') {
-      console.log('[Despesas] 📄 Evento page:change para despesas');
-      setTimeout(() => {
-        if (typeof buildDespesasFilterOptions === 'function') {
-          buildDespesasFilterOptions();
-        }
-        if (typeof renderDespesas === 'function') {
-          renderDespesas();
-        }
-      }, 100);
-    }
-  });
-  
-  console.log('[Despesas] 👁️ Observer de página ativado');
-})();

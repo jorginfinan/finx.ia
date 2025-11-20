@@ -325,12 +325,26 @@
         try {
           const empresaId = await getEmpresaId();
           
+          // Mapear campos do JS para Supabase
+          const despesaSupabase = {
+            uid: despesa.uid,
+            ficha: despesa.ficha || '',
+            gerente_nome: despesa.gerenteNome || despesa.gerente_nome || '',
+            descricao: despesa.info || despesa.descricao || '', // info → descricao
+            valor: Number(despesa.valor) || 0,
+            data: despesa.data || new Date().toISOString().split('T')[0],
+            periodo_ini: despesa.periodoIni || despesa.periodo_ini || null,
+            periodo_fim: despesa.periodoFim || despesa.periodo_fim || null,
+            oculta: despesa.isHidden || despesa.oculta || false, // isHidden → oculta
+            rota: despesa.rota || '',
+            categoria: despesa.categoria || '',
+            editada: false,
+            empresa_id: empresaId
+          };
+          
           const { data, error } = await this.client
             .from(this.table)
-            .insert([{
-              ...despesa,
-              empresa_id: empresaId
-            }])
+            .insert([despesaSupabase])
             .select()
             .single();
           
@@ -346,9 +360,34 @@
         try {
           const empresaId = await getEmpresaId();
           
+          // Mapear campos do JS para Supabase
+          const patchSupabase = {};
+          
+          if (patch.ficha !== undefined) patchSupabase.ficha = patch.ficha;
+          if (patch.gerenteNome !== undefined || patch.gerente_nome !== undefined) {
+            patchSupabase.gerente_nome = patch.gerenteNome || patch.gerente_nome;
+          }
+          if (patch.info !== undefined || patch.descricao !== undefined) {
+            patchSupabase.descricao = patch.info || patch.descricao; // info → descricao
+          }
+          if (patch.valor !== undefined) patchSupabase.valor = Number(patch.valor);
+          if (patch.data !== undefined) patchSupabase.data = patch.data;
+          if (patch.periodoIni !== undefined || patch.periodo_ini !== undefined) {
+            patchSupabase.periodo_ini = patch.periodoIni || patch.periodo_ini;
+          }
+          if (patch.periodoFim !== undefined || patch.periodo_fim !== undefined) {
+            patchSupabase.periodo_fim = patch.periodoFim || patch.periodo_fim;
+          }
+          if (patch.isHidden !== undefined || patch.oculta !== undefined) {
+            patchSupabase.oculta = patch.isHidden !== undefined ? patch.isHidden : patch.oculta; // isHidden → oculta
+          }
+          if (patch.rota !== undefined) patchSupabase.rota = patch.rota;
+          if (patch.categoria !== undefined) patchSupabase.categoria = patch.categoria;
+          if (patch.editada !== undefined) patchSupabase.editada = patch.editada;
+          
           const { data, error } = await this.client
             .from(this.table)
-            .update(patch)
+            .update(patchSupabase)
             .eq('uid', uid)
             .eq('empresa_id', empresaId)
             .select()

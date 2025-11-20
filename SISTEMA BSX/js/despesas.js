@@ -5,12 +5,21 @@ async function loadDespesas() {
   try {
     const despesas = await window.SupabaseAPI.despesas.getAll();
     window.despesas = despesas.map(d => ({
-      ...d,
-      // Garante que campos essenciais existam
-      id: d.id || d.uid,
+      // Mapear campos do Supabase para JS
+      id: d.id,
       uid: d.uid || d.id,
+      ficha: d.ficha || '',
+      gerenteNome: d.gerente_nome || '', // gerente_nome → gerenteNome
+      info: d.descricao || '', // descricao → info
       valor: Number(d.valor) || 0,
-      isHidden: d.isHidden || d.is_hidden || false
+      data: d.data || '',
+      periodoIni: d.periodo_ini || '', // periodo_ini → periodoIni
+      periodoFim: d.periodo_fim || '', // periodo_fim → periodoFim
+      isHidden: d.oculta || false, // oculta → isHidden
+      rota: d.rota || '',
+      categoria: d.categoria || '',
+      obs: d.obs || '',
+      editada: d.editada || false
     }));
     console.log('[Despesas] Carregadas do Supabase:', window.despesas.length);
     return window.despesas;
@@ -24,13 +33,29 @@ async function loadDespesas() {
 // ✅ SALVAR DESPESA NO SUPABASE
 async function saveDespesa(despesa) {
   try {
+    // Mapear campos do JS para Supabase
+    const despesaParaSalvar = {
+      uid: despesa.uid || despesa.id,
+      ficha: despesa.ficha || '',
+      gerenteNome: despesa.gerenteNome || '', // Será convertido para gerente_nome na API
+      info: despesa.info || '', // Será convertido para descricao na API
+      valor: Number(despesa.valor) || 0,
+      data: despesa.data || '',
+      periodoIni: despesa.periodoIni || '', // Será convertido para periodo_ini na API
+      periodoFim: despesa.periodoFim || '', // Será convertido para periodo_fim na API
+      isHidden: despesa.isHidden || false, // Será convertido para oculta na API
+      rota: despesa.rota || '',
+      categoria: despesa.categoria || '',
+      obs: despesa.obs || ''
+    };
+    
     if (despesa.id) {
       // Atualizar existente
-      await window.SupabaseAPI.despesas.updateByUid(despesa.uid, despesa);
+      await window.SupabaseAPI.despesas.updateByUid(despesa.uid, despesaParaSalvar);
     } else {
       // Criar nova
-      despesa.uid = window.uid();
-      await window.SupabaseAPI.despesas.create(despesa);
+      despesaParaSalvar.uid = window.uid();
+      await window.SupabaseAPI.despesas.create(despesaParaSalvar);
     }
     
     // Recarrega lista

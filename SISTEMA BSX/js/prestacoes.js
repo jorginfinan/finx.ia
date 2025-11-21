@@ -1535,41 +1535,15 @@ for(let i = 0; i < listaPg.length; i++){
   else                         pagos    += val;
 }
 
-let totalVales = 0;
+const valesAplicados = Array.isArray(prestacaoAtual?.valeParcAplicado) 
+  ? prestacaoAtual.valeParcAplicado 
+  : [];
 
-// 1. Vales aplicados parcialmente
-if (Array.isArray(prestacaoAtual?.valeParcAplicado) && prestacaoAtual.valeParcAplicado.length > 0) {
-  totalVales = prestacaoAtual.valeParcAplicado.reduce((sum, v) => sum + (Number(v.aplicado) || 0), 0);
-  console.log('✅ Vales de valeParcAplicado:', totalVales);
-}
+const totalValesAplicados = valesAplicados.reduce((sum, v) => {
+  return sum + (Number(v.aplicado) || 0);
+}, 0);
 
-// 2. Vales selecionados (valeSelec)
-if (totalVales === 0 && Array.isArray(prestacaoAtual?.valeSelec) && prestacaoAtual.valeSelec.length > 0) {
-  totalVales = prestacaoAtual.valeSelec.reduce((sum, v) => sum + (Number(v.valor) || 0), 0);
-  console.log('✅ Vales de valeSelec:', totalVales);
-}
-
-// 3. Vales selecionados (valesSel)
-if (totalVales === 0 && Array.isArray(prestacaoAtual?.valesSel) && prestacaoAtual.valesSel.length > 0) {
-  totalVales = prestacaoAtual.valesSel.reduce((sum, v) => sum + (Number(v.valor) || 0), 0);
-  console.log('✅ Vales de valesSel:', totalVales);
-}
-
-// 4. Vales simples
-if (totalVales === 0 && Array.isArray(prestacaoAtual?.vales) && prestacaoAtual.vales.length > 0) {
-  totalVales = prestacaoAtual.vales.reduce((sum, v) => sum + (Number(v.valor) || 0), 0);
-  console.log('✅ Vales de vales:', totalVales);
-}
-
-// 5. Vales do resumo
-if (totalVales === 0 && prestacaoAtual?.resumo?.totalVales) {
-  totalVales = Number(prestacaoAtual.resumo.totalVales) || 0;
-  console.log('✅ Vales do resumo:', totalVales);
-}
-
-valePg += totalVales;
-
-console.log('💰 Total vales:', totalVales, 'valePg final:', valePg);
+valePg += totalValesAplicados;
 
   // ======= CONFIGURAÇÕES DO GERENTE =======
   const temSegundaComissao = !!g.temSegundaComissao || (g.comissao2 > 0);
@@ -1675,8 +1649,8 @@ resultado = calculoSaldo.resultado - valorComissao1;
 // Quando resultado é negativo (empresa deve), adiantamento reduz a dívida (soma)
 // Quando resultado é positivo (gerente deve), adiantamento reduz o que gerente deve pagar (subtrai)
 const aPagar = resultado < 0 
-  ? resultado + deveAnt + adiant + valorExtra + divida - credito + valePg
-  : resultado + deveAnt - adiant + valorExtra + divida - credito + valePg;
+  ? resultado + deveAnt + adiant + valorExtra + divida - credito + totalVales
+  : resultado + deveAnt - adiant + valorExtra + divida - credito + totalVales;
 
 // ✅ Calcula RESTAM baseado no sinal do À PAGAR
 let restam;

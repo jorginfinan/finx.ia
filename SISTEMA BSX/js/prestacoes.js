@@ -1971,14 +1971,14 @@ function drawLine(ctx, x1, y, x2, color = '#000', width = 1) {
 
 
 // Desenha o relatório direto no <canvas id="pcCanvas"> da tela atual 
-function pcDesenharCanvas(){
+async function pcDesenharCanvas(){
   const cvs = document.getElementById('pcCanvas');
   if(!cvs){ return; }
   if(!cvs.getContext){ alert('Seu navegador não suporta canvas.'); return; }
   const ctx = cvs.getContext('2d');
 
     // monta o "rec" atual a partir do formulário
-    const rec = getPrestacaoFromForm();
+    const rec = await getPrestacaoFromForm();  // ✅ AGUARDA
     const dataURL = (typeof window.prestToDataURL === 'function') 
   ? window.prestToDataURL(rec) 
   : null;
@@ -2371,7 +2371,7 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
   btn.__pcWired = true;
   
   addPcListener(btn, 'click', async function() {  
-    pcCalcular();
+    await pcCalcular();  // ✅ AGUARDA o recálculo terminar
   const ini = document.getElementById('pcIni').value;
   const fim = document.getElementById('pcFim').value || new Date().toISOString().slice(0,10);
   const gerenteId = document.getElementById('pcGerente').value;
@@ -2674,8 +2674,8 @@ Isso também APAGA TODO o histórico desse vale.`;
 
 
 // Monta um objeto de prestação a partir do formulário atual
-function getPrestacaoFromForm(){
-  pcCalcular(); // garante totais
+async function getPrestacaoFromForm(){
+  await pcCalcular(); // ✅ AGUARDA recálculo antes de montar o objeto
   __recalcValeParcFromPagamentos();
   return {
     id: uid(),
@@ -3291,9 +3291,9 @@ window.addEventListener('storage', (e)=>{
 
 
 // --- Botão: GERAR PNG (baixa o arquivo)
-document.getElementById('btnPcPng')?.addEventListener('click', ()=>{
+document.getElementById('btnPcPng')?.addEventListener('click', async ()=>{  // ✅ async
   try{
-    const rec = getPrestacaoFromForm();           // monta o registro a partir da tela
+    const rec = await getPrestacaoFromForm();  // ✅ AGUARDA
     const dataURL = prestToDataURL(rec);          // gera o PNG offscreen
 
     if(!dataURL || !dataURL.startsWith('data:image/png')) {
@@ -3364,7 +3364,7 @@ function pcResetForm(){
 
 
 // Preenche Deve Anterior e Adiantamento se houver carry pendente
-function pcApplyCarryIfAny(){
+async function pcApplyCarryIfAny(){  // ✅ async
   const sel = document.getElementById('pcGerente');
   const ini = document.getElementById('pcIni')?.value || '';
   const fim = document.getElementById('pcFim')?.value || '';
@@ -3415,7 +3415,7 @@ function pcApplyCarryIfAny(){
   if (deveEl)   deveEl.value   = (toNum(deveEl.value)   + somaDeve).toString();
   if (adiantEl) adiantEl.value = (toNum(adiantEl.value) + somaAdi ).toString();
 
-  if (typeof pcCalcular === 'function') pcCalcular();
+  if (typeof pcCalcular === 'function') await pcCalcular();  // ✅ AGUARDA
   window.__carryAppliedMap.add(keyOnce);
 }
 
@@ -4401,11 +4401,11 @@ window.addEventListener('beforeunload', function() {
 
 
     // Gerar PNG (popup da imagem)
-    wire(['btnPcPng','btnPcGerarImagem'], function(e){
+    wire(['btnPcPng','btnPcGerarImagem'], async function(e){  // ✅ async
       e.preventDefault();
       try {
         const rec = typeof getPrestacaoFromForm === 'function'
-          ? getPrestacaoFromForm() : null;
+          ? await getPrestacaoFromForm() : null;  // ✅ AGUARDA
         const png = window.prestToDataURL?.(rec);
         if (!png) { alert('Não foi possível gerar a imagem.'); return; }
         const w = window.open('', 'img_prestacao');

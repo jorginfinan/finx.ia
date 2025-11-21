@@ -1547,7 +1547,7 @@ const valePg = valesAplicados.reduce((sum, v) => {
   // ======= CONFIGURAÇÕES DO GERENTE =======
   const temSegundaComissao = !!g.temSegundaComissao || (g.comissao2 > 0);
   const comissaoPorRotaPositiva = !!g.comissaoPorRotaPositiva;
-  const baseCalculo = g.baseCalculo || 'coletas-despesas';
+  const baseCalculo = (g.baseCalculo || g.base_calculo || 'COLETAS_MENOS_DESPESAS').toUpperCase();
   const perc2 = Number(g.comissao2) || 0;
   
   // ======= CÁLCULO BASEADO NO MODELO =======
@@ -1629,7 +1629,7 @@ resultado = calculoSaldo.resultado - valorComissao1;
     
   } else {
     // MODELO 3: Padrão (LUÍS) OU Comissão 50%
-    if (baseCalculo === 'coletas') {
+    if (baseCalculo === 'COLETAS') {
       baseComissao = coletas;
     } else {
       baseComissao = coletas - despesasTot;

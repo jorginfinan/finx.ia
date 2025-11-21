@@ -1646,23 +1646,14 @@ resultado = calculoSaldo.resultado - valorComissao1;
       resultado = baseComissao - valorComissao1;
     }
   } 
-// Quando resultado é negativo (empresa deve), adiantamento reduz a dívida (soma)
-// Quando resultado é positivo (gerente deve), adiantamento reduz o que gerente deve pagar (subtrai)
-const aPagar = resultado < 0 
-  ? resultado + deveAnt + adiant + valorExtra + divida - credito + totalVales
-  : resultado + deveAnt - adiant + valorExtra + divida - credito + totalVales;
+// ✅ FÓRMULA CORRETA: A Pagar = Resultado + Acréscimos - Crédito
+// Acréscimos = Deve Anterior + Adiantamento + Valor Extra + Vales Aplicados
+const totalAcrescimos = deveAnt + adiant + valorExtra + valePg;
+const aPagar = resultado + totalAcrescimos - credito;
 
-// ✅ Calcula RESTAM baseado no sinal do À PAGAR
-let restam;
-if (aPagar < 0) {
-  // Empresa deve ao gerente
-  // Pagamentos de DIVIDA_PAGA DIMINUEM o quanto empresa ainda deve
-  // Exemplo: aPagar = -13.091,81, pagamento = +13.091,81 → restam = 0
-  restam = aPagar + pagamentosDivida - (pagos + adiantPg);
-} else {
-  // Gerente deve à empresa (caso normal)
-  restam = aPagar - (pagos + adiantPg + pagamentosDivida);
-}
+// ✅ FÓRMULA CORRETA: RESTAM = A Pagar - Pagamentos
+// Pagamentos = Normal + Adiantamento (não inclui vales pois já estão nos acréscimos)
+const restam = aPagar - (pagos + adiantPg);
 
   // UI - Atualizar campos
   const $ = function(id) { return document.getElementById(id); };
@@ -1697,6 +1688,7 @@ if (aPagar < 0) {
     comis1: valorComissao1, 
     comis2: valorComissao2,
     baseComissao: baseComissao,
+    totalAcrescimos: totalAcrescimos,  // ✅ Adiciona total de acréscimos
     aPagar: aPagar, 
     pagos: pagos, 
     restam: restam, 
@@ -2264,7 +2256,7 @@ itensVale.forEach(function(p) {
                { valueColor:'#b91c1c', size: R_LINE });
 });
 
-// ✅ TOTAL ACRÉSCIMOS (para todos os modelos)
+// ✅ TOTAL ACRÉSCIMOS (Deve Anterior + Adiantamento + Valor Extra + Vales)
 const totalAcrescimos = (Number(r.adiant)||0) + deveAnt2 + (Number(r.valorExtra)||0) + totalVales;
 
 ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Total Acréscimos', fmtBRL(totalAcrescimos),
@@ -3079,7 +3071,7 @@ window.prestToDataURL = function(rec) {
                      { valueColor:'#b91c1c', size: R_LINE });
       });
 
-      // ✅ TOTAL ACRÉSCIMOS (para todos os modelos)
+      // ✅ TOTAL ACRÉSCIMOS (Deve Anterior + Adiantamento + Valor Extra + Vales)
       const totalAcrescimos = (Number(r.adiant)||0) + deveAnt2 + (Number(r.valorExtra)||0) + totalVales;
 
       ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Total Acréscimos', 

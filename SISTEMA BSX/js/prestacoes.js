@@ -2290,7 +2290,7 @@ if (temSegundaComissao) {
   resultadoColetas = _resColetas2 - c1;
 }
 
-const aPagarCalc = resultadoColetas + totalAcrescimos - (Number(r.credito)||0);
+const aPagarCalc = Number(r.aPagar) || 0;  // ✅ Usa o valor já calculado
 
 ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'À Pagar', fmtBRL(aPagarCalc),
              { bold:true, size: R_BOLD });
@@ -3113,8 +3113,7 @@ window.prestToDataURL = function(rec) {
         resultadoColetas = _resColetas2 - c1;
       }
 
-      const totalAcrescimos = (Number(r.adiant)||0) + deveAnt2 + (Number(r.valorExtra)||0);
-      const aPagarCalc = resultadoColetas + totalAcrescimos - (Number(r.credito)||0);
+      const aPagarCalc = Number(r.aPagar) || 0;
 
       ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'À Pagar', 
                    window.fmtBRL ? window.fmtBRL(aPagarCalc) : String(aPagarCalc),

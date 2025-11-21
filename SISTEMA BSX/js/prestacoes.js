@@ -1628,23 +1628,39 @@ resultado = calculoSaldo.resultado - valorComissao1;
     resultado = coletas - valorComissao1 - despesasTot;
     
   } else {
-    // MODELO 3: Padrão (LUÍS) OU Comissão 50%
-    if (baseCalculo === 'COLETAS') {
-      baseComissao = coletas;
-    } else {
-      baseComissao = coletas - despesasTot;
-    }
+    // MODELO 3: Padrão ou Comissão 50%
     
-    // Se base negativa E comissão menor que 50%, NÃO calcula comissão
-    if (baseComissao < 0 && perc1 < 50) {
-      valorComissao1 = 0;
-      resultado = baseComissao;
+    if (baseCalculo === 'COLETAS') {
+      // ✅ Comissão sobre COLETAS (não 50%)
+      const resultadoSemComissao = coletas - despesasTot;
+      
+      // Se resultado negativo E comissão < 50%, NÃO calcula
+      if (resultadoSemComissao < 0 && perc1 < 50) {
+        baseComissao = 0;
+        valorComissao1 = 0;
+        resultado = resultadoSemComissao;
+      } else {
+        // Senão, calcula comissão sobre coletas
+        baseComissao = coletas;
+        valorComissao1 = (baseComissao * perc1) / 100;
+        resultado = coletas - valorComissao1 - despesasTot;
+      }
+      
     } else {
-      // Comissão 50% calcula SEMPRE (mesmo negativo)
-      valorComissao1 = (baseComissao * perc1) / 100;
-      resultado = baseComissao - valorComissao1;
+      // ✅ Comissão sobre (COLETAS - DESPESAS)
+      baseComissao = coletas - despesasTot;
+      
+      // Se base negativa E comissão < 50%, NÃO calcula
+      if (baseComissao < 0 && perc1 < 50) {
+        valorComissao1 = 0;
+        resultado = baseComissao;
+      } else {
+        // Comissão 50% calcula SEMPRE (mesmo negativo)
+        valorComissao1 = (baseComissao * perc1) / 100;
+        resultado = baseComissao - valorComissao1;
+      }
     }
-  } 
+  }
 // ✅ FÓRMULA CORRETA: A Pagar = Resultado + Acréscimos - Crédito
 // Acréscimos = Deve Anterior + Adiantamento + Valor Extra + Vales Aplicados
 const totalAcrescimos = deveAnt + adiant + valorExtra + valePg;

@@ -1523,27 +1523,26 @@ async function pcCalcular(){
 
 // pagamentos
 const listaPg = Array.isArray(prestacaoAtual?.pagamentos) ? prestacaoAtual.pagamentos : [];
-let adiantPg = 0, valePg = 0, pagos = 0, pagamentosDivida = 0;
+let adiantPg = 0, pagos = 0, pagamentosDivida = 0;
 for(let i = 0; i < listaPg.length; i++){
   const p = listaPg[i];
   const forma = (p?.forma || '').toString().toUpperCase();
   const val   = Number(p?.valor) || 0;
   
   if(forma === 'ADIANTAMENTO') adiantPg += val;
-  else if(forma === 'VALE')    valePg   += val;
-  else if(forma === 'DIVIDA_PAGA') pagamentosDivida += val;  // ✅ Separa dívida
+  else if(forma === 'VALE')    continue;  // ✅ IGNORA - vales vêm de valeParcAplicado
+  else if(forma === 'DIVIDA_PAGA') pagamentosDivida += val;
   else                         pagos    += val;
 }
 
+// ✅ Vales vêm SOMENTE de valeParcAplicado
 const valesAplicados = Array.isArray(prestacaoAtual?.valeParcAplicado) 
   ? prestacaoAtual.valeParcAplicado 
   : [];
 
-const totalValesAplicados = valesAplicados.reduce((sum, v) => {
+const valePg = valesAplicados.reduce((sum, v) => {
   return sum + (Number(v.aplicado) || 0);
 }, 0);
-
-valePg += totalValesAplicados;
 
   // ======= CONFIGURAÇÕES DO GERENTE =======
   const temSegundaComissao = !!g.temSegundaComissao || (g.comissao2 > 0);
@@ -2290,7 +2289,7 @@ if (temSegundaComissao) {
   resultadoColetas = _resColetas2 - c1;
 }
 
-const aPagarCalc = Number(r.aPagar) || 0;  // ✅ Usa o valor já calculado
+const aPagarCalc = Number(r.aPagar) || 0;  
 
 ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'À Pagar', fmtBRL(aPagarCalc),
              { bold:true, size: R_BOLD });

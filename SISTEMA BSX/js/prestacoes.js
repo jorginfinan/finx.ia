@@ -1234,7 +1234,7 @@ class CalculadoraComissao {
     this.comissao2 = Number(gerente.comissao2 || 0);
     this.temSegundaComissao = !!gerente.temSegundaComissao || Number(gerente.comissao2) > 0;
     this.comissaoPorRotaPositiva = !!gerente.comissaoPorRotaPositiva;
-    this.baseCalculo = gerente.baseCalculo || 'coletas-despesas';
+    this.baseCalculo = (gerente.base_calculo || gerente.baseCalculo || 'COLETAS_MENOS_DESPESAS').toUpperCase();
   }
   
   // Calcula o total de coletas
@@ -1284,7 +1284,7 @@ class CalculadoraComissao {
     }
     
     // Senão, usa a configuração do gerente
-    if (this.baseCalculo === 'coletas') {
+    if (this.baseCalculo === 'COLETAS') {  // ✅ Maiúscula
       return totalColetas;
     } else {
       return totalColetas - totalDespesas;

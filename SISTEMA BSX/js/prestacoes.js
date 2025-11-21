@@ -1558,7 +1558,7 @@ const valePg = valesAplicados.reduce((sum, v) => {
   let valorComissao2 = 0;
   let resultado = 0;
         // SALDO ACUMULADO
-        if (window.SaldoAcumulado && g && perc1 > 0 && perc1 < 50 && !temSegundaComissao) {
+        if (window.SaldoAcumulado && g && perc1 > 0 && perc1 < 50 && !temSegundaComissao && baseCalculo !== 'COLETAS') {
   
     // ✅ Se está editando uma prestação, pega o saldo SEM incluir esta prestação
     let saldoParaCalcular = undefined;

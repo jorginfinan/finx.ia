@@ -1534,6 +1534,15 @@ for(let i = 0; i < listaPg.length; i++){
   else if(forma === 'DIVIDA_PAGA') pagamentosDivida += val;  // ✅ Separa dívida
   else                         pagos    += val;
 }
+const valesAplicados = Array.isArray(prestacaoAtual?.valeParcAplicado) 
+  ? prestacaoAtual.valeParcAplicado 
+  : [];
+
+const totalValesAplicados = valesAplicados.reduce((sum, v) => {
+  return sum + (Number(v.aplicado) || 0);
+}, 0);
+
+valePg += totalValesAplicados;
 
   // ======= CONFIGURAÇÕES DO GERENTE =======
   const temSegundaComissao = !!g.temSegundaComissao || (g.comissao2 > 0);

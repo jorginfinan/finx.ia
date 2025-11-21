@@ -183,13 +183,12 @@ async function renderDashboardResultado(){
     const aPagar     = Number(p?.resumo?.aPagar) || 0;
     const pagamentos = Array.isArray(p.pagamentos) ? p.pagamentos : [];
 
-    // ✅ ADIANTAMENTO: Valores pagos pela empresa ao gerente (ADIANTAMENTO + VALE)
     const adiant = pagamentos
-      .filter(x => {
-        const f = String(x.forma||'').toUpperCase();
-        return (f === 'ADIANTAMENTO' || f === 'VALE') && !x.cancelado;
-      })
-      .reduce((s,x)=> s + (Number(x.valor)||0), 0);
+    .filter(x => {
+      const f = String(x.forma||'').toUpperCase();
+      return f === 'ADIANTAMENTO' && !x.cancelado;
+    })
+    .reduce((s,x)=> s + (Number(x.valor)||0), 0);
 
     // ✅ RECEBIDO: Valores recebidos do gerente (PIX, Dinheiro, etc) - EXCLUI pagamentos da empresa
     const recebido = pagamentos

@@ -362,7 +362,7 @@ function pcRenderColetas(){
     if (!btn || btn.__pcWired) return;
     btn.__pcWired = true;
     
-    addPcListener(btn, 'click', function() {
+    addPcListener(btn, 'click', async function() {
   const nome  = (document.getElementById('colNome')?.value || '').trim();
   let   valor = String(document.getElementById('colValor')?.value || '').trim();
   if(valor.includes(',')) valor = valor.replace(/\./g,'').replace(',','.');
@@ -391,7 +391,7 @@ function pcRenderColetas(){
     if (!btn || btn.__pcWired) return;
     btn.__pcWired = true;
     
-    addPcListener(btn, 'click', function() {
+    addPcListener(btn, 'click', async function() {
   const gid = document.getElementById('pcGerente')?.value;
   if(!gid){ alert('Selecione um gerente.'); return; }
 
@@ -967,7 +967,7 @@ function pgVAddFromForm(){
   if (!btn || btn.__pcWired) return;
   btn.__pcWired = true;
   
-  addPcListener(btn, 'click', function() {
+  addPcListener(btn, 'click', async function() {
   if(!confirm('Limpar os pagamentos de VALE desta prestação?')) return;
 
   prestacaoAtual.pagamentos = (prestacaoAtual.pagamentos||[]).filter(p => (p.forma||'').toUpperCase()!=='VALE');
@@ -996,7 +996,7 @@ pcSchedule();
   if (!btn || btn.__pcWired) return;
   btn.__pcWired = true;
   
-  addPcListener(btn, 'click', function() {
+  addPcListener(btn, 'click', async function() {
   if(!confirm('Limpar os pagamentos NORMAIS desta prestação?')) return;
   prestacaoAtual.pagamentos = (prestacaoAtual.pagamentos||[]).filter(p => (p.forma||'').toUpperCase()==='VALE');
   pcSchedule();
@@ -1147,7 +1147,7 @@ function vlAddFromForm(){
   if (!btn || btn.__pcWired) return;
   btn.__pcWired = true;
   
-  addPcListener(btn, 'click', function() {
+  addPcListener(btn, 'click', async function() {
   prestacaoAtual.vales = [];
   pcSchedule();
 });
@@ -1293,12 +1293,32 @@ class CalculadoraComissao {
   
   // Calcula valores de comissão
   calcularComissoes() {
-    const baseComissao = this.getBaseComissao();
+    const totalColetas = this.getTotalColetas();
+    const totalDespesas = this.getTotalDespesas();
     
-    const valorComissao1 = (baseComissao * this.comissao1) / 100;
-    const valorComissao2 = this.temSegundaComissao 
-      ? (baseComissao * this.comissao2) / 100 
-      : 0;
+    // ✅ Verifica se resultado é positivo antes de calcular comissões
+    const resultadoSemComissao = totalColetas - totalDespesas;
+    
+    let baseComissao = 0;
+    let valorComissao1 = 0;
+    let valorComissao2 = 0;
+    
+    if (this.temSegundaComissao) {
+      // ✅ Só calcula comissões se resultado for positivo
+      if (resultadoSemComissao > 0) {
+        baseComissao = this.getBaseComissao();
+        valorComissao1 = (baseComissao * this.comissao1) / 100;
+        
+        const resultadoApos1a = totalColetas - valorComissao1 - totalDespesas;
+        if (resultadoApos1a > 0) {
+          valorComissao2 = (resultadoApos1a * this.comissao2) / 100;
+        }
+      }
+    } else {
+      // Outros modelos mantêm lógica original
+      baseComissao = this.getBaseComissao();
+      valorComissao1 = (baseComissao * this.comissao1) / 100;
+    }
     
     return {
       base: baseComissao,
@@ -1308,6 +1328,7 @@ class CalculadoraComissao {
       percentual2: this.comissao2
     };
   }
+
   
   // Calcula o resultado final
   calcularResultado(deveAnterior = 0, adiantamento = 0, valorExtra = 0) {
@@ -1564,13 +1585,32 @@ resultado = calculoSaldo.resultado - valorComissao1;
     
   } else if (temSegundaComissao) {
     // MODELO 1: Dupla comissão (CAÇULA)
-    baseComissao = coletas;
-    valorComissao1 = (baseComissao * perc1) / 100;
     
-    const resultadoIntermediario = coletas - valorComissao1;
-    valorComissao2 = (resultadoIntermediario * perc2) / 100;
+    // ✅ Primeiro calcula o resultado SEM nenhuma comissão
+    const resultadoSemComissao = coletas - despesasTot;
     
-    resultado = coletas - valorComissao1 - valorComissao2 - despesasTot;
+    // ✅ Só calcula comissões se resultado for POSITIVO
+    if (resultadoSemComissao > 0) {
+      baseComissao = coletas;
+      valorComissao1 = (baseComissao * perc1) / 100;
+      
+      const resultadoApos1aComissao = coletas - valorComissao1 - despesasTot;
+      
+      if (resultadoApos1aComissao > 0) {
+        valorComissao2 = (resultadoApos1aComissao * perc2) / 100;
+      } else {
+        valorComissao2 = 0;
+      }
+      
+      resultado = coletas - valorComissao1 - valorComissao2 - despesasTot;
+      
+    } else {
+      // ✅ Resultado negativo - ZERA todas as comissões
+      baseComissao = 0;
+      valorComissao1 = 0;
+      valorComissao2 = 0;
+      resultado = resultadoSemComissao;
+    }
     
   } else if (comissaoPorRotaPositiva) {
     // MODELO 2: Comissão por rota positiva (MARCOS)
@@ -2340,7 +2380,7 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
     return; 
   }
 
-  const arr = JSON.parse(localStorage.getItem(DB_PREST)||'[]');
+  const arr = await window.carregarPrestacoesGlobal();
 
   let reusedId = null;
   let prevRec  = null;
@@ -2440,13 +2480,11 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
       console.log('✅ Prestação salva no Supabase:', recPrest.id);
     } catch(e) {
       console.error('❌ Erro ao salvar no Supabase:', e);
-      // Fallback: salva apenas no localStorage
-      localStorage.setItem(DB_PREST, JSON.stringify(arr));
+
     }
-  } else {
-    // Fallback se Supabase não estiver carregado
-    localStorage.setItem(DB_PREST, JSON.stringify(arr));
-  }
+  } 
+
+  
   
   try { window.__syncAbertasMirror(); } catch {}
 

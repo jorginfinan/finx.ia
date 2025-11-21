@@ -1486,6 +1486,16 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function pcCalcular(){
+
+  console.log('🔍 DEBUG pcCalcular:', {
+    baseCalculo: baseCalculo,
+    baseCalculoOriginal: g.baseCalculo,
+    comissaoPorRotaPositiva: comissaoPorRotaPositiva,
+    temSegundaComissao: temSegundaComissao,
+    perc1: perc1,
+    coletas: coletas,
+    despesas: despesasTot
+  });
   // gerente / % principal
   const sel = document.getElementById('pcGerente');
   const gerenteId = sel ? sel.value : '';
@@ -1628,6 +1638,17 @@ resultado = calculoSaldo.resultado - valorComissao1;
     resultado = coletas - valorComissao1 - despesasTot;
     
   } else {
+    console.log('🔍 Entrou no MODELO 3');
+  console.log('🔍 baseCalculo === COLETAS?', baseCalculo === 'COLETAS');
+  console.log('🔍 baseCalculo:', baseCalculo);
+   // MODELO 3: Padrão (LUÍS) OU Comissão 50%
+   if (baseCalculo === 'COLETAS') {
+    console.log('✅ Calculando sobre COLETAS');
+    baseComissao = coletas;
+  } else {
+    console.log('✅ Calculando sobre COLETAS-DESPESAS');
+    baseComissao = coletas - despesasTot;
+  }
     // MODELO 3: Padrão ou Comissão 50%
     
     if (baseCalculo === 'COLETAS') {

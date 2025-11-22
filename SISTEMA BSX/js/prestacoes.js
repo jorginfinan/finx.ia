@@ -719,27 +719,61 @@ function __uidFallback(){
 }
 
 // Adiciona uma nova linha de despesa vazia (editável)
-function pcAddDespesa(preset = {}){
+async function pcAddDespesa(preset = {}){
   const id = (typeof uid === 'function' ? uid() : __uidFallback());
-
-  (prestacaoAtual.despesas ||= []).push({
+  
+  const novaDespesa = {
     id,
-    // campos que sua UI já espera:
     ficha:  String(preset.ficha || '').trim(),
     info:   String(preset.info  || '').trim(),
     valor:  Number(preset.valor || 0)
-  });
-
-  // redesenha a tabela e recalcula o total
-  renderDespesas();  
+  };
+  
+  (prestacaoAtual.despesas ||= []).push(novaDespesa);
+  
+  // ✅ SALVAR NO SUPABASE (com await)
+  try {
+    await salvarDespesaNoSupabase(novaDespesa);
+  } catch(e) {
+    console.error('Erro ao salvar despesa no Supabase:', e);
+    // Opcional: remover da lista se falhar
+    // prestacaoAtual.despesas.pop();
+  }
+  
+  renderDespesas();
   pcSchedule();
-
-  // coloca o foco no primeiro campo da nova linha
+  
   setTimeout(()=>{
-    const inp = document.querySelector(`#pcDespesasBody input[data-id="${id}"][data-field="ficha"]`)
-             || document.querySelector(`#pcDespesasBody input[data-id="${id}"]`);
-    inp?.focus();
-  }, 0);
+    const inp = document.querySelector('#pcDespesasBody tr:last-child input[name="ficha"]');
+    if(inp) inp.focus();
+  }, 50);
+}
+
+// ✅ FUNÇÃO async para salvar despesa no Supabase
+async function salvarDespesaNoSupabase(despesa) {
+  const gerenteId = document.getElementById('pcGerente')?.value;
+  const ini = document.getElementById('pcIni')?.value;
+  const fim = document.getElementById('pcFim')?.value;
+  const gerente = window.gerentes?.find(g => g.uid === gerenteId);
+  const empresa = window.getCompany ? window.getCompany() : 'BSX';
+  
+  await window.SupabaseAPI.despesas.create({
+    uid: despesa.id,
+    empresa_id: empresa,
+    gerente_nome: gerente?.nome || '',
+    ficha: despesa.ficha || '',
+    rota: '',
+    descricao: despesa.info || '',
+    valor: Number(despesa.valor) || 0,
+    categoria: '',
+    data: fim || new Date().toISOString().split('T')[0],
+    periodo_ini: ini,
+    periodo_fim: fim,
+    oculta: false,
+    editada: false
+  });
+  
+  console.log('✅ Despesa salva no Supabase');
 }
 
 // Botão "Adicionar Despesa" (id existente no seu HTML)

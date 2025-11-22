@@ -250,15 +250,17 @@ async function editPrest(id){
     : (r.valeParcAplicado || []);
 
   // ✅ CARREGAR TODOS OS DADOS
-  prestacaoAtual = {
-    despesas:   (r.despesas   || []).map(function(d) { return Object.assign({}, d); }),
-    pagamentos: (r.pagamentos || []).map(function(p) { return Object.assign({}, p); }),
-    coletas:    (r.coletas    || []).map(function(c) { return Object.assign({}, c); }), // ← IMPORTANTE
-    vales:      (r.vales      || []).map(function(v) { return Object.assign({}, v); }),
-    valeSelec:  (r.valesSel   || []).map(function(v) { return Object.assign({}, v); }),
-    resumo:     Object.assign({}, r.resumo || {}),
-    valeParcAplicado: migVale.map(function(x) { return Object.assign({}, x); })
-  };
+
+prestacaoAtual = {
+  despesas:   ((r.dados?.despesas || r.despesas) || []).map(function(d) { return Object.assign({}, d); }),
+  pagamentos: ((r.dados?.pagamentos || r.pagamentos) || []).map(function(p) { return Object.assign({}, p); }),
+  coletas:    ((r.dados?.coletas || r.coletas) || []).map(function(c) { return Object.assign({}, c); }),
+  vales:      ((r.dados?.vales || r.vales) || []).map(function(v) { return Object.assign({}, v); }),
+  valeSelec:  ((r.dados?.valesSel || r.valesSel) || []).map(function(v) { return Object.assign({}, v); }),
+  resumo:     Object.assign({}, (r.dados?.resumo || r.resumo) || {}),
+  saldoInfo:  r.dados?.saldoInfo || r.saldoInfo || null,
+  valeParcAplicado: migVale.map(function(x) { return Object.assign({}, x); })
+};
 
   // Preencher período
   document.getElementById('pcIni').value = r.ini || '';
@@ -283,6 +285,7 @@ async function editPrest(id){
 
   try { pcRender(); } catch(e) { console.warn('pcRender:', e); }
   try { pgRender(); } catch(e) { console.warn('pgRender:', e); }
+  try { renderDespesas(); } catch(e) { console.warn('renderDespesas:', e); }
   try { renderValesPrestacao(); } catch(e) { console.warn('renderValesPrestacao:', e); }
   try { pcCalcular(); } catch(e) { console.warn('pcCalcular:', e); }
 

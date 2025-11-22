@@ -90,7 +90,8 @@ function __setDespesas(arr) {
     renderDespesas();
   }
 })();
-
+window.loadDespesas = loadDespesas;
+window.renderDespesas = renderDespesas;
 
 (function  ()  {
     'use strict';
@@ -382,6 +383,7 @@ for (const it of itens){
       }
     }    
     }}
+    window.renderDespesas = renderDespesas;
 
     (function bindDespUIFloating(){
       if (window.__despUIFloatingBound) return;

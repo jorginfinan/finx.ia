@@ -9,13 +9,13 @@ async function loadDespesas() {
       id: d.id,
       uid: d.uid || d.id,
       ficha: d.ficha || '',
-      gerenteNome: d.gerente_nome || '', // gerente_nome → gerenteNome
-      info: d.descricao || '', // descricao → info
+      gerenteNome: d.gerente_nome || '',
+      info: d.descricao || '', // ✅ descricao → info
       valor: Number(d.valor) || 0,
       data: d.data || '',
-      periodoIni: d.periodo_ini || '', // periodo_ini → periodoIni
-      periodoFim: d.periodo_fim || '', // periodo_fim → periodoFim
-      isHidden: d.oculta || false, // oculta → isHidden
+      periodoIni: d.periodo_ini || '',
+      periodoFim: d.periodo_fim || '',
+      isHidden: d.oculta || false, // ✅ oculta → isHidden
       rota: d.rota || '',
       categoria: d.categoria || '',
       obs: d.obs || '',
@@ -29,6 +29,9 @@ async function loadDespesas() {
     return [];
   }
 }
+
+await loadDespesas();
+renderDespesas();
 
 // ✅ SALVAR DESPESA NO SUPABASE
 async function saveDespesa(despesa) {

@@ -1,7 +1,14 @@
 // ==== DESPESAS ====
 // ===== INICIALIZAÇÃO GLOBAL DE DESPESAS =====
 // ✅ CARREGAR DESPESAS DO SUPABASE
+// ✅ CARREGAR DESPESAS DO SUPABASE (com proteção de dependência)
 async function loadDespesas() {
+  // Se a API ainda não estiver pronta, não lança erro nem zera os dados
+  if (!window.SupabaseAPI?.despesas) {
+    console.warn('[Despesas] SupabaseAPI.despesas ainda não está pronto; usando cache atual.');
+    return Array.isArray(window.despesas) ? window.despesas : [];
+  }
+
   try {
     const despesas = await window.SupabaseAPI.despesas.getAll();
     window.despesas = despesas.map(d => ({
@@ -29,6 +36,7 @@ async function loadDespesas() {
     return [];
   }
 }
+
 
 // ✅ SALVAR DESPESA NO SUPABASE
 async function saveDespesa(despesa) {
@@ -80,13 +88,39 @@ function __setDespesas(arr) {
   window.despesas = arr;
 }
 
-// Inicializa despesas ao carregar
-(async function initDespesas() {
-  await loadDespesas();
-  if (typeof renderDespesas === 'function') {
-    renderDespesas();
+// Inicialização: só roda depois que SupabaseAPI.despesas existir
+function initDespesasWhenReady(retries = 50) {
+  if (!window.SupabaseAPI?.despesas) {
+    if (retries <= 0) {
+      console.error('[Despesas] SupabaseAPI.despesas não ficou pronto; exibindo apenas dados em memória.');
+      if (typeof renderDespesas === 'function') renderDespesas();
+      return;
+    }
+    console.warn('[Despesas] Aguardando SupabaseAPI.despesas...', retries);
+    setTimeout(() => initDespesasWhenReady(retries - 1), 200);
+    return;
   }
-})();
+
+  (async () => {
+    await loadDespesas();
+    // Preenche selects se a função existir
+    if (typeof buildDespesasFilterOptions === 'function') {
+      buildDespesasFilterOptions();
+    }
+    if (typeof renderDespesas === 'function') {
+      renderDespesas();
+    }
+  })();
+}
+
+// Garante que o boot rode depois do DOM pronto
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => initDespesasWhenReady());
+} else {
+  initDespesasWhenReady();
+}
+
+// continua expondo a função para uso externo
 window.loadDespesas = loadDespesas;
 
 (function  ()  {

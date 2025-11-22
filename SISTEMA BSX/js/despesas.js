@@ -132,12 +132,19 @@ function getRotaByFicha(ficha) {
 
   function renderDespesas(){
     const tb = document.getElementById('tbodyDespesas');
-    const buscaG = (document.getElementById('despBuscaGerente').value||'').toLowerCase();
-    const buscaF = (document.getElementById('despBuscaFicha').value||'').toLowerCase();
+    if (!tb) {
+      console.warn('[Despesas] tbody não encontrado');
+      return;
+    }
+    
+    const buscaG = (document.getElementById('despBuscaGerente')?.value||'').toLowerCase();
+    const buscaF = (document.getElementById('despBuscaFicha')?.value||'').toLowerCase();
     const buscaR = (document.getElementById('despBuscaRota')?.value||'').toLowerCase();
-    const de = document.getElementById('despDe').value || '0000-00-00';
-    const ate = document.getElementById('despAte').value || '9999-12-31';
+    const de = document.getElementById('despDe')?.value || '0000-00-00';
+    const ate = document.getElementById('despAte')?.value || '9999-12-31';
     const showHidden = !!document.getElementById('despMostrarOcultas')?.checked;
+    
+    const IDEAL_RATE = typeof window.IDEAL_RATE === 'number' ? window.IDEAL_RATE : 0.06;
 
 
     // Permissões por perfil
@@ -345,6 +352,7 @@ for (const it of itens){
         }       
   
     tb.innerHTML = linhas.join('');
+    console.log('[renderDespesas] ✅ Renderizadas', linhas.length, 'linhas de', list.length, 'despesas');
   
     // Aviso de ocultas (mesma lógica)
     atualizaAvisoOcultas();

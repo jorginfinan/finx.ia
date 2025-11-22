@@ -731,7 +731,7 @@ function pcAddDespesa(preset = {}){
   });
 
   // redesenha a tabela e recalcula o total
-  pcRender();
+  renderDespesas();  
   pcSchedule();
 
   // coloca o foco no primeiro campo da nova linha

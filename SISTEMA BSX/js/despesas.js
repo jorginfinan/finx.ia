@@ -536,80 +536,76 @@ for (const it of itens){
     
     
     
+
   /* ================== DESPESAS: listas de opções dos filtros (encadeadas) ================== */
-  function buildDespesasFilterOptions() {
-    // Garante que os 3 filtros sejam <select>
-    const selG = ensureSelect('despBuscaGerente'); // Gerente
-    const selR = ensureSelect('despBuscaRota');    // Rota
-    const selF = ensureSelect('despBuscaFicha');   // Ficha
-    if (!selG || !selR || !selF) return;
-  
-    const de  = document.getElementById('despDe').value || '0000-00-00';
-    const ate = document.getElementById('despAte').value || '9999-12-31';
-  
-    // Base: considera despesas no período (visíveis e ocultas)
-    const base = (despesas || []).filter(d =>
-      d.data >= de && d.data <= ate
-    );
-    
-  
-    // Valores atuais (para tentar manter seleção ao recriar opções)
-    const curG = selG.value;
-    const curR = selR.value;
-    const curF = selF.value;
-  
-    // --- Opções de GERENTE: só quem tem despesa no período ---
-    const gerentes = Array.from(new Set(
-      base.map(d => (d.gerenteNome || '').trim()).filter(Boolean)
-    )).sort((a,b)=> a.localeCompare(b));
-  
-    selG.innerHTML = [
-      `<option value="">Selecione o gerente</option>`,
-      ...gerentes.map(n => `<option value="${esc(n)}"${n===curG?' selected':''}>${esc(n)}</option>`)
-    ].join('');
-  
-    // Reaplica seleção se existir; senão, vazio
-    if (selG.value && !gerentes.includes(selG.value)) selG.value = '';
-  
-    // --- Opções de ROTA: dependem do gerente selecionado ---
-    const baseR = selG.value
-      ? base.filter(d => (d.gerenteNome||'').trim() === selG.value)
-      : base;
-  
-    const rotas = Array.from(new Set(
-      baseR.map(d => String(getRotaByFicha(d.ficha) || '').trim()).filter(Boolean)
-    )).sort((a,b)=> a.localeCompare(b));
-  
-    selR.innerHTML = [
-      `<option value="">Selecione a rota</option>`,
-      ...rotas.map(r => `<option value="${esc(r)}"${r===curR?' selected':''}>${esc(r)}</option>`)
-    ].join('');
-  
-    if (selR.value && !rotas.includes(selR.value)) selR.value = '';
-  
-    // --- Opções de FICHA: dependem de gerente e rota selecionados ---
-    const baseF = baseR.filter(d => {
-      if (!selR.value) return true;
-      const rota = String(getRotaByFicha(d.ficha) || '').trim();
-      return rota === selR.value;
-    });
-  
-    const fichas = Array.from(new Set(
-      baseF.map(d => String(d.ficha||'').trim()).filter(Boolean)
-    )).sort((a,b)=> a.localeCompare(b, 'pt-BR', { numeric:true }));
-  
-    selF.innerHTML = [
-      `<option value="">Selecione a ficha</option>`,
-      ...fichas.map(f => `<option value="${esc(f)}"${f===curF?' selected':''}>${esc(f)}</option>`)
-    ].join('');
-  
-    if (selF.value && !fichas.includes(selF.value)) selF.value = '';
-  
-    // Handlers (encadeados)
-    selG.onchange = ()=>{ buildDespesasFilterOptions(); renderDespesas(); };
-    selR.onchange = ()=>{ buildDespesasFilterOptions(); renderDespesas(); };
-    selF.onchange = ()=>{ renderDespesas(); };
-  }
+function buildDespesasFilterOptions() {
+  // Garante que os 3 filtros sejam <select>
+  const selG = ensureSelect('despBuscaGerente'); // Gerente
+  const selR = ensureSelect('despBuscaRota');    // Rota
+  const selF = ensureSelect('despBuscaFicha');   // Ficha
+  if (!selG || !selR || !selF) return;
+
+  const de  = document.getElementById('despDe').value  || '0000-00-00';
+  const ate = document.getElementById('despAte').value || '9999-12-31';
+
+  // Base: considera despesas no período (visíveis e ocultas)
+  const base = __getDespesas().filter(d =>
+    d.data >= de && d.data <= ate
+  );
+
+  // Valores atuais (para tentar manter seleção ao recriar opções)
+  const curG = selG.value;
+  const curR = selR.value;
+  const curF = selF.value;
+
+  // --- Opções de GERENTE: só quem tem despesa no período ---
+  const gerentes = Array.from(new Set(
+    base.map(d => (d.gerenteNome || '').trim()).filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b));
+
+  selG.innerHTML = [
+    `<option value="">Selecione o gerente</option>`,
+    ...gerentes.map(n => `<option value="${esc(n)}"${n === curG ? ' selected' : ''}>${esc(n)}</option>`)
+  ].join('');
+
+  // Reaplica seleção se existir; senão, zera
+  if (selG.value && !gerentes.includes(selG.value)) selG.value = '';
+
+  // --- Opções de ROTA: dependem do gerente selecionado ---
+  const baseR = selG.value
+    ? base.filter(d => (d.gerenteNome || '').trim() === selG.value)
+    : base;
+
+  const rotas = Array.from(new Set(
+    baseR.map(d => String(getRotaByFicha(d.ficha) || '').trim()).filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b));
+
+  selR.innerHTML = [
+    `<option value="">Selecione a rota</option>`,
+    ...rotas.map(r => `<option value="${esc(r)}"${r === curR ? ' selected' : ''}>${esc(r)}</option>`)
+  ].join('');
+
+  if (selR.value && !rotas.includes(selR.value)) selR.value = '';
+
+  // --- Opções de FICHA: dependem de gerente e rota selecionados ---
+  const baseF = baseR.filter(d => {
+    if (!selR.value) return true;
+    const rota = String(getRotaByFicha(d.ficha) || '').trim();
+    return rota === selR.value;
+  });
+
+  const fichas = Array.from(new Set(
+    baseF.map(d => String(d.ficha || '').trim()).filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }));
+
+  selF.innerHTML = [
+    `<option value="">Selecione a ficha</option>`,
+    ...fichas.map(f => `<option value="${esc(f)}"${f === curF ? ' selected' : ''}>${esc(f)}</option>`)
+  ].join('');
+
+  if (selF.value && !fichas.includes(selF.value)) selF.value = '';
+}
+
       // --- BOTÕES DE IMPRESSÃO (substitui o "Exportar CSV" se existir) ---
       (function injectPrintButtons(){
         const csvBtn = document.getElementById('despExport');

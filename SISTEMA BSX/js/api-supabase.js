@@ -251,6 +251,7 @@
         }
       }
       
+      
       async updateByUid(uid, patch) {
         try {
           const empresaId = await getEmpresaId();
@@ -467,6 +468,7 @@
           throw error;
         }
       }
+      
     }
     
     // ============================================

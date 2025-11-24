@@ -1594,6 +1594,9 @@ const valePg = valesAplicados.reduce((sum, v) => {
         // SALDO ACUMULADO
         if (window.SaldoAcumulado && g && perc1 > 0 && perc1 < 50 && !temSegundaComissao && baseCalculo !== 'COLETAS') {
   
+    console.log('📊 [SaldoAcumulado] Condições atendidas! Calculando...');
+    console.log('📊 [SaldoAcumulado] Parâmetros:', { gerenteId: g.uid, coletas, despesasTot, perc1, baseCalculo });
+    
     // ✅ Se está editando uma prestação, pega o saldo SEM incluir esta prestação
     let saldoParaCalcular = undefined;
     
@@ -1601,6 +1604,11 @@ const valePg = valesAplicados.reduce((sum, v) => {
       // Está editando - usa o saldo anterior da prestação sendo editada
       saldoParaCalcular = window.__prestBeingEdited.saldoInfo.saldoCarregarAnterior || 0;
       console.log('🔄 Editando - usando saldo anterior da prestação:', saldoParaCalcular);
+    } else {
+      // Prestação nova - busca saldo do Supabase
+      const empresaAtual = window.getCompany ? window.getCompany() : 'BSX';
+      saldoParaCalcular = await window.SaldoAcumulado.getSaldo(g.uid, empresaAtual);
+      console.log('🔍 [SaldoAcumulado] Saldo buscado do Supabase:', saldoParaCalcular);
     }
     
     const calculoSaldo = await window.SaldoAcumulado.calcular({
@@ -1611,6 +1619,8 @@ const valePg = valesAplicados.reduce((sum, v) => {
       comissao: perc1,
       saldoAnterior: saldoParaCalcular  // ✅ Usa o saldo correto
     });
+    
+    console.log('💰 [SaldoAcumulado] Resultado:', calculoSaldo);
     
  // ✅ USA os valores do cálculo de saldo
 baseComissao = calculoSaldo.baseCalculo;
@@ -2494,33 +2504,44 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
     // Se está editando uma prestação existente (idx > -1)
     if (idx > -1 && prevRec && prevRec.saldoInfo) {
       // ESTORNA o saldo da versão anterior
-      const saldoAtual = window.SaldoAcumulado.getSaldo(recPrest.gerenteId, empresaId);
+      const saldoAtual = await window.SaldoAcumulado.getSaldo(recPrest.gerenteId, empresaId);
       const saldoAnteriorPrestacao = prevRec.saldoInfo.saldoCarregarNovo || 0;
       
       // Remove o saldo antigo antes de adicionar o novo
       const saldoCorrigido = Math.max(0, saldoAtual - saldoAnteriorPrestacao);
       
       // Agora adiciona o novo saldo
-      const novoSaldoFinal = saldoCorrigido + prestacaoAtual.saldoInfo.saldoCarregarNovo;
+      const novoSaldoFinal = saldoCorrigido + (prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0);
       
-      window.SaldoAcumulado.setSaldo(recPrest.gerenteId, empresaId, novoSaldoFinal);
+      // ✅ AWAIT ADICIONADO
+      await window.SaldoAcumulado.setSaldo(recPrest.gerenteId, empresaId, novoSaldoFinal);
       
       console.log('🔄 Editando prestação - Saldo ajustado:', {
         saldoAtual,
         saldoAnteriorPrestacao,
         saldoCorrigido,
-        novoSaldoAdicionado: prestacaoAtual.saldoInfo.saldoCarregarNovo,
+        novoSaldoAdicionado: prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0,
         novoSaldoFinal
       });
     } else {
       // É uma prestação nova - apenas salva
-      window.SaldoAcumulado.setSaldo(
+      const saldoNovo = prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0;
+      
+      console.log('💾 Salvando saldo para nova prestação:', {
+        gerenteId: recPrest.gerenteId,
+        empresaId,
+        saldoNovo,
+        saldoInfo: prestacaoAtual.saldoInfo
+      });
+      
+      // ✅ AWAIT ADICIONADO
+      await window.SaldoAcumulado.setSaldo(
         recPrest.gerenteId,
         empresaId,
-        prestacaoAtual.saldoInfo.saldoCarregarNovo
+        saldoNovo
       );
       
-      console.log('✅ Nova prestação - Saldo salvo:', prestacaoAtual.saldoInfo.saldoCarregarNovo);
+      console.log('✅ Nova prestação - Saldo salvo:', saldoNovo);
     }
   }
 

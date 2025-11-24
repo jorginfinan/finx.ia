@@ -702,12 +702,27 @@ function __consumeCarry(gerenteId, periodoIni, periodoFim){
 
 // ====== FECHAR SEMANA ======
 async function fecharSemanaById(prestId, {forcar=false}={}){
+  console.log('🔄 [fecharSemanaById] ========== INICIANDO ==========');
+  console.log('🔄 [fecharSemanaById] prestId:', prestId);
+  console.log('🔄 [fecharSemanaById] salvarPrestacaoGlobal existe?', typeof window.salvarPrestacaoGlobal === 'function');
+  console.log('🔄 [fecharSemanaById] carregarPrestacoesGlobal existe?', typeof window.carregarPrestacoesGlobal === 'function');
+  
   // Lê do mesmo DB das prestações salvas
   const arr = (await carregarPrestacoes());
+  console.log('🔄 [fecharSemanaById] Total de prestações carregadas:', arr.length);
+  
   const idx = arr.findIndex(p => String(p.id)===String(prestId));
+  console.log('🔄 [fecharSemanaById] Índice encontrado:', idx);
+  
   if (idx<0){ alert('Prestação não encontrada.'); return; }
 
   const atual = arr[idx];
+  console.log('🔄 [fecharSemanaById] Prestação atual:', {
+    id: atual.id,
+    gerenteNome: atual.gerenteNome,
+    fechado: atual.fechado
+  });
+  
   if (atual.fechado){ alert('Esta semana já está fechada.'); return; }
 
   // pega ini/fim independente de como foi salvo e normaliza para seg→dom
@@ -723,52 +738,50 @@ async function fecharSemanaById(prestId, {forcar=false}={}){
     if (!ok) return;
   }
 
-// ---- DERIVAÇÃO ROBUSTA: restam e adiantamento ----
-const resumo = atual.resumo || {};
+  // ---- DERIVAÇÃO ROBUSTA: restam e adiantamento ----
+  const resumo = atual.resumo || {};
 
-// 1) A Pagar (com vários fallbacks; se não vier, calcula)
-let aPagar = toNum(resumo.aPagar ?? resumo.a_pagar ?? resumo.pagar);
-if (!aPagar) {
-  const coletas    = toNum(resumo.coletas);
-  const despesas   = toNum(resumo.despesas);
-  const valorExtra = toNum(resumo.valorExtra);
-  const deveAnt    = toNum(resumo.deveAnt ?? resumo.deveAnterior);
-  const divida     = toNum(resumo.divida);
-  const credito    = toNum(resumo.credito);
-  // ajuste esta fórmula se a sua regra for diferente:
-  aPagar = (coletas - despesas) + valorExtra + deveAnt + divida - credito;
-}
+  // 1) A Pagar (com vários fallbacks; se não vier, calcula)
+  let aPagar = toNum(resumo.aPagar ?? resumo.a_pagar ?? resumo.pagar);
+  if (!aPagar) {
+    const coletas    = toNum(resumo.coletas);
+    const despesas   = toNum(resumo.despesas);
+    const valorExtra = toNum(resumo.valorExtra);
+    const deveAnt    = toNum(resumo.deveAnt ?? resumo.deveAnterior);
+    const divida     = toNum(resumo.divida);
+    const credito    = toNum(resumo.credito);
+    aPagar = (coletas - despesas) + valorExtra + deveAnt + divida - credito;
+  }
 
-// 2) Pagamentos
-const pagamentos = []
-  .concat(Array.isArray(atual.pagamentos)        ? atual.pagamentos        : [])
-  .concat(Array.isArray(atual.pagamentosNormais) ? atual.pagamentosNormais : []);
+  // 2) Pagamentos
+  const pagamentos = []
+    .concat(Array.isArray(atual.pagamentos)        ? atual.pagamentos        : [])
+    .concat(Array.isArray(atual.pagamentosNormais) ? atual.pagamentosNormais : []);
 
-const totalAdiantamento = pagamentos
-  .filter(x => String((x.forma||x.tipo||'') + '').trim().toUpperCase() === 'ADIANTAMENTO' && !x.cancelado)
-  .reduce((s,x)=> s + toNum(x.valor), 0);
+  const totalAdiantamento = pagamentos
+    .filter(x => String((x.forma||x.tipo||'') + '').trim().toUpperCase() === 'ADIANTAMENTO' && !x.cancelado)
+    .reduce((s,x)=> s + toNum(x.valor), 0);
 
-const totalRecebidoNormal = pagamentos
-  .filter(x => {
-    const f = String((x.forma||x.tipo||'') + '').trim().toUpperCase();
-    return f !== 'ADIANTAMENTO' && f !== 'VALE';
-  })
-  .reduce((s,x)=> s + toNum(x.valor), 0);
+  const totalRecebidoNormal = pagamentos
+    .filter(x => {
+      const f = String((x.forma||x.tipo||'') + '').trim().toUpperCase();
+      return f !== 'ADIANTAMENTO' && f !== 'VALE';
+    })
+    .reduce((s,x)=> s + toNum(x.valor), 0);
 
-// 3) RESTAM (usa campo salvo se existir; senão deriva)
-let restam = toNum(atual.restam ?? atual.emAberto ?? resumo.restam);
-if (!restam && (aPagar || totalRecebidoNormal || totalAdiantamento)) {
-  restam = Math.max(aPagar - (totalRecebidoNormal + totalAdiantamento), 0);
-}
+  // 3) RESTAM (usa campo salvo se existir; senão deriva)
+  let restam = toNum(atual.restam ?? atual.emAberto ?? resumo.restam);
+  if (!restam && (aPagar || totalRecebidoNormal || totalAdiantamento)) {
+    restam = Math.max(aPagar - (totalRecebidoNormal + totalAdiantamento), 0);
+  }
 
-// 4) Valores finais a carregar
-const adiantamento = totalAdiantamento;
-
+  // 4) Valores finais a carregar
+  const adiantamento = totalAdiantamento;
 
   // período da PRÓXIMA semana (seg→dom)
   const { nextSeg, nextDom } = __nextWeekRange(iniRaw, fimRaw);
-const nextIni = nextSeg;
-const nextFim = nextDom;
+  const nextIni = nextSeg;
+  const nextFim = nextDom;
 
   // guarda carry (não cria prestação nova)
   __putCarry({
@@ -781,38 +794,88 @@ const nextFim = nextDom;
     fromPrestId:  atual.id
   });
   
-  // marca a atual como fechada
+  // ✅ MARCA A ATUAL COMO FECHADA
   atual.fechado   = true;
   atual.fechadoEm = new Date().toISOString();
-
-  // salva de volta no Supabase E localStorage
-  arr[idx] = atual;
   
-  // ✅ SALVAR NO SUPABASE (correção principal)
+  console.log('🔄 [fecharSemanaById] Marcando como fechado:', {
+    id: atual.id,
+    fechado: atual.fechado,
+    fechadoEm: atual.fechadoEm
+  });
+
+  // ✅ SALVAR - TENTA SUPABASE, SE NÃO, USA LOCALSTORAGE
+  let salvouComSucesso = false;
+  
   if (typeof window.salvarPrestacaoGlobal === 'function') {
     try {
-      await window.salvarPrestacaoGlobal(atual);
-      console.log('✅ Prestação fechada salva no Supabase:', atual.id);
+      console.log('🔄 [fecharSemanaById] Tentando salvar no Supabase...');
+      const resultado = await window.salvarPrestacaoGlobal(atual);
+      console.log('✅ [fecharSemanaById] Resultado do Supabase:', resultado);
+      salvouComSucesso = true;
     } catch(e) {
-      console.error('❌ Erro ao salvar no Supabase:', e);
-      alert('Erro ao salvar no servidor. Tente novamente.');
-      return;
+      console.error('❌ [fecharSemanaById] Erro ao salvar no Supabase:', e);
+      // Tenta fallback para localStorage
+      console.log('⚠️ [fecharSemanaById] Tentando fallback localStorage...');
+      arr[idx] = atual;
+      localStorage.setItem(DB_PREST, JSON.stringify(arr));
+      salvouComSucesso = true;
     }
   } else {
-    // Fallback para localStorage se Supabase não disponível
+    console.warn('⚠️ [fecharSemanaById] salvarPrestacaoGlobal NÃO disponível, usando localStorage');
+    // Fallback para localStorage
+    arr[idx] = atual;
     localStorage.setItem(DB_PREST, JSON.stringify(arr));
+    salvouComSucesso = true;
   }
   
-  renderRelPrestacoes?.();
-  renderPrestFechadas?.();
-
-  alert(
-    'Semana fechada.\n' +
-    `Próxima semana (seg→dom): ${nextIni} a ${nextFim}\n` +
-    `• Deve anterior a carregar: ${fmtBRL(restam)}\n` +
-    `• Adiantamento a carregar: ${fmtBRL(adiantamento)}\n\n` +
-    'Informações salvas para próxima prestação de contas.'
-  );
+  console.log('🔄 [fecharSemanaById] Salvou com sucesso?', salvouComSucesso);
+  
+  // ✅ AGUARDA E RE-RENDERIZA
+  if (salvouComSucesso) {
+    console.log('🔄 [fecharSemanaById] Aguardando antes de renderizar...');
+    
+    // Aguarda um pouco para garantir que o Supabase processou
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Verifica se a prestação realmente foi atualizada
+    const arrVerificacao = await carregarPrestacoes();
+    const prestVerificada = arrVerificacao.find(p => String(p.id) === String(prestId));
+    console.log('🔍 [fecharSemanaById] Verificação pós-salvamento:', {
+      id: prestVerificada?.id,
+      fechado: prestVerificada?.fechado,
+      fechadoEm: prestVerificada?.fechadoEm
+    });
+    
+    if (!prestVerificada?.fechado) {
+      console.error('❌ [fecharSemanaById] PROBLEMA: A prestação NÃO foi salva como fechada!');
+      alert('⚠️ Houve um problema ao salvar. A prestação pode não ter sido fechada corretamente.\n\nVerifique o console para mais detalhes (F12).');
+    }
+    
+    // Re-renderiza as tabelas
+    console.log('🔄 [fecharSemanaById] Chamando renderRelPrestacoes...');
+    if (typeof renderRelPrestacoes === 'function') {
+      await renderRelPrestacoes();
+      console.log('✅ [fecharSemanaById] renderRelPrestacoes executado');
+    }
+    
+    console.log('🔄 [fecharSemanaById] Chamando renderPrestFechadas...');
+    if (typeof renderPrestFechadas === 'function') {
+      await renderPrestFechadas();
+      console.log('✅ [fecharSemanaById] renderPrestFechadas executado');
+    }
+    
+    console.log('🔄 [fecharSemanaById] ========== CONCLUÍDO ==========');
+    
+    // ✅ ALERTA SÓ NO FINAL
+    alert(
+      '✅ Semana fechada com sucesso!\n\n' +
+      `Próxima semana (seg→dom): ${nextIni} a ${nextFim}\n` +
+      `• Deve anterior a carregar: ${fmtBRL(restam)}\n` +
+      `• Adiantamento a carregar: ${fmtBRL(adiantamento)}\n\n` +
+      'Informações salvas para próxima prestação de contas.'
+    );
+  }
 }
 // ===== Relatórios: menu "Opções" flutuante =====
 (function bindRelatoriosOpcoes(){

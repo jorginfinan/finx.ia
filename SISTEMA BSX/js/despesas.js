@@ -46,17 +46,24 @@ async function saveDespesa(despesa) {
     const despesaParaSalvar = {
       uid: despesa.uid || despesa.id,
       ficha: despesa.ficha || '',
-      gerenteNome: despesa.gerenteNome || '', // Será convertido para gerente_nome na API
-      info: despesa.info || '', // Será convertido para descricao na API
+      gerente_nome: despesa.gerenteNome || '', // JS: gerenteNome → DB: gerente_nome
+      descricao: despesa.info || '', // JS: info → DB: descricao
       valor: Number(despesa.valor) || 0,
       data: despesa.data || '',
-      periodoIni: despesa.periodoIni || '', // Será convertido para periodo_ini na API
-      periodoFim: despesa.periodoFim || '', // Será convertido para periodo_fim na API
-      isHidden: !!despesa.isHidden, // Garante boolean true/false (corrige bug do || false)
+      periodo_ini: despesa.periodoIni || '', // JS: periodoIni → DB: periodo_ini
+      periodo_fim: despesa.periodoFim || '', // JS: periodoFim → DB: periodo_fim
+      oculta: !!despesa.isHidden, // JS: isHidden → DB: oculta (CORRIGIDO!)
       rota: despesa.rota || '',
       categoria: despesa.categoria || '',
-      obs: despesa.obs || ''
+      obs: despesa.obs || '',
+      editada: despesa.editada || false
     };
+    
+    console.log('[Despesas] Salvando no Supabase:', {
+      uid: despesaParaSalvar.uid,
+      oculta: despesaParaSalvar.oculta,
+      descricao: despesaParaSalvar.descricao
+    });
     
     if (despesa.id) {
       // Atualizar existente
@@ -67,9 +74,9 @@ async function saveDespesa(despesa) {
       await window.SupabaseAPI.despesas.create(despesaParaSalvar);
     }
     
-    console.log('[Despesas] Salva com sucesso no Supabase');
+    console.log('[Despesas] ✅ Salva com sucesso no Supabase');
   } catch (error) {
-    console.error('[Despesas] Erro ao salvar:', error);
+    console.error('[Despesas] ❌ Erro ao salvar:', error);
     throw error;
   }
 }

@@ -52,7 +52,7 @@ async function saveDespesa(despesa) {
       data: despesa.data || '',
       periodoIni: despesa.periodoIni || '', // Será convertido para periodo_ini na API
       periodoFim: despesa.periodoFim || '', // Será convertido para periodo_fim na API
-      isHidden: despesa.isHidden || false, // Será convertido para oculta na API
+      isHidden: !!despesa.isHidden, // Garante boolean true/false (corrige bug do || false)
       rota: despesa.rota || '',
       categoria: despesa.categoria || '',
       obs: despesa.obs || ''
@@ -67,10 +67,7 @@ async function saveDespesa(despesa) {
       await window.SupabaseAPI.despesas.create(despesaParaSalvar);
     }
     
-    // Recarrega lista
-    await loadDespesas();
-    
-    console.log('[Despesas] Salva com sucesso');
+    console.log('[Despesas] Salva com sucesso no Supabase');
   } catch (error) {
     console.error('[Despesas] Erro ao salvar:', error);
     throw error;
@@ -304,6 +301,12 @@ const del = canDelete
         const difColor = status==='ACIMA' ? '#b91c1c' : (status==='ABAIXO' ? '#2563eb' : '#16a34a');
   
         const infoTxt = `${esc(r.info||'')} — <small class="muted">${fmtDiaMes(r.data)}</small>${selo}`;
+        
+        // Debug: Log do ID sendo renderizado
+        if (!r.id) {
+          console.error('[DESPESAS] Renderizando linha SEM ID!', r);
+        }
+        
         const actions = makeDespActionsMenu({ id:r.id, isHidden:!!r.isHidden }, { canDelete });
         
         linhas.push(`
@@ -1275,6 +1278,8 @@ if (!window.__despMenuActionsBound) {
     const action = actionBtn.getAttribute('data-desp-act');
     const id = actionBtn.getAttribute('data-id');
     
+    console.log('[DESPESAS] Ação clicada:', action, 'ID:', id, 'Tipo:', typeof id);
+    
     // Fecha o dropdown
     const menu = actionBtn.closest('.desp-menu');
     if (menu) {
@@ -1287,8 +1292,11 @@ if (!window.__despMenuActionsBound) {
     const idx = arr.findIndex(x => String(x.id) === String(id));
     
     if (idx === -1) {
-      console.warn('[DESPESAS] Despesa não encontrada:', id);
-      alert('Não foi possível localizar esta despesa.');
+      console.warn('[DESPESAS] Despesa não encontrada!');
+      console.warn('ID procurado:', id, 'Tipo:', typeof id);
+      console.warn('IDs disponíveis:', arr.map(x => ({ id: x.id, tipo: typeof x.id })));
+      console.warn('Total de despesas no array:', arr.length);
+      alert('Não foi possível localizar esta despesa. Verifique o console (F12) para mais detalhes.');
       return;
     }
     
@@ -1297,15 +1305,49 @@ if (!window.__despMenuActionsBound) {
       case 'toggle-hide':
         arr[idx].isHidden = !arr[idx].isHidden;
         __setDespesas(arr);
-        await saveDespesa(arr[idx]);
-        renderDespesas();
+        
+        try {
+          // Salva no Supabase
+          await saveDespesa(arr[idx]);
+          // Aguarda um pouco para garantir que o Supabase processou
+          await new Promise(resolve => setTimeout(resolve, 100));
+          // Recarrega do Supabase
+          await loadDespesas();
+          // Renderiza
+          renderDespesas();
+        } catch (error) {
+          console.error('[DESPESAS] Erro ao ocultar/desocultar:', error);
+          alert('Erro ao salvar: ' + error.message);
+          // Reverte mudança local em caso de erro
+          arr[idx].isHidden = !arr[idx].isHidden;
+          __setDespesas(arr);
+          renderDespesas();
+        }
         break;
         
       case 'editar':
-        // Aqui você pode implementar a lógica de edição
-        // Por enquanto, vou apenas logar
-        console.log('[DESPESAS] Editar despesa:', arr[idx]);
-        alert('Função de edição em desenvolvimento');
+        // Abre modal de edição se existir a função
+        if (typeof openEditDespesaModal === 'function') {
+          openEditDespesaModal(arr[idx]);
+        } else {
+          // Fallback: edição inline simples
+          const novaInfo = prompt('Editar descrição:', arr[idx].info || '');
+          if (novaInfo !== null && novaInfo !== arr[idx].info) {
+            arr[idx].info = novaInfo;
+            arr[idx].editada = true;
+            __setDespesas(arr);
+            
+            try {
+              await saveDespesa(arr[idx]);
+              await new Promise(resolve => setTimeout(resolve, 100));
+              await loadDespesas();
+              renderDespesas();
+            } catch (error) {
+              console.error('[DESPESAS] Erro ao editar:', error);
+              alert('Erro ao salvar: ' + error.message);
+            }
+          }
+        }
         break;
         
       case 'excluir':
@@ -1314,13 +1356,18 @@ if (!window.__despMenuActionsBound) {
         try {
           const uid = arr[idx].uid || arr[idx].id;
           
-          // Remove do array
+          // Remove do Supabase primeiro
+          await window.SupabaseAPI.despesas.deleteByUid(uid);
+          
+          // Aguarda confirmação
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Remove do array local
           const novo = arr.filter(x => String(x.id) !== String(id));
           __setDespesas(novo);
           
-          // Remove do Supabase
-          await window.SupabaseAPI.despesas.deleteByUid(uid);
-          
+          // Recarrega do Supabase
+          await loadDespesas();
           renderDespesas();
         } catch (error) {
           console.error('[DESPESAS] Erro ao excluir:', error);
@@ -1354,8 +1401,19 @@ if (!window.__despAdminActionsBound) {
 
       arr[idx].isHidden = !arr[idx].isHidden;
       __setDespesas(arr);
-      await saveDespesa(arr[idx]);
-      renderDespesas();
+      
+      try {
+        await saveDespesa(arr[idx]);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await loadDespesas();
+        renderDespesas();
+      } catch (error) {
+        console.error('[DESPESAS] Erro ao ocultar:', error);
+        alert('Erro ao salvar: ' + error.message);
+        arr[idx].isHidden = !arr[idx].isHidden;
+        __setDespesas(arr);
+        renderDespesas();
+      }
       return;
     }
 
@@ -1520,6 +1578,9 @@ if (!window.__despGroupHideBound) {
 
       if (changed > 0){
         __setDespesas(arr);
+        // Aguarda e recarrega apenas uma vez no final
+        await new Promise(resolve => setTimeout(resolve, 200));
+        await loadDespesas();
       }
 
       // re-render e volta ao modo normal

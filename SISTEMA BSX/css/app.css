@@ -2472,12 +2472,12 @@ tr.tr-det td.td-info-indent {
   display: inline-block;
 }
 
-/* Botão de toggle */
+/* Botão de toggle - COM PRIORIDADE */
 [data-desp-dd-toggle] {
-  padding: 6px 12px;
-  background: #1f2937;  /* Mesma cor do cabeçalho */
-  color: white;
-  border: none;
+  padding: 6px 12px !important;
+  background: #1f2937 !important;  /* Mesma cor do cabeçalho */
+  color: white !important;
+  border: 1px solid #000 !important;
   border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
@@ -2487,8 +2487,9 @@ tr.tr-det td.td-info-indent {
 }
 
 [data-desp-dd-toggle]:hover {
-  background: #374151;  /* Um pouco mais claro no hover */
+  background: #374151 !important;  /* Um pouco mais claro no hover */
 }
+
 [data-desp-dd-toggle]:focus {
   outline: 2px solid #60a5fa;
   outline-offset: 2px;

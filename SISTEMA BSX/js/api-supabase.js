@@ -362,6 +362,12 @@
         try {
           const empresaId = await getEmpresaId();
           
+          console.log('[API] 📝 updateByUid recebeu:', {
+            uid,
+            patch,
+            empresaId
+          });
+          
           // Mapear campos do JS para Supabase
           const patchSupabase = {};
           
@@ -382,10 +388,17 @@
           }
           if (patch.isHidden !== undefined || patch.oculta !== undefined) {
             patchSupabase.oculta = patch.isHidden !== undefined ? patch.isHidden : patch.oculta; // isHidden → oculta
+            console.log('[API] 🔍 Mapeando oculta:', {
+              'patch.isHidden': patch.isHidden,
+              'patch.oculta': patch.oculta,
+              'resultado patchSupabase.oculta': patchSupabase.oculta
+            });
           }
           if (patch.rota !== undefined) patchSupabase.rota = patch.rota;
           if (patch.categoria !== undefined) patchSupabase.categoria = patch.categoria;
           if (patch.editada !== undefined) patchSupabase.editada = patch.editada;
+          
+          console.log('[API] 📤 Enviando para Supabase:', patchSupabase);
           
           const { data, error } = await this.client
             .from(this.table)
@@ -396,9 +409,12 @@
             .single();
           
           if (error) throw error;
+          
+          console.log('[API] ✅ Supabase retornou:', data);
+          
           return data;
         } catch (error) {
-          console.error('Erro ao atualizar despesa:', error);
+          console.error('[API] ❌ Erro ao atualizar despesa:', error);
           throw error;
         }
       }

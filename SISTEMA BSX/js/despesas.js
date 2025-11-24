@@ -40,41 +40,21 @@ async function loadDespesas() {
 
 
 // ✅ SALVAR DESPESA NO SUPABASE
+// ✅ SALVAR DESPESA NO SUPABASE
 async function saveDespesa(despesa) {
   try {
-    // Mapear campos do JS para Supabase
-    const despesaParaSalvar = {
-      uid: despesa.uid || despesa.id,
-      ficha: despesa.ficha || '',
-      gerente_nome: despesa.gerenteNome || '', // JS: gerenteNome → DB: gerente_nome
-      descricao: despesa.info || '', // JS: info → DB: descricao
-      valor: Number(despesa.valor) || 0,
-      data: despesa.data || '',
-      periodo_ini: despesa.periodoIni || '', // JS: periodoIni → DB: periodo_ini
-      periodo_fim: despesa.periodoFim || '', // JS: periodoFim → DB: periodo_fim
-      oculta: !!despesa.isHidden, // JS: isHidden → DB: oculta (CORRIGIDO!)
-      rota: despesa.rota || '',
-      categoria: despesa.categoria || '',
-      obs: despesa.obs || '',
-      editada: despesa.editada || false
-    };
-    
-    console.log('[Despesas] Salvando no Supabase:', {
-      uid: despesaParaSalvar.uid,
-      oculta: despesaParaSalvar.oculta,
-      descricao: despesaParaSalvar.descricao
-    });
+    console.log('[Despesas] Enviando para API:', despesa);
     
     if (despesa.id) {
-      // Atualizar existente
-      await window.SupabaseAPI.despesas.updateByUid(despesa.uid, despesaParaSalvar);
+      // Atualizar existente - API cuida do mapeamento
+      await window.SupabaseAPI.despesas.updateByUid(despesa.uid, despesa);
     } else {
-      // Criar nova
-      despesaParaSalvar.uid = window.uid();
-      await window.SupabaseAPI.despesas.create(despesaParaSalvar);
+      // Criar nova - API cuida do mapeamento
+      despesa.uid = window.uid();
+      await window.SupabaseAPI.despesas.create(despesa);
     }
     
-    console.log('[Despesas] ✅ Salva com sucesso no Supabase');
+    console.log('[Despesas] ✅ Salva com sucesso');
   } catch (error) {
     console.error('[Despesas] ❌ Erro ao salvar:', error);
     throw error;

@@ -16,6 +16,7 @@ async function loadDespesas() {
       id: d.id,
       uid: d.uid || d.id,
       ficha: d.ficha || '',
+      gerenteId: d.gerente_id || '',
       gerenteNome: d.gerente_nome || '', // gerente_nome → gerenteNome
       info: d.descricao || '', // descricao → info
       valor: Number(d.valor) || 0,
@@ -76,8 +77,15 @@ async function saveDespesa(despesa) {
   }
 }
 
-// Substituir window.saveDesp
-window.saveDesp = saveDespesa;
+// Compatibilidade: se chamado sem argumento, não faz nada (Supabase já salvou individualmente)
+// Se chamado com argumento, salva a despesa específica
+window.saveDesp = function(despesa) {
+  if (despesa) {
+    return saveDespesa(despesa);
+  }
+  // Chamada legada sem argumento - ignora (dados já estão no Supabase)
+  console.log('[Despesas] saveDesp() chamado sem argumento - ignorando (Supabase já sincronizado)');
+};
 
 // Helper functions para compatibilidade
 function __getDespesas() {
@@ -605,6 +613,7 @@ function buildDespesasFilterOptions() {
 
   if (selF.value && !fichas.includes(selF.value)) selF.value = '';
 }
+window.buildDespesasFilterOptions = buildDespesasFilterOptions; 
 
       // --- BOTÕES DE IMPRESSÃO (substitui o "Exportar CSV" se existir) ---
       (function injectPrintButtons(){

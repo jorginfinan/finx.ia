@@ -330,6 +330,7 @@
           const despesaSupabase = {
             uid: despesa.uid,
             ficha: despesa.ficha || '',
+            gerente_id: despesa.gerenteId || null,
             gerente_nome: despesa.gerenteNome || despesa.gerente_nome || '',
             descricao: despesa.info || despesa.descricao || '', // info → descricao
             valor: Number(despesa.valor) || 0,

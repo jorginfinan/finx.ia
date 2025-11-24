@@ -731,14 +731,9 @@ async function pcAddDespesa(preset = {}){
   
   (prestacaoAtual.despesas ||= []).push(novaDespesa);
   
-  // ✅ SALVAR NO SUPABASE (com await)
-  try {
-    await salvarDespesaNoSupabase(novaDespesa);
-  } catch(e) {
-    console.error('Erro ao salvar despesa no Supabase:', e);
-    // Opcional: remover da lista se falhar
-    // prestacaoAtual.despesas.pop();
-  }
+
+  
+  pcRenderDespesas();  // ou a função que renderiza as despesas na tela
   
   renderDespesas();
   pcSchedule();
@@ -2618,24 +2613,31 @@ if (qtdPendencias && qtdPendencias > 0) {
   alert('Prestação salva com sucesso!');
 }
 
-  despesas = (despesas||[]).filter(d => d.prestacaoId !== recPrest.id);
-  (prestacaoAtual.despesas||[]).forEach(d=>{
-    const dataLanc = (d.data || fim || ini || new Date().toISOString().slice(0,10)).slice(0,10);
-    const jaExiste = (despesas||[]).some(x =>
-      x.gerenteId===gerenteId && x.periodoIni===ini && x.periodoFim===fim &&
-      String(x.ficha||'')===String(d.ficha||'') && String(x.info||'')===String(d.info||'') &&
-      Number(x.valor||0)===Number(d.valor||0) && x.data===dataLanc
-    );
-    if (jaExiste) return;
-    despesas.push({
-      id: uid(), prestacaoId: recPrest.id, data: dataLanc,
-      periodoIni: ini, periodoFim: fim, gerenteId,
-      gerenteNome: g.nome||'', gerenteNumero: g.numero||'',
-      ficha: d.ficha||'', info: d.info||'', valor: Number(d.valor)||0
+// Salvar despesas no Supabase
+for (const d of (prestacaoAtual.despesas || [])) {
+  const dataLanc = (d.data || fim || ini || new Date().toISOString().slice(0,10)).slice(0,10);
+  
+  try {
+    await window.SupabaseAPI.despesas.create({
+      uid: d.id || uid(),
+      gerente_nome: g?.nome || '',
+      ficha: d.ficha || '',
+      descricao: d.info || '',
+      valor: Number(d.valor) || 0,
+      data: dataLanc,
+      periodo_ini: ini,
+      periodo_fim: fim,
+      oculta: false,
+      rota: '',
+      categoria: '',
+      editada: false
     });
-  });
+  } catch(e) {
+    console.error('Erro ao salvar despesa:', e);
+  }
+}
 
-  saveDesp();
+console.log('✅ Despesas salvas no Supabase');
   
   window.__prestBeingEdited = null;
   pcResetForm();

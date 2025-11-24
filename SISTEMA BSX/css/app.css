@@ -2475,7 +2475,7 @@ tr.tr-det td.td-info-indent {
 /* Botão de toggle */
 [data-desp-dd-toggle] {
   padding: 6px 12px;
-  background: #3b82f6;
+  background: #1f2937;  /* Mesma cor do cabeçalho */
   color: white;
   border: none;
   border-radius: 6px;
@@ -2487,9 +2487,8 @@ tr.tr-det td.td-info-indent {
 }
 
 [data-desp-dd-toggle]:hover {
-  background: #2563eb;
+  background: #374151;  /* Um pouco mais claro no hover */
 }
-
 [data-desp-dd-toggle]:focus {
   outline: 2px solid #60a5fa;
   outline-offset: 2px;

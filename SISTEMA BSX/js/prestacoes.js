@@ -2184,7 +2184,8 @@ if (!dataURL) {
 
   // Inicializa posição Y da coluna direita
   let ry = rightY + 10;
-  
+
+
 // ========================================
 // SEQUÊNCIA PARA MODELO COM 2ª COMISSÃO
 // ========================================

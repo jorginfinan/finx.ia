@@ -785,11 +785,26 @@ const nextFim = nextDom;
   atual.fechado   = true;
   atual.fechadoEm = new Date().toISOString();
 
-  // salva de volta e re-render
+  // salva de volta no Supabase E localStorage
   arr[idx] = atual;
-  localStorage.setItem(DB_PREST, JSON.stringify(arr));
+  
+  // ✅ SALVAR NO SUPABASE (correção principal)
+  if (typeof window.salvarPrestacaoGlobal === 'function') {
+    try {
+      await window.salvarPrestacaoGlobal(atual);
+      console.log('✅ Prestação fechada salva no Supabase:', atual.id);
+    } catch(e) {
+      console.error('❌ Erro ao salvar no Supabase:', e);
+      alert('Erro ao salvar no servidor. Tente novamente.');
+      return;
+    }
+  } else {
+    // Fallback para localStorage se Supabase não disponível
+    localStorage.setItem(DB_PREST, JSON.stringify(arr));
+  }
+  
   renderRelPrestacoes?.();
-renderPrestFechadas?.();
+  renderPrestFechadas?.();
 
   alert(
     'Semana fechada.\n' +

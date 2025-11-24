@@ -1221,6 +1221,118 @@ if (!window.__despInlineGroupBound) {
   window.__despInlineGroupBound = true;
 }
 
+// ====== NOVO SISTEMA DE DROPDOWN DE AÇÕES ======
+if (!window.__despDropdownBound) {
+  // Toggle do dropdown
+  document.addEventListener('click', (e) => {
+    const toggle = e.target.closest('[data-desp-dd-toggle]');
+    
+    if (toggle) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // Fecha todos os outros dropdowns
+      document.querySelectorAll('.desp-menu.show').forEach(menu => {
+        if (menu !== toggle.nextElementSibling) {
+          menu.classList.remove('show');
+          const otherToggle = menu.previousElementSibling;
+          if (otherToggle) otherToggle.setAttribute('aria-expanded', 'false');
+        }
+      });
+      
+      // Toggle do menu atual
+      const menu = toggle.nextElementSibling;
+      if (menu && menu.classList.contains('desp-menu')) {
+        const isOpen = menu.classList.contains('show');
+        menu.classList.toggle('show');
+        toggle.setAttribute('aria-expanded', !isOpen);
+      }
+      return;
+    }
+    
+    // Fecha dropdowns ao clicar fora
+    if (!e.target.closest('.desp-dd')) {
+      document.querySelectorAll('.desp-menu.show').forEach(menu => {
+        menu.classList.remove('show');
+        const toggle = menu.previousElementSibling;
+        if (toggle) toggle.setAttribute('aria-expanded', 'false');
+      });
+    }
+  });
+  
+  window.__despDropdownBound = true;
+}
+
+// ====== AÇÕES DO MENU (EDITAR, OCULTAR, EXCLUIR) ======
+if (!window.__despMenuActionsBound) {
+  document.addEventListener('click', async (e) => {
+    const actionBtn = e.target.closest('[data-desp-act]');
+    if (!actionBtn) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const action = actionBtn.getAttribute('data-desp-act');
+    const id = actionBtn.getAttribute('data-id');
+    
+    // Fecha o dropdown
+    const menu = actionBtn.closest('.desp-menu');
+    if (menu) {
+      menu.classList.remove('show');
+      const toggle = menu.previousElementSibling;
+      if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    }
+    
+    const arr = __getDespesas();
+    const idx = arr.findIndex(x => String(x.id) === String(id));
+    
+    if (idx === -1) {
+      console.warn('[DESPESAS] Despesa não encontrada:', id);
+      alert('Não foi possível localizar esta despesa.');
+      return;
+    }
+    
+    // Executar a ação
+    switch(action) {
+      case 'toggle-hide':
+        arr[idx].isHidden = !arr[idx].isHidden;
+        __setDespesas(arr);
+        await saveDespesa(arr[idx]);
+        renderDespesas();
+        break;
+        
+      case 'editar':
+        // Aqui você pode implementar a lógica de edição
+        // Por enquanto, vou apenas logar
+        console.log('[DESPESAS] Editar despesa:', arr[idx]);
+        alert('Função de edição em desenvolvimento');
+        break;
+        
+      case 'excluir':
+        if (!confirm('Excluir esta despesa?')) return;
+        
+        try {
+          const uid = arr[idx].uid || arr[idx].id;
+          
+          // Remove do array
+          const novo = arr.filter(x => String(x.id) !== String(id));
+          __setDespesas(novo);
+          
+          // Remove do Supabase
+          await window.SupabaseAPI.despesas.deleteByUid(uid);
+          
+          renderDespesas();
+        } catch (error) {
+          console.error('[DESPESAS] Erro ao excluir:', error);
+          alert('Erro ao excluir: ' + error.message);
+        }
+        break;
+    }
+  });
+  
+  window.__despMenuActionsBound = true;
+}
+
 // Ações admin: Ocultar/Desocultar e Excluir (botões antigos - manter compatibilidade)
 if (!window.__despAdminActionsBound) {
   document.addEventListener('click', async (e)=>{

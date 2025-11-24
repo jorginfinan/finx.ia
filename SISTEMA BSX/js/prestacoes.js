@@ -2160,6 +2160,23 @@ if (!dataURL) {
   ctx.fillStyle = '#b91c1c';
   ctx.fillText(fmtBRL((prestacaoAtual.resumo || {}).despesas || 0), leftX + leftW - 10, leftY + leftH - 12);
 
+  // ===== COLUNA DIREITA (Resumo) =====
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(rightX, rightY, rightW, rightH);
+  
+  let ry = rightY;  // ← INICIALIZAÇÃO DA VARIÁVEL ry
+  
+  const r = prestacaoAtual.resumo || {};
+  const coletas2 = Number(r.coletas) || 0;
+  const despesas2 = Number(r.despesas) || 0;
+  const c1 = Number(r.comis1) || 0;
+  const c2 = Number(r.comis2) || 0;
+  const temSegundaComissao = c2 > 0;
+  const R_GROUP = 18;
+  const R_BOLD = 16;
+  const R_LINE = 14;
+
 // ========================================
 // SEQUÊNCIA PARA MODELO COM 2ª COMISSÃO
 // ========================================

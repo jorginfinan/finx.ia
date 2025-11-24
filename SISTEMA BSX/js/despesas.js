@@ -615,7 +615,7 @@ function buildDespesasFilterOptions() {
 
   if (selF.value && !fichas.includes(selF.value)) selF.value = '';
 }
-window.buildDespesasFilterOptions = buildDespesasFilterOptions; 
+window.buildDespesasFilterOptions = buildDespesasFilterOptions;
 
       // --- BOTÕES DE IMPRESSÃO (substitui o "Exportar CSV" se existir) ---
       (function injectPrintButtons(){
@@ -1068,19 +1068,6 @@ function fmtDMY(iso){
   return `${d.padStart(2,'0')}/${m.padStart(2,'0')}/${y}`;
 }
 
-function __getDespesas(){
-  try { if (typeof despesas !== 'undefined' && Array.isArray(despesas)) return despesas; } catch(_) {}
-  return Array.isArray(window.despesas) ? window.despesas : [];
-}
-function __setDespesas(novo){
-  try { if (typeof despesas !== 'undefined') { despesas = novo; return; } } catch(_) {}
-  window.despesas = novo;
-  try {
-       if (typeof DB_DESPESAS !== 'undefined') {
-         localStorage.setItem(DB_DESPESAS, JSON.stringify(novo));
-       }
-     } catch(e){}
-    }
 
 function ensureSelect(id, placeholder){
   const el = document.getElementById(id);

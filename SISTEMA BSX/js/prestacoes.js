@@ -2164,19 +2164,27 @@ if (!dataURL) {
   ctx.strokeStyle = '#000';
   ctx.lineWidth = 2;
   ctx.strokeRect(rightX, rightY, rightW, rightH);
-  
-  let ry = rightY;  // ← INICIALIZAÇÃO DA VARIÁVEL ry
-  
+
+  // Variáveis do resumo
   const r = prestacaoAtual.resumo || {};
   const coletas2 = Number(r.coletas) || 0;
   const despesas2 = Number(r.despesas) || 0;
+  const perc2 = Number(r.perc) || 0;
+  const deveAnt2 = Number(r.negAnterior || r.deveAnt || 0);
   const c1 = Number(r.comis1) || 0;
   const c2 = Number(r.comis2) || 0;
   const temSegundaComissao = c2 > 0;
+  
+  // Constantes de tamanho
   const R_GROUP = 18;
   const R_BOLD = 16;
   const R_LINE = 14;
+  const R_SUB = 12;
+  const groupPad = 8;
 
+  // Inicializa posição Y da coluna direita
+  let ry = rightY + 10;
+  
 // ========================================
 // SEQUÊNCIA PARA MODELO COM 2ª COMISSÃO
 // ========================================

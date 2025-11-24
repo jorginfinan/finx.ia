@@ -390,8 +390,10 @@ for (const it of itens){
     </tr>
   `);
 }
-
-        }       
+      
+    
+        } 
+      }
   
     tb.innerHTML = linhas.join('');
     console.log('[renderDespesas] ✅ Renderizadas', linhas.length, 'linhas de', list.length, 'despesas');
@@ -428,7 +430,7 @@ for (const it of itens){
         avisoEl.textContent = '';
       }
     }    
-    }}
+    }
     window.renderDespesas = renderDespesas;
 
     (function bindDespUIFloating(){

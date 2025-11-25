@@ -433,7 +433,8 @@ window.pcResetPrestacao = function(){
     vales: [],
     valeSelec: [],
     resumo: {},
-    valeParcAplicado: []
+    valeParcAplicado: [],
+    saldoInfo: null
   };
 
   // limpa campos comuns (ajuste os IDs que você tiver na tela)
@@ -3439,8 +3440,10 @@ function pcResetForm(){
     vales: [], 
     valeSelec: [], 
     resumo: {},
-    valeParcAplicado: []
+    valeParcAplicado: [],
+    saldoInfo: null
   };
+
   const selGer = document.getElementById('pcGerente'); if (selGer) selGer.value = '';
   ['pcIni','pcFim'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   ['pcValorExtra','pcAdiant','pcDeveAnterior','pcDivida','pcCredito'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=0; });
@@ -3894,7 +3897,7 @@ window.addEventListener('vales:updated', ()=>{
     try { location.hash = '#prest'; } catch(_){}
   }
 
-  function loadIntoEditor(r){
+  async function loadIntoEditor(r){
     try{
       console.log('[EDIT] Carregando:', r.id);
       
@@ -3915,7 +3918,8 @@ window.addEventListener('vales:updated', ()=>{
         vales:     (r.vales     || []).map(x => ({...x})),
         valeSelec: (r.valesSel  || []).map(x => ({...x})),
         resumo:    {...(r.resumo || {})},
-        valeParcAplicado: (r.valeParcAplicado || []).map(x => ({...x}))
+        valeParcAplicado: (r.valeParcAplicado || []).map(x => ({...x})),
+        saldoInfo: r.saldoInfo ? {...r.saldoInfo} : null
       };
   
       console.log('[EDIT] Coletas:', window.prestacaoAtual.coletas?.length);
@@ -3926,7 +3930,7 @@ window.addEventListener('vales:updated', ()=>{
       pcRender?.();
       pgRender?.();
       renderValesPrestacao?.();
-      pcCalcular?.();
+      if (typeof pcCalcular === 'function') await pcCalcular();
       
       console.log('[EDIT] ✅ Prestação carregada!');
       

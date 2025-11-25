@@ -273,16 +273,8 @@ const list = __getDespesas().filter(r=>{
         const valorAj = Number(r.valor)||0;
         const dif     = valorAj - ideal;
         const status  = Math.abs(dif) < 0.005 ? 'IDEAL' : (dif > 0 ? 'ACIMA' : 'ABAIXO');
-        const toggleBtn = canToggleHide
-  ? `<button type="button" class="btn ${r.isHidden?'secondary':''}" data-toggle-hide="${r.id}">
-       ${r.isHidden?'Desocultar':'Ocultar'}
-     </button>`
-  : '';
 
-const del = canDelete
-  ? `<button type="button" class="btn danger" data-del-desp="${r.id}">Excluir</button>`
-  : 'n';
-
+        // Sistema unificado: apenas dropdown "Opções ▾"
       
         const selo = r.isHidden ? '<span class="pill-oculta" title="Esta despesa está oculta">ocultada</span>' : '';
         const difColor = status==='ACIMA' ? '#b91c1c' : (status==='ABAIXO' ? '#2563eb' : '#16a34a');
@@ -1122,74 +1114,9 @@ if (!window.__despDropdownBound) {
 }
 
 // 2️⃣ Processar Ações do Menu (Toggle Hide, Editar, Excluir)
-if (!window.__despMenuActionsBound) {
-  document.addEventListener('click', async (e) => {
-    const actionBtn = e.target.closest('[data-desp-act]');
-    if (!actionBtn) return;
-    
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const action = actionBtn.getAttribute('data-desp-act');
-    const id = actionBtn.getAttribute('data-id');
-    
-    // Fecha o menu
-    const menu = actionBtn.closest('[data-desp-dd-menu]');
-    if (menu) {
-      menu.classList.remove('show');
-      const btn = menu.closest('[data-desp-dd]')?.querySelector('[data-desp-dd-toggle]');
-      if (btn) btn.setAttribute('aria-expanded', 'false');
-    }
-    
-    const arr = __getDespesas();
-    const idx = arr.findIndex(x => String(x.id) === String(id) || String(x.uid) === String(id));
-    
-    if (idx === -1) {
-      alert('Despesa não encontrada.');
-      return;
-    }
-    
-    // TOGGLE HIDE
-    if (action === 'toggle-hide') {
-      arr[idx].isHidden = !arr[idx].isHidden;
-      __setDespesas(arr);
-      await saveDespesa(arr[idx]);
-      renderDespesas();
-    }
-    
-    // EDITAR
-    else if (action === 'editar') {
-      console.log('[Despesas] Editar:', arr[idx]);
-      alert('Função de editar em desenvolvimento.');
-      // TODO: Implementar modal de edição
-    }
-    
-    // EXCLUIR
-    else if (action === 'excluir') {
-      if (!confirm('Tem certeza que deseja excluir esta despesa?')) return;
-      
-      try {
-        const uid = arr[idx].uid || arr[idx].id;
-        
-        // Remove do array local
-        const novo = arr.filter(x => String(x.id) !== String(id) && String(x.uid) !== String(id));
-        __setDespesas(novo);
-        
-        // Remove do Supabase
-        await window.SupabaseAPI.despesas.deleteByUid(uid);
-        
-        alert('Despesa excluída com sucesso!');
-        renderDespesas();
-      } catch (error) {
-        console.error('[Despesas] Erro ao excluir:', error);
-        alert('Erro ao excluir despesa: ' + error.message);
-      }
-    }
-  }, true);
-  
-  window.__despMenuActionsBound = true;
-}
-
+// ====== SISTEMA UNIFICADO DE AÇÕES (DROPDOWN) ======
+// Único sistema mantido - dropdown "Opções ▾"
+// Remove duplicatas e mantém apenas o sistema mais completo
 
 // Delegação global para expandir/contrair grupos (não depende do render)
 if (!window.__despInlineGroupBound) {
@@ -1293,26 +1220,26 @@ if (!window.__despMenuActionsBound) {
         arr[idx].isHidden = !arr[idx].isHidden;
         __setDespesas(arr);
         
-        console.log('[TOGGLE] 1️⃣ Alterado isHidden para:', arr[idx].isHidden);
+        console.log('[DROPDOWN] 1️⃣ Alterado isHidden para:', arr[idx].isHidden);
         
         try {
           // Salva no Supabase
-          console.log('[TOGGLE] 2️⃣ Salvando...');
+          console.log('[DROPDOWN] 2️⃣ Salvando...');
           await saveDespesa(arr[idx]);
           
           // Aguarda um pouco para garantir que o Supabase processou
-          console.log('[TOGGLE] 3️⃣ Aguardando 100ms...');
+          console.log('[DROPDOWN] 3️⃣ Aguardando 100ms...');
           await new Promise(resolve => setTimeout(resolve, 100));
           
           // Recarrega do Supabase
-          console.log('[TOGGLE] 4️⃣ Recarregando do Supabase...');
+          console.log('[DROPDOWN] 4️⃣ Recarregando do Supabase...');
           await loadDespesas();
           
           // Renderiza
-          console.log('[TOGGLE] 5️⃣ Renderizando...');
+          console.log('[DROPDOWN] 5️⃣ Renderizando...');
           renderDespesas();
           
-          console.log('[TOGGLE] ✅ Concluído!');
+          console.log('[DROPDOWN] ✅ Concluído!');
         } catch (error) {
           console.error('[DESPESAS] Erro ao ocultar/desocultar:', error);
           alert('Erro ao salvar: ' + error.message);
@@ -1378,80 +1305,6 @@ if (!window.__despMenuActionsBound) {
   window.__despMenuActionsBound = true;
 }
 
-// Ações admin: Ocultar/Desocultar e Excluir (botões antigos - manter compatibilidade)
-if (!window.__despAdminActionsBound) {
-  document.addEventListener('click', async (e)=>{
-    // Toggle ocultar/desocultar
-    const hideBtn = e.target.closest('button[data-toggle-hide]');
-    if (hideBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const id  = hideBtn.getAttribute('data-toggle-hide');
-      const arr = __getDespesas();
-      const idx = arr.findIndex(x => String(x.id) === String(id));
-
-      if (idx === -1) {
-        console.warn('[DESPESAS] id não encontrado para ocultar:', id, arr.map(x=>x.id));
-        alert('Não foi possível localizar esta despesa para ocultar/exibir.');
-        return;
-      }
-
-      arr[idx].isHidden = !arr[idx].isHidden;
-      __setDespesas(arr);
-      
-      try {
-        await saveDespesa(arr[idx]);
-        await new Promise(resolve => setTimeout(resolve, 100));
-        await loadDespesas();
-        renderDespesas();
-      } catch (error) {
-        console.error('[DESPESAS] Erro ao ocultar:', error);
-        alert('Erro ao salvar: ' + error.message);
-        arr[idx].isHidden = !arr[idx].isHidden;
-        __setDespesas(arr);
-        renderDespesas();
-      }
-      return;
-    }
-
-    // Excluir
-    const delBtn = e.target.closest('button[data-del-desp]');
-    if (delBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const id  = delBtn.getAttribute('data-del-desp');
-      if (!confirm('Excluir despesa?')) return;
-
-      const arr  = __getDespesas();
-      const idx = arr.findIndex(x => String(x.id) === String(id));
-
-      if (idx === -1) {
-        console.warn('[DESPESAS] id não encontrado para excluir:', id, arr.map(x=>x.id));
-        alert('Não foi possível localizar esta despesa para excluir.');
-        return;
-      }
-
-      try {
-        const uid = arr[idx].uid || arr[idx].id;
-        
-        // Remove do array
-        const novo = arr.filter(x => String(x.id) !== String(id));
-        __setDespesas(novo);
-        
-        // Remove do Supabase
-        await window.SupabaseAPI.despesas.deleteByUid(uid);
-        
-        renderDespesas();
-      } catch (error) {
-        console.error('[DESPESAS] Erro ao excluir:', error);
-        alert('Erro ao excluir: ' + error.message);
-      }
-    }
-  }, true);
-  window.__despAdminActionsBound = true;
-}
 // ====== Modo seleção de ocultar por grupo (Total Despesas) ======
 if (!window.__despGroupHideBound) {
   // guarda grupos que estão em "modo seleção"

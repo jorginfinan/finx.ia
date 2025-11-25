@@ -1592,19 +1592,19 @@ const valePg = valesAplicados.reduce((sum, v) => {
     console.log('📊 [SaldoAcumulado] Condições atendidas! Calculando...');
     console.log('📊 [SaldoAcumulado] Parâmetros:', { gerenteId: g.uid, coletas, despesasTot, perc1, baseCalculo });
     
-    // ✅ Se está editando uma prestação, pega o saldo SEM incluir esta prestação
-    let saldoParaCalcular = undefined;
-    
-    if (window.__prestBeingEdited?.id && window.__prestBeingEdited?.saldoInfo) {
-      // Está editando - usa o saldo anterior da prestação sendo editada
-      saldoParaCalcular = window.__prestBeingEdited.saldoInfo.saldoCarregarAnterior || 0;
-      console.log('🔄 Editando - usando saldo anterior da prestação:', saldoParaCalcular);
-    } else {
-      // Prestação nova - busca saldo do Supabase
-      const empresaAtual = window.getCompany ? window.getCompany() : 'BSX';
-      saldoParaCalcular = await window.SaldoAcumulado.getSaldo(g.uid, empresaAtual);
-      console.log('🔍 [SaldoAcumulado] Saldo buscado do Supabase:', saldoParaCalcular);
-    }
+ // ✅ SEMPRE busca saldo atual do Supabase
+ const empresaAtual = window.getCompany ? window.getCompany() : 'BSX';
+ let saldoDoSupabase = await window.SaldoAcumulado.getSaldo(g.uid, empresaAtual);
+ let saldoParaCalcular = saldoDoSupabase;
+ 
+ // Se está EDITANDO, subtrai a contribuição desta prestação para não contar duas vezes
+ if (window.__prestBeingEdited?.id && window.__prestBeingEdited?.saldoInfo) {
+   const contribuicaoDestaPrestacao = window.__prestBeingEdited.saldoInfo.saldoCarregarNovo || 0;
+   saldoParaCalcular = Math.max(0, saldoDoSupabase - contribuicaoDestaPrestacao);
+   console.log('🔄 Editando - saldo Supabase:', saldoDoSupabase, '- contribuição desta prestação:', contribuicaoDestaPrestacao, '= saldo para calcular:', saldoParaCalcular);
+ } else {
+   console.log('🔍 [SaldoAcumulado] Saldo buscado do Supabase:', saldoParaCalcular);
+ }
     
     const calculoSaldo = await window.SaldoAcumulado.calcular({
       gerenteId: g.uid,
@@ -2608,26 +2608,8 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
   
   try { window.__syncAbertasMirror(); } catch {}
 
-  try {
-    const gerenteId = document.getElementById('pcGerente')?.value || '';
-    const ini = document.getElementById('pcIni')?.value || '';
-    const fim = document.getElementById('pcFim')?.value || '';
-    const { seg, dom } = __normalizeSegDom(ini, fim);
-    if (gerenteId && seg && dom && typeof __consumeCarry === 'function'){
-      __consumeCarry(gerenteId, seg, dom);
-    }
-  } catch(_){}
-
-  try {
-    const gSel = (window.gerentes || []).find(x => String(x.uid||x.id) === String(gerenteId));
-    const percSel = Number(gSel?.comissao || 0);
-    if (percSel > 0 && percSel < 50) {
-      const saldoNovo = Number(recPrest?.resumo?.saldoNegAcarreado) || 0;
-      setNegativoGerente(gerenteId, saldoNovo);
-    }
-  } catch(e) {
-    console.warn('Não foi possível atualizar o saldo negativo:', e);
-  }
+// Saldo negativo agora é gerenciado apenas pelo SaldoAcumulado (Supabase)
+console.log('✅ Saldo gerenciado via SaldoAcumulado (Supabase)');
 
 // ✅ CRIA PENDÊNCIA APENAS DOS PAGAMENTOS DE DÍVIDA
 const qtdPendencias = criarPendenciaPagamento(recPrest);

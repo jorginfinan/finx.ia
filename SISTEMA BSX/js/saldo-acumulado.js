@@ -7,12 +7,12 @@
     // ===== OBTER SALDO ACUMULADO DE UM GERENTE (SUPABASE) =====
     async function getSaldoCarregar(gerenteId, empresaId) {
       try {
-        if (!window.SupabaseAPI?.supabase) {
+        if (!window.SupabaseAPI?.client) {
           console.warn('[Saldo] Supabase não disponível');
           return 0;
         }
   
-        const { data, error } = await window.SupabaseAPI.supabase
+        const { data, error } = await window.SupabaseAPI.client
           .from('saldo_acumulado')
           .select('saldo')
           .eq('gerente_id', gerenteId)
@@ -34,7 +34,7 @@
     // ===== SALVAR SALDO ACUMULADO (SUPABASE) =====
     async function setSaldoCarregar(gerenteId, empresaId, valor) {
       try {
-        if (!window.SupabaseAPI?.supabase) {
+        if (!window.SupabaseAPI?.client) {
           throw new Error('Supabase não disponível');
         }
   
@@ -42,7 +42,7 @@
         const timestamp = new Date().toISOString();
   
         // Verifica se já existe
-        const { data: existing } = await window.SupabaseAPI.supabase
+        const { data: existing } = await window.SupabaseAPI.client
           .from('saldo_acumulado')
           .select('*')
           .eq('gerente_id', gerenteId)
@@ -51,7 +51,7 @@
   
         if (existing) {
           // Atualiza
-          const { error } = await window.SupabaseAPI.supabase
+          const { error } = await window.SupabaseAPI.client
             .from('saldo_acumulado')
             .update({
               saldo: valor,
@@ -62,7 +62,7 @@
           if (error) throw error;
         } else {
           // Insere
-          const { error } = await window.SupabaseAPI.supabase
+          const { error } = await window.SupabaseAPI.client
             .from('saldo_acumulado')
             .insert([{
               gerente_id: gerenteId,
@@ -226,7 +226,7 @@
         }
   
         // Busca prestações do Supabase
-        const { data: prestacoes, error } = await window.SupabaseAPI.supabase
+        const { data: prestacoes, error } = await window.SupabaseAPI.client
           .from('prestacoes')
           .select('*')
           .eq('gerente_id', gerenteId)
@@ -290,7 +290,7 @@
           return [];
         }
   
-        const { data, error } = await window.SupabaseAPI.supabase
+        const { data, error } = await window.SupabaseAPI.client
           .from('saldo_acumulado')
           .select('*')
           .eq('company', empresaId)

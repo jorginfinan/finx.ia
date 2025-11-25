@@ -2543,6 +2543,12 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
   __applyValesOnSave(prevRec, recPrest);
   __valesReload();  
 
+  console.log('🔍 DEBUG SALDO - Verificando condições para salvar:', {
+    temSaldoAcumulado: !!window.SaldoAcumulado,
+    saldoInfo: prestacaoAtual.saldoInfo,
+    usandoSaldoAcumulado: prestacaoAtual.saldoInfo?.usandoSaldoAcumulado,
+    prestacaoAtualCompleta: prestacaoAtual
+  });
   if (window.SaldoAcumulado && prestacaoAtual.saldoInfo?.usandoSaldoAcumulado) {
   
     // ✅ VERIFICA SE É EDIÇÃO

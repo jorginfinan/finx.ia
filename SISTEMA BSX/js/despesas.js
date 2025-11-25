@@ -1381,10 +1381,27 @@ if (!window.__despGroupHideBound) {
   });
 });
 
-// Event listeners para filtros
-['despBuscaGerente', 'despBuscaFicha', 'despBuscaRota'].forEach(id => {
-  document.getElementById(id)?.addEventListener('change', renderDespesas);
+// Event listeners para filtros (delegados, funcionam mesmo se o <select> for recriado)
+document.addEventListener('change', (e) => {
+  const target = e.target;
+  if (!target || !target.id) return;
+
+  // Quando troca o GERENTE:
+  // - Recalcula opções de rota/ficha com base nesse gerente
+  // - Re-renderiza a tabela
+  if (target.id === 'despBuscaGerente') {
+    if (typeof buildDespesasFilterOptions === 'function') {
+      buildDespesasFilterOptions();
+    }
+    renderDespesas();
+  }
+
+  // Quando troca ROTA ou FICHA: só precisa redesenhar a tabela
+  if (target.id === 'despBuscaRota' || target.id === 'despBuscaFicha') {
+    renderDespesas();
+  }
 });
+
 
 document.getElementById('despMostrarOcultas')?.addEventListener('change', ()=>{
   renderDespesas();

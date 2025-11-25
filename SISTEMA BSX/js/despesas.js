@@ -29,7 +29,20 @@ async function loadDespesas() {
       obs: d.obs || '',
       editada: d.editada || false
     }));
+    
+    const ocultasCount = window.despesas.filter(d => d.isHidden).length;
     console.log('[Despesas] Carregadas do Supabase:', window.despesas.length);
+    console.log('[Despesas] 🚫 Despesas com isHidden=true:', ocultasCount);
+    
+    // Log de amostra das ocultas
+    if (ocultasCount > 0) {
+      const amostraOcultas = window.despesas.filter(d => d.isHidden).slice(0, 3);
+      console.log('[Despesas] 📋 Amostra de ocultas:', amostraOcultas.map(d => ({
+        info: d.info,
+        isHidden: d.isHidden
+      })));
+    }
+    
     return window.despesas;
   } catch (error) {
     console.error('[Despesas] Erro ao carregar:', error);
@@ -215,9 +228,17 @@ function makeDespActionsMenu({ id, isHidden }, { canDelete }){
     const colCount = tb?.closest('table')?.querySelectorAll('thead th').length || 12;
   
 // 1) Filtra
-const list = __getDespesas().filter(r=>{
+const allDespesas = __getDespesas();
+console.log('[renderDespesas] 📊 Total de despesas:', allDespesas.length);
+console.log('[renderDespesas] 🔍 Despesas ocultas:', allDespesas.filter(d => d.isHidden).length);
+console.log('[renderDespesas] 👁️ showHidden (checkbox marcado)?', showHidden);
+
+const list = allDespesas.filter(r=>{
   if(r.data < de || r.data > ate) return false;
-  if(!showHidden && r.isHidden)   return false;
+  if(!showHidden && r.isHidden) {
+    console.log('[renderDespesas] ⚠️ Filtrando despesa oculta:', r.info, 'isHidden:', r.isHidden);
+    return false;
+  }
 
   const nomeG = (r.gerenteNome||'').toLowerCase();
   if (buscaG && nomeG !== buscaG) return false;
@@ -230,6 +251,8 @@ const list = __getDespesas().filter(r=>{
 
   return true;
 });
+
+console.log('[renderDespesas] ✅ Após filtrar:', list.length, 'despesas');
 
   
     // 2) Agrupa por ficha

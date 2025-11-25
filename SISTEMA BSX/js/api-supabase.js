@@ -322,12 +322,16 @@
           
           // Log de uma amostra para debug
           if (data && data.length > 0) {
-            const amostra = data.slice(0, 3).map(d => ({
+            const amostra = data.slice(0, 5).map(d => ({
               uid: d.uid,
               descricao: d.descricao,
-              oculta: d.oculta
+              oculta: d.oculta,
+              tipo: typeof d.oculta
             }));
-            console.log('[API] 📋 Amostra (primeiras 3):', amostra);
+            console.log('[API] 📋 Amostra (primeiras 5):', amostra);
+            
+            const ocultasNoBanco = data.filter(d => d.oculta === true).length;
+            console.log('[API] 🚫 Despesas com oculta=true no banco:', ocultasNoBanco);
           }
           
           return data || [];
@@ -425,7 +429,12 @@
           
           if (error) throw error;
           
-          console.log('[API] ✅ Supabase retornou:', data);
+          console.log('[API] ✅ Supabase retornou:', {
+            uid: data.uid,
+            descricao: data.descricao,
+            oculta: data.oculta,
+            'TIPO de oculta': typeof data.oculta
+          });
           
           return data;
         } catch (error) {

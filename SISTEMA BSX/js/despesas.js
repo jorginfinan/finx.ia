@@ -1240,10 +1240,16 @@ if (!window.__despMenuActionsBound) {
     // Executar a ação
     switch(action) {
       case 'toggle-hide':
+        const antigoEstado = arr[idx].isHidden;
         arr[idx].isHidden = !arr[idx].isHidden;
         __setDespesas(arr);
         
-        console.log('[DROPDOWN] 1️⃣ Alterado isHidden para:', arr[idx].isHidden);
+        console.log('[DROPDOWN] 1️⃣ Alterando despesa:', {
+          uid: arr[idx].uid,
+          info: arr[idx].info,
+          'isHidden ANTES': antigoEstado,
+          'isHidden AGORA': arr[idx].isHidden
+        });
         
         try {
           // Salva no Supabase
@@ -1256,7 +1262,22 @@ if (!window.__despMenuActionsBound) {
           
           // Recarrega do Supabase
           console.log('[DROPDOWN] 4️⃣ Recarregando do Supabase...');
+          const uidAlterado = arr[idx].uid;
+          const infoAlterado = arr[idx].info;
+          const novoEstado = arr[idx].isHidden;
+          
           await loadDespesas();
+          
+          // Verifica se a mudança persistiu
+          const arrDepois = __getDespesas();
+          const despesaDepois = arrDepois.find(d => d.uid === uidAlterado);
+          console.log('[DROPDOWN] 🔍 Verificando se mudança persistiu:', {
+            uid: uidAlterado,
+            info: infoAlterado,
+            'enviamos isHidden': novoEstado,
+            'veio do Supabase': despesaDepois?.isHidden,
+            'PERSISTIU?': despesaDepois?.isHidden === novoEstado ? '✅ SIM' : '❌ NÃO'
+          });
           
           // Renderiza
           console.log('[DROPDOWN] 5️⃣ Renderizando...');

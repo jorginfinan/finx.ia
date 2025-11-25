@@ -308,6 +308,8 @@
       async getAll() {
         try {
           const empresaId = await getEmpresaId();
+          console.log('[API] 📥 Buscando despesas da empresa:', empresaId);
+          
           const { data, error } = await this.client
             .from(this.table)
             .select('*')
@@ -315,9 +317,22 @@
             .order('data', { ascending: false });
           
           if (error) throw error;
+          
+          console.log('[API] 📦 Recebidas', data?.length, 'despesas do Supabase');
+          
+          // Log de uma amostra para debug
+          if (data && data.length > 0) {
+            const amostra = data.slice(0, 3).map(d => ({
+              uid: d.uid,
+              descricao: d.descricao,
+              oculta: d.oculta
+            }));
+            console.log('[API] 📋 Amostra (primeiras 3):', amostra);
+          }
+          
           return data || [];
         } catch (error) {
-          console.error('Erro ao buscar despesas:', error);
+          console.error('[API] ❌ Erro ao buscar despesas:', error);
           return [];
         }
       }

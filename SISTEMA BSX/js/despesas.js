@@ -23,7 +23,7 @@ async function loadDespesas() {
       data: d.data || '',
       periodoIni: d.periodo_ini || '', // periodo_ini → periodoIni
       periodoFim: d.periodo_fim || '', // periodo_fim → periodoFim
-      isHidden: d.oculta || false, // oculta → isHidden
+      isHidden: d.oculta === true, // oculta → isHidden (boolean correto)
       rota: d.rota || '',
       categoria: d.categoria || '',
       obs: d.obs || '',
@@ -1293,15 +1293,26 @@ if (!window.__despMenuActionsBound) {
         arr[idx].isHidden = !arr[idx].isHidden;
         __setDespesas(arr);
         
+        console.log('[TOGGLE] 1️⃣ Alterado isHidden para:', arr[idx].isHidden);
+        
         try {
           // Salva no Supabase
+          console.log('[TOGGLE] 2️⃣ Salvando...');
           await saveDespesa(arr[idx]);
+          
           // Aguarda um pouco para garantir que o Supabase processou
+          console.log('[TOGGLE] 3️⃣ Aguardando 100ms...');
           await new Promise(resolve => setTimeout(resolve, 100));
+          
           // Recarrega do Supabase
+          console.log('[TOGGLE] 4️⃣ Recarregando do Supabase...');
           await loadDespesas();
+          
           // Renderiza
+          console.log('[TOGGLE] 5️⃣ Renderizando...');
           renderDespesas();
+          
+          console.log('[TOGGLE] ✅ Concluído!');
         } catch (error) {
           console.error('[DESPESAS] Erro ao ocultar/desocultar:', error);
           alert('Erro ao salvar: ' + error.message);

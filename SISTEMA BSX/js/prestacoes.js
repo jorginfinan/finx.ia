@@ -1587,7 +1587,7 @@ const valePg = valesAplicados.reduce((sum, v) => {
   let valorComissao2 = 0;
   let resultado = 0;
         // SALDO ACUMULADO
-        if (window.SaldoAcumulado && g && perc1 > 0 && perc1 < 50 && !temSegundaComissao && baseCalculo !== 'COLETAS') {
+        if (window.SaldoAcumulado && g && perc1 > 0 && perc1 < 50 && baseCalculo !== 'COLETAS') {
   
     console.log('📊 [SaldoAcumulado] Condições atendidas! Calculando...');
     console.log('📊 [SaldoAcumulado] Parâmetros:', { gerenteId: g.uid, coletas, despesasTot, perc1, baseCalculo });
@@ -1616,12 +1616,30 @@ const valePg = valesAplicados.reduce((sum, v) => {
     });
     
     console.log('💰 [SaldoAcumulado] Resultado:', calculoSaldo);
-    
- // ✅ USA os valores do cálculo de saldo
-baseComissao = calculoSaldo.baseCalculo;
-valorComissao1 = calculoSaldo.valorComissao;
-resultado = calculoSaldo.resultado - valorComissao1;
 
+    // ✅ Valores retornados pelo módulo de saldo acumulado
+    baseComissao   = Number(calculoSaldo.baseCalculo)   || 0;   // base da 1ª comissão
+    valorComissao1 = Number(calculoSaldo.valorComissao) || 0;   // valor da 1ª comissão
+    
+    // Resultado após aplicar saldo acumulado + 1ª comissão
+    let resultadoAposSaldoEPrimeira = Number(calculoSaldo.resultado) || 0;
+    
+    // Se o gerente tem segunda comissão, aplica a mesma lógica do modelo CAÇULA:
+    // só calcula a 2ª comissão se ainda sobrou resultado POSITIVO
+    if (temSegundaComissao && perc2 > 0) {
+      if (resultadoAposSaldoEPrimeira > 0) {
+        valorComissao2 = (resultadoAposSaldoEPrimeira * perc2) / 100;
+        resultado = resultadoAposSaldoEPrimeira - valorComissao2;
+      } else {
+        valorComissao2 = 0;
+        resultado = resultadoAposSaldoEPrimeira;
+      }
+    } else {
+      // Sem segunda comissão: o resultado do módulo já é o resultado final
+      valorComissao2 = 0;
+      resultado = resultadoAposSaldoEPrimeira;
+    }
+  
     // Atualiza o snapshot com informações do saldo
     prestacaoAtual.saldoInfo = {
       saldoCarregarAnterior: calculoSaldo.saldoCarregarAnterior,
@@ -1630,7 +1648,14 @@ resultado = calculoSaldo.resultado - valorComissao1;
       observacao: calculoSaldo.observacao,
       usandoSaldoAcumulado: true
     };
-    
+    // 🔁 Mantém compatibilidade com o resumo antigo (usado em alguns lugares)
+prestacaoAtual.resumo = {
+  ...(prestacaoAtual.resumo || {}),
+  saldoNegAcarreado: Number(calculoSaldo.saldoCarregarNovo) || 0,
+  saldoAnterior:     Number(calculoSaldo.saldoCarregarAnterior) || 0
+};
+
+
     console.log('💰 Saldo Acumulado aplicado:', calculoSaldo);
     
   } else if (temSegundaComissao) {

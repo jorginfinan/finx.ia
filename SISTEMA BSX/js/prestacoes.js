@@ -3587,9 +3587,17 @@ window.prestToDataURL = function(rec) {
   }
 };
 
-// Visualizar imagem de uma prestação salva (usado na aba Relatórios)
-function viewPrestImage(id){
-  const arr = JSON.parse(localStorage.getItem(DB_PREST) || '[]');
+async function viewPrestImage(id){
+  // ✅ USA SUPABASE
+  let arr = [];
+  if (typeof window.carregarPrestacoesGlobal === 'function') {
+    try {
+      arr = await window.carregarPrestacoesGlobal();
+    } catch(e) {
+      console.error('[viewPrestImage] Erro ao carregar do Supabase:', e);
+    }
+  }
+  
   const r = arr.find(x => x.id === id);
   if(!r){ alert("Prestação não encontrada."); return; }
 
@@ -3610,10 +3618,18 @@ function viewPrestImage(id){
 window.getPrestacaoFromForm = getPrestacaoFromForm;
 window.viewPrestImage = viewPrestImage;
 
-// Excluir prestação salva (e reverter efeitos nos vales)
 async function deletePrest(id){
-  const arr = JSON.parse(localStorage.getItem(DB_PREST) || '[]');
-  const r   = arr.find(x => x.id === id);
+  // ✅ USA SUPABASE
+  let arr = [];
+  if (typeof window.carregarPrestacoesGlobal === 'function') {
+    try {
+      arr = await window.carregarPrestacoesGlobal();
+    } catch(e) {
+      console.error('[deletePrest] Erro ao carregar do Supabase:', e);
+    }
+  }
+  
+  const r = arr.find(x => x.id === id);
   if(!r){ alert('Prestação não encontrada.'); return; }
   if(!confirm('Excluir esta prestação de contas? Isso também estorna os VALES aplicados nela.')) return;
 
@@ -3658,12 +3674,10 @@ if (typeof window.deletarPrestacaoGlobal === 'function') {
     console.log('✅ Prestação deletada do Supabase:', id);
   } catch(e) {
     console.error('❌ Erro ao deletar do Supabase:', e);
-    // Fallback: deleta apenas do localStorage
-    localStorage.setItem(DB_PREST, JSON.stringify(novo));
+    // Não usa mais localStorage como fallback
   }
 } else {
-  // Fallback se Supabase não estiver carregado
-  localStorage.setItem(DB_PREST, JSON.stringify(novo));
+  console.warn('[deletePrest] Função deletarPrestacaoGlobal não disponível');
 }
 
 try { window.__syncAbertasMirror(); } catch {}
@@ -4891,7 +4905,4 @@ document.addEventListener('DOMContentLoaded', function() {
   if (dataDivida && !dataDivida.value) {
     dataDivida.value = hoje;
   }
-});
-
-
-});
+})});

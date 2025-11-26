@@ -2568,7 +2568,7 @@ let resultadoColetas = 0;
 if (temSegundaComissao) {
   resultadoColetas = coletas2 - despesas2 - c1 - c2;
 } else {
-  resultadoColetas = _resColetas2 - c1;
+  resultadoColetas = (coletas2 - despesas2) - c1;  // ✅ CORREÇÃO: usar cálculo direto
 }
 
 const aPagarCalc = Number(r.aPagar) || 0;  
@@ -2802,9 +2802,15 @@ if (qtdPendencias && qtdPendencias > 0) {
 
 // Salvar despesas no Supabase
 console.log('💰 Iniciando salvamento de despesas no Supabase...');
-console.log('💰 Total de despesas a salvar:', (prestacaoAtual.despesas || []).length);
+const despesasValidas = (prestacaoAtual.despesas || []).filter(d => {
+  // Pula despesas vazias (sem descrição E sem valor)
+  const temValor = Number(d.valor) > 0;
+  const temDescricao = (d.info || '').trim().length > 0;
+  return temValor || temDescricao;
+});
+console.log('💰 Despesas válidas a salvar:', despesasValidas.length, 'de', (prestacaoAtual.despesas || []).length);
 
-for (const d of (prestacaoAtual.despesas || [])) {
+for (const d of despesasValidas) {
   const dataLanc = (d.data || fim || ini || new Date().toISOString().slice(0,10)).slice(0,10);
   const despesaUid = d.id || uid();
   
@@ -3546,7 +3552,7 @@ window.prestToDataURL = function(rec) {
       if (temSegundaComissao) {
         resultadoColetas = coletas2 - despesas2 - c1 - c2;
       } else {
-        resultadoColetas = _resColetas2 - c1;
+        resultadoColetas = (coletas2 - despesas2) - c1;  // ✅ CORREÇÃO: cálculo direto
       }
 
       const aPagarCalc = Number(r.aPagar) || 0;

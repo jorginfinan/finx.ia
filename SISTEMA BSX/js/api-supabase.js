@@ -27,7 +27,6 @@
     
     function getEmpresaId() {
       const nome = window.getCompany ? window.getCompany() : 'BSX';
-      console.log('[API] getEmpresaId - nome empresa:', nome);
       // Busca ID da empresa no cache ou faz query
       return getEmpresaIdByNome(nome);
     }
@@ -36,16 +35,10 @@
     
     async function getEmpresaIdByNome(nome) {
       if (!empresasCache) {
-        console.log('[API] Buscando empresas do Supabase...');
-        const { data, error } = await supabaseClient.from('empresas').select('id, nome');
-        if (error) {
-          console.error('[API] Erro ao buscar empresas:', error);
-        }
+        const { data } = await supabaseClient.from('empresas').select('id, nome');
         empresasCache = data || [];
-        console.log('[API] Empresas encontradas:', empresasCache);
       }
       const emp = empresasCache.find(e => e.nome === nome);
-      console.log('[API] Empresa encontrada:', emp);
       return emp?.id || null;
     }
     
@@ -353,10 +346,10 @@
           const empresaId = await getEmpresaId();
           
           // Mapear campos do JS para Supabase
+          // NOTA: gerente_id removido - coluna não existe na tabela
           const despesaSupabase = {
             uid: despesa.uid,
             ficha: despesa.ficha || '',
-            gerente_id: despesa.gerenteId || null,
             gerente_nome: despesa.gerenteNome || despesa.gerente_nome || '',
             descricao: despesa.info || despesa.descricao || '', // info → descricao
             valor: Number(despesa.valor) || 0,
@@ -467,6 +460,49 @@
           return false;
         }
       }
+      
+      // ✅ NOVO: Função upsert para evitar duplicatas
+      async upsert(despesa) {
+        try {
+          const empresaId = await getEmpresaId();
+          
+          // Mapear campos do JS para Supabase
+          // NOTA: gerente_id removido - coluna não existe na tabela
+          const despesaSupabase = {
+            uid: despesa.uid,
+            ficha: despesa.ficha || '',
+            gerente_nome: despesa.gerenteNome || despesa.gerente_nome || '',
+            descricao: despesa.info || despesa.descricao || '',
+            valor: Number(despesa.valor) || 0,
+            data: despesa.data || new Date().toISOString().split('T')[0],
+            periodo_ini: despesa.periodoIni || despesa.periodo_ini || null,
+            periodo_fim: despesa.periodoFim || despesa.periodo_fim || null,
+            oculta: despesa.isHidden || despesa.oculta || false,
+            rota: despesa.rota || '',
+            categoria: despesa.categoria || '',
+            editada: despesa.editada || false,
+            empresa_id: empresaId
+          };
+          
+          console.log('[DespesasAPI] 📤 Upsert despesa:', despesaSupabase.uid, despesaSupabase.descricao);
+          
+          const { data, error } = await this.client
+            .from(this.table)
+            .upsert([despesaSupabase], { 
+              onConflict: 'uid',
+              ignoreDuplicates: false 
+            })
+            .select()
+            .single();
+          
+          if (error) throw error;
+          console.log('[DespesasAPI] ✅ Despesa salva:', despesaSupabase.uid);
+          return data;
+        } catch (error) {
+          console.error('[DespesasAPI] ❌ Erro ao upsert despesa:', error);
+          throw error;
+        }
+      }
     }
     
     // ============================================
@@ -520,218 +556,6 @@
     }
     
     // ============================================
-    // API DE FICHAS (CADASTRO UNIVERSAL - TODAS EMPRESAS)
-    // ============================================
-    
-    class FichasAPI {
-      constructor() {
-        this.table = 'fichas';
-        this.client = supabaseClient;
-      }
-      
-      async getAll() {
-        try {
-          // Fichas é cadastro universal - não filtra por empresa
-          const { data, error } = await this.client
-            .from(this.table)
-            .select('*')
-            .order('ficha');
-          
-          if (error) {
-            console.error('[FichasAPI] Erro na query:', error);
-            throw error;
-          }
-          
-          console.log('[FichasAPI] ✅ Carregadas:', data?.length || 0, 'fichas');
-          
-          return (data || []).map(f => ({
-            ficha: f.ficha,
-            area: f.area || ''
-          }));
-        } catch (error) {
-          console.error('[FichasAPI] Erro getAll:', error);
-          return [];
-        }
-      }
-      
-      async upsert(ficha, area) {
-        try {
-          ficha = String(ficha || '').trim();
-          area = String(area || '').trim();
-          if (!ficha) return null;
-          
-          // Verifica se já existe (por ficha, sem filtro de empresa)
-          const { data: existing } = await this.client
-            .from(this.table)
-            .select('id')
-            .eq('ficha', ficha)
-            .maybeSingle();
-          
-          if (existing) {
-            // Update
-            const { data, error } = await this.client
-              .from(this.table)
-              .update({ area })
-              .eq('id', existing.id)
-              .select()
-              .single();
-            
-            if (error) throw error;
-            console.log('[FichasAPI] ✅ Atualizada:', ficha);
-            return data;
-          } else {
-            // Insert - pega empresa atual só para o insert (se campo for obrigatório)
-            const empresaId = await getEmpresaId();
-            
-            const { data, error } = await this.client
-              .from(this.table)
-              .insert({
-                ficha,
-                area,
-                empresa_id: empresaId  // Usa empresa atual no insert
-              })
-              .select()
-              .single();
-            
-            if (error) throw error;
-            console.log('[FichasAPI] ✅ Criada:', ficha);
-            return data;
-          }
-        } catch (error) {
-          console.error('[FichasAPI] Erro upsert:', error);
-          return null;
-        }
-      }
-      
-      async delete(ficha) {
-        try {
-          // Deleta por ficha (universal)
-          const { error } = await this.client
-            .from(this.table)
-            .delete()
-            .eq('ficha', ficha);
-          
-          if (error) throw error;
-          return true;
-        } catch (error) {
-          console.error('[FichasAPI] Erro delete:', error);
-          return false;
-        }
-      }
-    }
-    
-    // ============================================
-    // API DE VENDAS (CADASTRO UNIVERSAL - TODAS EMPRESAS)
-    // ============================================
-    
-    class VendasAPI {
-      constructor() {
-        this.table = 'vendas';
-        this.client = supabaseClient;
-      }
-      
-      async getAll() {
-        try {
-          // Vendas é cadastro universal - não filtra por empresa
-          const { data, error } = await this.client
-            .from(this.table)
-            .select('*')
-            .order('ano_mes', { ascending: false });
-          
-          if (error) {
-            console.error('[VendasAPI] Erro na query:', error);
-            throw error;
-          }
-          
-          console.log('[VendasAPI] ✅ Carregadas:', data?.length || 0, 'vendas');
-          
-          // Mapeia para formato JS (ym, bruta, liquida)
-          return (data || []).map(v => ({
-            id: v.uid || v.id,
-            ficha: v.ficha,
-            ym: v.ano_mes,
-            bruta: Number(v.venda_bruta) || 0,
-            liquida: Number(v.venda_liquida) || 0
-          }));
-        } catch (error) {
-          console.error('[VendasAPI] Erro getAll:', error);
-          return [];
-        }
-      }
-      
-      async upsert(venda) {
-        try {
-          const uid = venda.id || 'vnd_' + Math.random().toString(36).slice(2, 11);
-          const anoMes = venda.ym || venda.ano_mes;
-          
-          // Verifica se já existe (por ficha + ano_mes, sem filtro de empresa)
-          const { data: existing } = await this.client
-            .from(this.table)
-            .select('id, uid')
-            .eq('ficha', venda.ficha)
-            .eq('ano_mes', anoMes)
-            .maybeSingle();
-          
-          if (existing) {
-            // Update
-            const { data, error } = await this.client
-              .from(this.table)
-              .update({
-                venda_bruta: Number(venda.bruta) || 0,
-                venda_liquida: Number(venda.liquida) || 0
-              })
-              .eq('id', existing.id)
-              .select()
-              .single();
-            
-            if (error) throw error;
-            console.log('[VendasAPI] ✅ Atualizada:', venda.ficha, anoMes);
-            return data;
-          } else {
-            // Insert - pega empresa atual só para o insert (se campo for obrigatório)
-            const empresaId = await getEmpresaId();
-            
-            const { data, error } = await this.client
-              .from(this.table)
-              .insert({
-                uid,
-                ficha: venda.ficha,
-                ano_mes: anoMes,
-                venda_bruta: Number(venda.bruta) || 0,
-                venda_liquida: Number(venda.liquida) || 0,
-                empresa_id: empresaId
-              })
-              .select()
-              .single();
-            
-            if (error) throw error;
-            console.log('[VendasAPI] ✅ Criada:', venda.ficha, anoMes);
-            return data;
-          }
-        } catch (error) {
-          console.error('[VendasAPI] Erro upsert:', error);
-          return null;
-        }
-      }
-      
-      async delete(id) {
-        try {
-          // Deleta por uid (universal)
-          const { error } = await this.client
-            .from(this.table)
-            .delete()
-            .eq('uid', id);
-          
-          if (error) throw error;
-          return true;
-        } catch (error) {
-          console.error('[VendasAPI] Erro delete:', error);
-          return false;
-        }
-      }
-    }
-    
-    // ============================================
     // EXPORTAR API
     // ============================================
     
@@ -740,8 +564,6 @@
       gerentes: new GerentesAPI(),
       despesas: new DespesasAPI(),
       prestacoes: new PrestacoesAPI(),
-      fichas: new FichasAPI(),
-      vendas: new VendasAPI(),
       client: supabaseClient
     };
     
@@ -749,6 +571,6 @@
     window.SupabaseAPI.users = window.SupabaseAPI.usuarios;
     
     console.log('✅ API Supabase carregada!');
-    console.log('📊 Tabelas: usuarios, gerentes, despesas, prestacoes, fichas, vendas');
+    console.log('📊 Tabelas: usuarios, gerentes, despesas, prestacoes');
     
   })();

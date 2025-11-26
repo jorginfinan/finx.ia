@@ -904,7 +904,7 @@ async function pcAddDespesa(preset = {}){
   
 
   
-  pcRenderDespesas();  // ou a função que renderiza as despesas na tela
+  pcRender();  // ou a função que renderiza as despesas na tela
   
   renderDespesas();
   pcSchedule();
@@ -2441,8 +2441,9 @@ if (temSegundaComissao) {
 // ========================================
 else {
   // Modelo padrão ou por rota positiva
+  const _resColetas2 = coletas2 - despesas2;
   
-  ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', fmtBRL(coletas2), 
+  ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', fmtBRL(coletas2),
                { bold:true, size:R_BOLD });
   
   ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Despesas', fmtBRL(despesas2), 

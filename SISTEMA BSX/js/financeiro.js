@@ -22,10 +22,24 @@ function initFinanceiro() {
 (function persistFin(){
   const LS_KEY = 'bsx_fin_lanc';
 
-  const load = () => {
+  const load = async () => {
+    // Tenta carregar do Supabase primeiro
+    if (window.SupabaseAPI?.lancamentos) {
+      try {
+        const data = await window.SupabaseAPI.lancamentos.getAll();
+        if (Array.isArray(data) && data.length > 0) {
+          console.log('[Financeiro] ✅ Carregado do Supabase:', data.length);
+          return data;
+        }
+      } catch(e) {
+        console.warn('[Financeiro] Erro Supabase, usando localStorage:', e);
+      }
+    }
+    // Fallback localStorage
     try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]') || []; }
     catch { return []; }
   };
+
   const persist = (arr) => {
     try {
       const json = JSON.stringify(arr || []);
@@ -110,17 +124,16 @@ window.getFinanceiro = window.getFinanceiro || function() {
   });
 
 
-  // garante que saveLanc continue funcionando
-// salva SEMPRE o conteúdo atual de window.lanc
-window.saveLanc = function () {
-  try {
-    const arr = Array.isArray(window.lanc) ? window.lanc : [];
-    const json = JSON.stringify(arr);
-    localStorage.setItem('bsx_fin_lanc', json); // chave oficial
-    localStorage.setItem('lanc', json);         // espelho p/ compat.
-    if (arr.length) localStorage.setItem('bsx_fin_lanc_bak', json);
-  } catch (_) {}
-};
+  window.saveLanc = function () {
+    try {
+      const arr = Array.isArray(window.lanc) ? window.lanc : [];
+      const json = JSON.stringify(arr);
+      // Mantém localStorage como backup
+      localStorage.setItem('bsx_fin_lanc', json);
+      localStorage.setItem('lanc', json);
+      if (arr.length) localStorage.setItem('bsx_fin_lanc_bak', json);
+    } catch (_) {}
+  };
 
 })();
 
@@ -295,7 +308,7 @@ window.__fin_openDialog = function(src){
 
 
 // ====== Salvar (edita por uid/id/key de forma segura) ======
-window.__fin_saveFromForm = function(){
+window.__fin_saveFromForm = async function(){
   const dlg  = document.getElementById('dlgLanc');
   const form = document.getElementById('formLanc');
   const btn  = document.getElementById('salvarLanc');
@@ -329,6 +342,14 @@ window.__fin_saveFromForm = function(){
     if (!canEditLanc()){ alert('Você não tem permissão para editar.'); if (btn) btn.dataset.busy='0'; return; }
     const { idx, row } = window.__fin_findByUid(editing);
     if (idx > -1){
+      // ✅ Atualiza no Supabase
+      if (window.SupabaseAPI?.lancamentos) {
+        try {
+          await window.SupabaseAPI.lancamentos.update(editing, reg);
+        } catch(e) {
+          console.error('[Financeiro] Erro ao atualizar no Supabase:', e);
+        }
+      }
       window.lanc[idx] = {
         ...(row||{}),
         ...reg,
@@ -352,6 +373,14 @@ window.__fin_saveFromForm = function(){
     const newId = (typeof uid === 'function' ? uid()
                     : (crypto?.randomUUID?.() || String(Date.now())));
     window.lanc.push({ uid: newId, ...reg });
+    // ✅ Cria no Supabase
+    if (window.SupabaseAPI?.lancamentos) {
+      try {
+        await window.SupabaseAPI.lancamentos.create({ uid: newId, ...reg });
+      } catch(e) {
+        console.error('[Financeiro] Erro ao criar no Supabase:', e);
+      }
+    }
     
     // ✅ AUDITORIA - Lançamento criado
     if (typeof window.AuditLog !== 'undefined' && typeof window.AuditLog.log === 'function') {
@@ -371,7 +400,7 @@ window.__fin_saveFromForm = function(){
 };
 
 // ====== Excluir robusto (procura por uid/id/key) ======
-window.__fin_deleteRow = function(uid, el){
+window.__fin_deleteRow = async function(uid, el){
   const key = uid || '';
   if (!key) return;
   if (!canDeleteLanc()) { alert('Apenas ADMIN pode deletar.'); return; }
@@ -393,6 +422,15 @@ window.__fin_deleteRow = function(uid, el){
   // Salva dados para auditoria antes de excluir
   const lancExcluido = window.lanc[idx];
 
+  // ✅ Deleta do Supabase
+  const uidToDelete = window.lanc[idx]?.uid || window.lanc[idx]?.id || key;
+  if (window.SupabaseAPI?.lancamentos) {
+    try {
+      await window.SupabaseAPI.lancamentos.delete(uidToDelete);
+    } catch(e) {
+      console.error('[Financeiro] Erro ao deletar do Supabase:', e);
+    }
+  }
   window.lanc.splice(idx, 1);
   window.saveLanc?.();
   window.renderFin?.();
@@ -1821,4 +1859,130 @@ console.log('[Financeiro] Módulo carregado e pronto');
     }
   `;
   document.head.appendChild(style);
+
+  
+})();
+// ============================================
+// API DE LANÇAMENTOS PARA SUPABASE
+// ============================================
+(function initLancamentosAPI() {
+  
+  function waitForSupabase(callback, retries = 100) {
+    if (window.SupabaseAPI?.client) {
+      callback();
+    } else if (retries > 0) {
+      setTimeout(() => waitForSupabase(callback, retries - 1), 100);
+    }
+  }
+
+  waitForSupabase(() => {
+    
+    window.SupabaseAPI.lancamentos = {
+      
+      async getAll(empresa) {
+        const company = empresa || window.getCompany?.() || 'BSX';
+        const { data, error } = await window.SupabaseAPI.client
+          .from('lancamentos')
+          .select('*')
+          .eq('company', company)
+          .order('data', { ascending: false });
+        
+        if (error) { console.error('[Lancamentos] Erro:', error); return []; }
+        
+        return (data || []).map(r => ({
+          id: r.id, uid: r.uid, key: r.uid,
+          gerente: r.gerente || '', valor: Number(r.valor) || 0,
+          status: r.status || 'RECEBIDO', forma: r.forma || 'PIX',
+          categoria: r.categoria || '', data: r.data || '',
+          editedAt: r.edited_at, editedBy: r.edited_by || ''
+        }));
+      },
+
+      async create(item) {
+        const company = item.company || window.getCompany?.() || 'BSX';
+        const uid = item.uid || window.uid?.() || crypto.randomUUID();
+        
+        const { data, error } = await window.SupabaseAPI.client
+          .from('lancamentos')
+          .insert([{
+            uid, gerente: item.gerente || '', valor: Number(item.valor) || 0,
+            status: item.status || 'RECEBIDO', forma: item.forma || 'PIX',
+            categoria: item.categoria || '', data: item.data || new Date().toISOString().slice(0,10),
+            company, created_by: window.currentUser?.nome || ''
+          }])
+          .select().single();
+        
+        if (error) throw error;
+        console.log('[Lancamentos] ✅ Criado:', uid);
+        return data;
+      },
+
+      async update(uid, dados) {
+        const dbRow = { edited_at: new Date().toISOString(), edited_by: window.currentUser?.nome || '' };
+        if (dados.gerente !== undefined) dbRow.gerente = dados.gerente;
+        if (dados.valor !== undefined) dbRow.valor = Number(dados.valor);
+        if (dados.status !== undefined) dbRow.status = dados.status;
+        if (dados.forma !== undefined) dbRow.forma = dados.forma;
+        if (dados.categoria !== undefined) dbRow.categoria = dados.categoria;
+        if (dados.data !== undefined) dbRow.data = dados.data;
+
+        const { error } = await window.SupabaseAPI.client
+          .from('lancamentos').update(dbRow).eq('uid', uid);
+        
+        if (error) throw error;
+        console.log('[Lancamentos] ✅ Atualizado:', uid);
+      },
+
+      async delete(uid) {
+        const { error } = await window.SupabaseAPI.client
+          .from('lancamentos').delete().eq('uid', uid);
+        
+        if (error) throw error;
+        console.log('[Lancamentos] ✅ Deletado:', uid);
+      },
+
+      async migrate() {
+        const raw = localStorage.getItem('bsx_fin_lanc');
+        if (!raw) { console.log('[Lancamentos] Nada para migrar'); return { migrated: 0 }; }
+        
+        const local = JSON.parse(raw);
+        if (!Array.isArray(local) || !local.length) return { migrated: 0 };
+        
+        console.log(`[Lancamentos] 🔄 Migrando ${local.length} itens...`);
+        let migrated = 0;
+        
+        for (const item of local) {
+          try {
+            const uid = item.uid || item.id || item.key;
+            // Verifica se já existe
+            const { data: existing } = await window.SupabaseAPI.client
+              .from('lancamentos').select('uid').eq('uid', uid).maybeSingle();
+            
+            if (existing) { console.log('Já existe:', uid); continue; }
+            
+            await this.create(item);
+            migrated++;
+          } catch(e) { console.warn('Erro ao migrar:', e); }
+        }
+        
+        console.log(`[Lancamentos] ✅ Migrados: ${migrated}`);
+        localStorage.setItem('bsx_fin_lanc_backup_pre_supabase', raw);
+        return { migrated };
+      }
+    };
+
+    // Função global para migrar
+    window.migrarLancamentosParaSupabase = () => window.SupabaseAPI.lancamentos.migrate();
+
+    // Carrega do Supabase
+    window.SupabaseAPI.lancamentos.getAll().then(data => {
+      if (data.length > 0) {
+        window.lanc = data;
+        window.renderFin?.();
+        console.log('[Financeiro] ✅ Carregado do Supabase:', data.length);
+      }
+    });
+
+    console.log('✅ [Lancamentos API] Pronta! Use migrarLancamentosParaSupabase() para migrar.');
+  });
 })();

@@ -2442,7 +2442,7 @@ if (temSegundaComissao) {
 else {
   // Modelo padrão ou por rota positiva
   const _resColetas2 = coletas2 - despesas2;
-  const showNeg2 = perc2 > 0 && perc2 < 50;  // ← ADICIONAR ESTA LINHA
+  const showNeg2 = perc2 > 0 && perc2 < 50;  // ✅ CORREÇÃO: definir showNeg2 neste bloco
   
   ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', fmtBRL(coletas2),
                { bold:true, size:R_BOLD });
@@ -2801,30 +2801,57 @@ if (qtdPendencias && qtdPendencias > 0) {
 }
 
 // Salvar despesas no Supabase
+console.log('💰 Iniciando salvamento de despesas no Supabase...');
+console.log('💰 Total de despesas a salvar:', (prestacaoAtual.despesas || []).length);
+
 for (const d of (prestacaoAtual.despesas || [])) {
   const dataLanc = (d.data || fim || ini || new Date().toISOString().slice(0,10)).slice(0,10);
+  const despesaUid = d.id || uid();
+  
+  console.log('💰 Processando despesa:', { uid: despesaUid, info: d.info, valor: d.valor });
   
   try {
-    await window.SupabaseAPI.despesas.create({
-      uid: d.id || uid(),
-      gerente_nome: g?.nome || '',
-      ficha: d.ficha || '',
-      descricao: d.info || '',
-      valor: Number(d.valor) || 0,
-      data: dataLanc,
-      periodo_ini: ini,
-      periodo_fim: fim,
-      oculta: false,
-      rota: '',
-      categoria: '',
-      editada: false
-    });
+    // ✅ Usa upsert em vez de create para evitar duplicatas
+    if (window.SupabaseAPI?.despesas?.upsert) {
+      await window.SupabaseAPI.despesas.upsert({
+        uid: despesaUid,
+        gerente_nome: g?.nome || '',
+        ficha: d.ficha || '',
+        descricao: d.info || '',
+        valor: Number(d.valor) || 0,
+        data: dataLanc,
+        periodo_ini: ini,
+        periodo_fim: fim,
+        oculta: false,
+        rota: '',
+        categoria: '',
+        editada: false
+      });
+      console.log('✅ Despesa salva via upsert:', despesaUid);
+    } else {
+      // Fallback para create se upsert não existir
+      await window.SupabaseAPI.despesas.create({
+        uid: despesaUid,
+        gerente_nome: g?.nome || '',
+        ficha: d.ficha || '',
+        descricao: d.info || '',
+        valor: Number(d.valor) || 0,
+        data: dataLanc,
+        periodo_ini: ini,
+        periodo_fim: fim,
+        oculta: false,
+        rota: '',
+        categoria: '',
+        editada: false
+      });
+      console.log('✅ Despesa salva via create:', despesaUid);
+    }
   } catch(e) {
-    console.error('Erro ao salvar despesa:', e);
+    console.error('❌ Erro ao salvar despesa:', despesaUid, e);
   }
 }
 
-console.log('✅ Despesas salvas no Supabase');
+console.log('✅ Todas as despesas processadas');
   
   window.__prestBeingEdited = null;
   pcResetForm();
@@ -3588,17 +3615,9 @@ window.prestToDataURL = function(rec) {
   }
 };
 
-async function viewPrestImage(id){
-  // ✅ USA SUPABASE
-  let arr = [];
-  if (typeof window.carregarPrestacoesGlobal === 'function') {
-    try {
-      arr = await window.carregarPrestacoesGlobal();
-    } catch(e) {
-      console.error('[viewPrestImage] Erro ao carregar do Supabase:', e);
-    }
-  }
-  
+// Visualizar imagem de uma prestação salva (usado na aba Relatórios)
+function viewPrestImage(id){
+  const arr = JSON.parse(localStorage.getItem(DB_PREST) || '[]');
   const r = arr.find(x => x.id === id);
   if(!r){ alert("Prestação não encontrada."); return; }
 
@@ -3619,18 +3638,10 @@ async function viewPrestImage(id){
 window.getPrestacaoFromForm = getPrestacaoFromForm;
 window.viewPrestImage = viewPrestImage;
 
+// Excluir prestação salva (e reverter efeitos nos vales)
 async function deletePrest(id){
-  // ✅ USA SUPABASE
-  let arr = [];
-  if (typeof window.carregarPrestacoesGlobal === 'function') {
-    try {
-      arr = await window.carregarPrestacoesGlobal();
-    } catch(e) {
-      console.error('[deletePrest] Erro ao carregar do Supabase:', e);
-    }
-  }
-  
-  const r = arr.find(x => x.id === id);
+  const arr = JSON.parse(localStorage.getItem(DB_PREST) || '[]');
+  const r   = arr.find(x => x.id === id);
   if(!r){ alert('Prestação não encontrada.'); return; }
   if(!confirm('Excluir esta prestação de contas? Isso também estorna os VALES aplicados nela.')) return;
 
@@ -3675,10 +3686,12 @@ if (typeof window.deletarPrestacaoGlobal === 'function') {
     console.log('✅ Prestação deletada do Supabase:', id);
   } catch(e) {
     console.error('❌ Erro ao deletar do Supabase:', e);
-    // Não usa mais localStorage como fallback
+    // Fallback: deleta apenas do localStorage
+    localStorage.setItem(DB_PREST, JSON.stringify(novo));
   }
 } else {
-  console.warn('[deletePrest] Função deletarPrestacaoGlobal não disponível');
+  // Fallback se Supabase não estiver carregado
+  localStorage.setItem(DB_PREST, JSON.stringify(novo));
 }
 
 try { window.__syncAbertasMirror(); } catch {}
@@ -4906,4 +4919,7 @@ document.addEventListener('DOMContentLoaded', function() {
   if (dataDivida && !dataDivida.value) {
     dataDivida.value = hoje;
   }
-})});
+});
+
+
+});

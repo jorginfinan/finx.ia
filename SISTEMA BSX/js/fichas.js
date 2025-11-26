@@ -10,28 +10,36 @@ window.vendas = window.vendas || [];
 
 // Carrega fichas do Supabase
 async function carregarFichas() {
-  if (!window.SupabaseAPI?.fichas) return [];
+  if (!window.SupabaseAPI?.fichas) {
+    console.warn('[Fichas] SupabaseAPI.fichas não disponível');
+    return [];
+  }
   try {
+    console.log('[Fichas] 🔄 Carregando do Supabase...');
     const data = await window.SupabaseAPI.fichas.getAll();
     window.fichas = data || [];
-    console.log('[Fichas] ✅ Carregadas:', window.fichas.length);
+    console.log('[Fichas] ✅ Carregadas:', window.fichas.length, window.fichas);
     return window.fichas;
   } catch (e) {
-    console.error('[Fichas] Erro:', e);
+    console.error('[Fichas] ❌ Erro:', e);
     return [];
   }
 }
 
 // Carrega vendas do Supabase
 async function carregarVendas() {
-  if (!window.SupabaseAPI?.vendas) return [];
+  if (!window.SupabaseAPI?.vendas) {
+    console.warn('[Vendas] SupabaseAPI.vendas não disponível');
+    return [];
+  }
   try {
+    console.log('[Vendas] 🔄 Carregando do Supabase...');
     const data = await window.SupabaseAPI.vendas.getAll();
     window.vendas = data || [];
     console.log('[Vendas] ✅ Carregadas:', window.vendas.length);
     return window.vendas;
   } catch (e) {
-    console.error('[Vendas] Erro:', e);
+    console.error('[Vendas] ❌ Erro:', e);
     return [];
   }
 }
@@ -54,30 +62,127 @@ async function saveVendas() {
   console.log('[Vendas] ✅ Salvas no Supabase');
 }
 
+// Expor globalmente para debug
+window.carregarFichas = carregarFichas;
+window.carregarVendas = carregarVendas;
+
 // Inicialização - carrega dados do Supabase
 (function initFichasVendas() {
-  function tryLoad() {
-    if (window.SupabaseAPI?.fichas && window.SupabaseAPI?.vendas) {
-      carregarFichas().then(() => {
-        try { renderFichaArea?.(); } catch {}
-        try { buildDespesasFilterOptions?.(); } catch {}
-      });
-      carregarVendas().then(() => {
-        try { renderVendas?.(); } catch {}
-      });
-    } else {
-      setTimeout(tryLoad, 500);
+  let tentativas = 0;
+  const maxTentativas = 20;
+  let dadosCarregados = false;
+  
+  async function tryLoad() {
+    tentativas++;
+    console.log(`[Init Fichas/Vendas] Tentativa ${tentativas}...`);
+    
+    // Verifica se API está pronta
+    if (!window.SupabaseAPI?.fichas || !window.SupabaseAPI?.vendas) {
+      if (tentativas < maxTentativas) {
+        setTimeout(tryLoad, 500);
+      } else {
+        console.error('[Init Fichas/Vendas] ❌ API não ficou pronta após', maxTentativas, 'tentativas');
+      }
+      return;
+    }
+    
+    console.log('[Init Fichas/Vendas] ✅ API pronta, carregando dados...');
+    
+    try {
+      // Carrega fichas
+      await carregarFichas();
+      
+      // Carrega vendas
+      await carregarVendas();
+      
+      dadosCarregados = true;
+      
+      // Renderiza se elementos existirem
+      renderIfVisible();
+      
+      console.log('[Init Fichas/Vendas] ✅ Inicialização completa!');
+    } catch (err) {
+      console.error('[Init Fichas/Vendas] ❌ Erro:', err);
     }
   }
-  setTimeout(tryLoad, 1000);
+  
+  // Função para renderizar se os elementos existirem no DOM
+  function renderIfVisible() {
+    if (!dadosCarregados) return;
+    
+    const tbodyFichas = document.getElementById('tbodyFichaArea');
+    const tbodyVendas = document.getElementById('tbodyVendas');
+    
+    if (tbodyFichas && typeof renderFichaArea === 'function') {
+      console.log('[Fichas] Renderizando tabela...');
+      renderFichaArea();
+    }
+    
+    if (tbodyVendas && typeof renderVendas === 'function') {
+      console.log('[Vendas] Renderizando tabela...');
+      renderVendas();
+    }
+    
+    if (typeof buildDespesasFilterOptions === 'function') {
+      buildDespesasFilterOptions();
+    }
+  }
+  
+  // Aguarda um pouco para API carregar
+  setTimeout(tryLoad, 1500);
+  
+  // Renderiza quando navegar para a página de fichas
+  document.addEventListener('page:show', (e) => {
+    if (e.detail === 'fich' || e.detail === 'fichas') {
+      console.log('[Fichas] Página exibida, renderizando...');
+      renderIfVisible();
+    }
+  });
+  
+  // Também escuta mudanças de hash
+  window.addEventListener('hashchange', () => {
+    const hash = window.location.hash.replace('#', '');
+    if (hash === 'fich' || hash === 'fichas') {
+      console.log('[Fichas] Hash mudou para fichas, renderizando...');
+      setTimeout(renderIfVisible, 100);
+    }
+  });
+  
+  // Observa mudanças de visibilidade da seção de fichas
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+        const target = mutation.target;
+        if (target.id === 'page-fich' || target.id === 'secFichas') {
+          const isVisible = target.style.display !== 'none';
+          if (isVisible) {
+            console.log('[Fichas] Seção ficou visível, renderizando...');
+            setTimeout(renderIfVisible, 50);
+          }
+        }
+      }
+    });
+  });
+  
+  // Observa as seções quando estiverem disponíveis
+  setTimeout(() => {
+    const pageFich = document.getElementById('page-fich');
+    const secFichas = document.getElementById('secFichas');
+    
+    if (pageFich) {
+      observer.observe(pageFich, { attributes: true });
+    }
+    if (secFichas) {
+      observer.observe(secFichas, { attributes: true });
+    }
+  }, 2000);
   
   // Recarrega ao trocar empresa
   document.addEventListener('empresa:change', async () => {
+    console.log('[Fichas/Vendas] 🔄 Empresa mudou, recarregando...');
     await carregarFichas();
     await carregarVendas();
-    try { renderFichaArea?.(); } catch {}
-    try { renderVendas?.(); } catch {}
-    try { buildDespesasFilterOptions?.(); } catch {}
+    renderIfVisible();
   });
 })();
 

@@ -1,4 +1,3 @@
-
 // ============================================
 // FICHAS E VENDAS - SUPABASE
 // ============================================
@@ -43,6 +42,7 @@ async function saveFichas() {
   for (const f of (window.fichas || [])) {
     await window.SupabaseAPI.fichas.upsert(f.ficha, f.area);
   }
+  console.log('[Fichas] ✅ Salvas no Supabase');
 }
 
 // Salva vendas no Supabase
@@ -51,6 +51,7 @@ async function saveVendas() {
   for (const v of (window.vendas || [])) {
     await window.SupabaseAPI.vendas.upsert(v);
   }
+  console.log('[Vendas] ✅ Salvas no Supabase');
 }
 
 // Inicialização - carrega dados do Supabase
@@ -58,11 +59,11 @@ async function saveVendas() {
   function tryLoad() {
     if (window.SupabaseAPI?.fichas && window.SupabaseAPI?.vendas) {
       carregarFichas().then(() => {
-        renderFichaArea?.();
-        buildDespesasFilterOptions?.();
+        try { renderFichaArea?.(); } catch {}
+        try { buildDespesasFilterOptions?.(); } catch {}
       });
       carregarVendas().then(() => {
-        renderVendas?.();
+        try { renderVendas?.(); } catch {}
       });
     } else {
       setTimeout(tryLoad, 500);
@@ -74,13 +75,11 @@ async function saveVendas() {
   document.addEventListener('empresa:change', async () => {
     await carregarFichas();
     await carregarVendas();
-    renderFichaArea?.();
-    renderVendas?.();
-    buildDespesasFilterOptions?.();
+    try { renderFichaArea?.(); } catch {}
+    try { renderVendas?.(); } catch {}
+    try { buildDespesasFilterOptions?.(); } catch {}
   });
 })();
-
-// ==== FICHAS (código original continua abaixo) ====
 
 // ==== FICHAS ====
 function renderFichaArea(){
@@ -95,12 +94,12 @@ function renderFichaArea(){
 
   if(currentUser?.isAdmin){
     document.querySelectorAll('[data-del-ficha]').forEach(b=>{
-      b.addEventListener('click',()=>{
+      b.addEventListener('click', async ()=>{
         const f=b.getAttribute('data-del-ficha');
         if(confirm(`Excluir ficha ${f}? (Não remove vendas)`)){
           fichas = fichas.filter(x=>x.ficha!==f); 
           if (window.SupabaseAPI?.fichas) {
-            window.SupabaseAPI.fichas.delete(f);
+            await window.SupabaseAPI.fichas.delete(f);
           }
           renderFichaArea(); 
           renderVendas();
@@ -109,7 +108,7 @@ function renderFichaArea(){
     });
   }
 }
-// >>> FONTE ÚNICA: array global `fichas` + saveFichas()
+// >>> FONTE ÚNICA: array global `fichas` + Supabase
 async function setFichaArea(ficha, area){
   ficha = String(ficha||'').trim();
   area  = String(area ||'').trim();
@@ -119,7 +118,7 @@ async function setFichaArea(ficha, area){
   if (i >= 0) fichas[i].area = area;
   else (fichas ||= []).push({ ficha, area });
 
-  // Salva direto no Supabase
+  // Salva no Supabase
   if (window.SupabaseAPI?.fichas) {
     await window.SupabaseAPI.fichas.upsert(ficha, area);
   }
@@ -154,26 +153,18 @@ document.getElementById('formFichaArea').addEventListener('submit', async (ev)=>
 });
 
 function renderFichaVenda(){ renderFichaArea(); }
-
 document.getElementById('formFichaVenda').addEventListener('submit', async (ev)=>{
   ev.preventDefault();
   const fd = new FormData(ev.target);
   const ficha = String(fd.get('ficha')||'').trim();
-  const ym    = String(fd.get('mes')||'').trim();
+  const ym    = String(fd.get('mes')||'').trim(); // AAAA-MM
   let bruta   = String(fd.get('bruta')||'').trim();
   let liquida = String(fd.get('liquida')||'').trim();
   if(!ficha || !ym || !bruta){ alert('Informe ficha, mês e venda bruta.'); return; }
   if(bruta.includes(',')) bruta = bruta.replace(/\./g,'').replace(',','.');
   if(liquida && liquida.includes(',')) liquida = liquida.replace(/\./g,'').replace(',','.');
   
-  const rec = { 
-    id: uid(), 
-    ficha, 
-    ym, 
-    bruta: parseFloat(bruta)||0, 
-    liquida: parseFloat(liquida||'0')||0 
-  };
-  
+  const rec = { id:uid(), ficha, ym, bruta:parseFloat(bruta)||0, liquida: parseFloat(liquida||'0')||0 };
   const idx = vendas.findIndex(v=>v.ficha===ficha && v.ym===ym);
   if(idx>-1) vendas[idx] = { ...vendas[idx], ...rec };
   else vendas.push(rec);
@@ -187,7 +178,6 @@ document.getElementById('formFichaVenda').addEventListener('submit', async (ev)=
   renderVendas(); 
   alert('Venda salva.');
 });
-
 function renderVendas(){
   const tb = document.getElementById('tbodyVendas');
   const qFicha = (document.getElementById('fvBuscaFicha').value||'').trim().toLowerCase();
@@ -219,12 +209,12 @@ function renderVendas(){
 
   if(currentUser?.isAdmin){
     document.querySelectorAll('[data-del-venda]').forEach(b=>{
-      b.addEventListener('click',()=>{
+      b.addEventListener('click', async ()=>{
         const id=b.getAttribute('data-del-venda');
         if(confirm('Excluir venda?')){
           vendas = vendas.filter(x=>x.id!==id); 
           if (window.SupabaseAPI?.vendas) {
-            window.SupabaseAPI.vendas.delete(id);
+            await window.SupabaseAPI.vendas.delete(id);
           }
           renderVendas();
         }
@@ -397,34 +387,40 @@ function mapRow(obj){
   return { ficha, ym, bruta, liquida, area };
 }
 
-function upsertVendas(rows){
+async function upsertVendas(rows){
   const idx = new Map();
   (vendas||[]).forEach((v,i)=> idx.set(`${v.ficha}|${v.ym}`, i));
   let novos=0, atualizados=0;
 
-  rows.forEach(r=>{
+  for (const r of rows) {
     const key = `${r.ficha}|${r.ym}`;
+    const rec = {
+      id: uid?.() || crypto.randomUUID?.() || String(Date.now()+Math.random()),
+      ficha: r.ficha,
+      ym: r.ym,
+      bruta: Number(r.bruta)||0,
+      liquida: Number(r.liquida)||0
+    };
+    
     if (idx.has(key)){
       const i = idx.get(key);
-      vendas[i].bruta   = Number(r.bruta)||0;
-      vendas[i].liquida = Number(r.liquida)||0;
+      rec.id = vendas[i].id; // mantém ID original
+      vendas[i].bruta = rec.bruta;
+      vendas[i].liquida = rec.liquida;
       vendas[i].updatedAt = new Date().toISOString();
       atualizados++;
     } else {
-      vendas.push({
-        id: uid?.() || crypto.randomUUID?.() || String(Date.now()+Math.random()),
-        ficha: r.ficha,
-        ym: r.ym,
-        bruta: Number(r.bruta)||0,
-        liquida: Number(r.liquida)||0,
-        createdAt: new Date().toISOString()
-      });
+      rec.createdAt = new Date().toISOString();
+      vendas.push(rec);
       novos++;
     }
-  });
+    
+    // Salva cada venda no Supabase
+    if (window.SupabaseAPI?.vendas) {
+      await window.SupabaseAPI.vendas.upsert(rec);
+    }
+  }
 
-  // salva como sempre
-  saveVendas?.();
   return {novos, atualizados};
 }
 
@@ -449,8 +445,8 @@ async function handleImport(){
     }
 
     const mapped = rows.map(mapRow);
-    const areasInfo = upsertAreasFromRows(mapped);
-    const {novos, atualizados} = upsertVendas(mapped);
+    const areasInfo = await upsertAreasFromRows(mapped);
+    const {novos, atualizados} = await upsertVendas(mapped);
 
     renderVendas?.(); 
     renderDespesas?.();     
@@ -480,7 +476,7 @@ btnModelo?.addEventListener('click', ()=>{
   URL.revokeObjectURL(url);
 });
 
-function upsertAreasFromRows(rows){
+async function upsertAreasFromRows(rows){
   if (!Array.isArray(window.fichas)) window.fichas = [];
   const byFicha = new Map();
   // considera só linhas com área preenchida
@@ -492,7 +488,7 @@ function upsertAreasFromRows(rows){
   let novas=0, atualizadas=0;
   const idx = new Map(window.fichas.map((f,i)=>[String(f.ficha), i]));
 
-  byFicha.forEach((area, ficha)=>{
+  for (const [ficha, area] of byFicha) {
     if (idx.has(ficha)){
       const i = idx.get(ficha);
       if (window.fichas[i].area !== area){
@@ -503,10 +499,14 @@ function upsertAreasFromRows(rows){
       window.fichas.push({ ficha, area });
       novas++;
     }
-  });
+    
+    // Salva no Supabase
+    if (window.SupabaseAPI?.fichas) {
+      await window.SupabaseAPI.fichas.upsert(ficha, area);
+    }
+  }
 
-  // persiste e atualiza telas relacionadas
-  window.saveFichas?.();
+  // atualiza telas relacionadas
   window.buildDespesasFilterOptions?.();
   window.renderFichaArea?.();
   return {novas, atualizadas};
@@ -520,7 +520,7 @@ function upsertAreasFromRows(rows){
 
   // usa a função principal já existente
   async function upsertFA(ficha, area) {
-    setFichaArea(ficha, area); // grava direto no banco fichas
+    await setFichaArea(ficha, area); // grava direto no Supabase
   }
 
   // parser CSV (formato simples "ficha;area")

@@ -1,4 +1,87 @@
 
+// ============================================
+// FICHAS E VENDAS - SUPABASE
+// ============================================
+
+// Inicializa arrays globais
+window.fichas = window.fichas || [];
+window.vendas = window.vendas || [];
+
+// ========== FUNÇÕES SUPABASE ==========
+
+// Carrega fichas do Supabase
+async function carregarFichas() {
+  if (!window.SupabaseAPI?.fichas) return [];
+  try {
+    const data = await window.SupabaseAPI.fichas.getAll();
+    window.fichas = data || [];
+    console.log('[Fichas] ✅ Carregadas:', window.fichas.length);
+    return window.fichas;
+  } catch (e) {
+    console.error('[Fichas] Erro:', e);
+    return [];
+  }
+}
+
+// Carrega vendas do Supabase
+async function carregarVendas() {
+  if (!window.SupabaseAPI?.vendas) return [];
+  try {
+    const data = await window.SupabaseAPI.vendas.getAll();
+    window.vendas = data || [];
+    console.log('[Vendas] ✅ Carregadas:', window.vendas.length);
+    return window.vendas;
+  } catch (e) {
+    console.error('[Vendas] Erro:', e);
+    return [];
+  }
+}
+
+// Salva fichas no Supabase
+async function saveFichas() {
+  if (!window.SupabaseAPI?.fichas) return;
+  for (const f of (window.fichas || [])) {
+    await window.SupabaseAPI.fichas.upsert(f.ficha, f.area);
+  }
+}
+
+// Salva vendas no Supabase
+async function saveVendas() {
+  if (!window.SupabaseAPI?.vendas) return;
+  for (const v of (window.vendas || [])) {
+    await window.SupabaseAPI.vendas.upsert(v);
+  }
+}
+
+// Inicialização - carrega dados do Supabase
+(function initFichasVendas() {
+  function tryLoad() {
+    if (window.SupabaseAPI?.fichas && window.SupabaseAPI?.vendas) {
+      carregarFichas().then(() => {
+        renderFichaArea?.();
+        buildDespesasFilterOptions?.();
+      });
+      carregarVendas().then(() => {
+        renderVendas?.();
+      });
+    } else {
+      setTimeout(tryLoad, 500);
+    }
+  }
+  setTimeout(tryLoad, 1000);
+  
+  // Recarrega ao trocar empresa
+  document.addEventListener('empresa:change', async () => {
+    await carregarFichas();
+    await carregarVendas();
+    renderFichaArea?.();
+    renderVendas?.();
+    buildDespesasFilterOptions?.();
+  });
+})();
+
+// ==== FICHAS (código original continua abaixo) ====
+
 // ==== FICHAS ====
 function renderFichaArea(){
   const tbody = document.getElementById('tbodyFichaArea');
@@ -15,14 +98,19 @@ function renderFichaArea(){
       b.addEventListener('click',()=>{
         const f=b.getAttribute('data-del-ficha');
         if(confirm(`Excluir ficha ${f}? (Não remove vendas)`)){
-          fichas = fichas.filter(x=>x.ficha!==f); saveFichas(); renderFichaArea(); renderVendas();
+          fichas = fichas.filter(x=>x.ficha!==f); 
+          if (window.SupabaseAPI?.fichas) {
+            window.SupabaseAPI.fichas.delete(f);
+          }
+          renderFichaArea(); 
+          renderVendas();
         }
       });
     });
   }
 }
 // >>> FONTE ÚNICA: array global `fichas` + saveFichas()
-function setFichaArea(ficha, area){
+async function setFichaArea(ficha, area){
   ficha = String(ficha||'').trim();
   area  = String(area ||'').trim();
   if (!ficha || !area) return;
@@ -31,7 +119,10 @@ function setFichaArea(ficha, area){
   if (i >= 0) fichas[i].area = area;
   else (fichas ||= []).push({ ficha, area });
 
-  saveFichas?.();
+  // Salva direto no Supabase
+  if (window.SupabaseAPI?.fichas) {
+    await window.SupabaseAPI.fichas.upsert(ficha, area);
+  }
 }
 
 function getAreaByFicha(ficha){
@@ -40,39 +131,63 @@ function getAreaByFicha(ficha){
   return it ? (it.area || '') : '';
 }
 
-document.getElementById('formFichaArea').addEventListener('submit',(ev)=>{
+document.getElementById('formFichaArea').addEventListener('submit', async (ev)=>{
   ev.preventDefault();
   const fd = new FormData(ev.target);
   const ficha = String(fd.get('ficha')||'').trim();
   const area  = String(fd.get('area')||'').trim();
   if(!ficha || !area){ alert('Informe ficha e área.'); return; }
+  
   const i = fichas.findIndex(x=>x.ficha===ficha);
   if(i>-1){ fichas[i].area = area; } else { fichas.push({ficha, area}); }
-  saveFichas();
-buildDespesasFilterOptions?.();
-renderFichaArea();
-renderVendas?.();
-renderDespesas?.(); 
-alert('Salvo.');
+  
+  // Salva no Supabase
+  if (window.SupabaseAPI?.fichas) {
+    await window.SupabaseAPI.fichas.upsert(ficha, area);
+  }
+  
+  buildDespesasFilterOptions?.();
+  renderFichaArea();
+  renderVendas?.();
+  renderDespesas?.(); 
+  alert('Salvo.');
 });
 
 function renderFichaVenda(){ renderFichaArea(); }
-document.getElementById('formFichaVenda').addEventListener('submit',(ev)=>{
+
+document.getElementById('formFichaVenda').addEventListener('submit', async (ev)=>{
   ev.preventDefault();
   const fd = new FormData(ev.target);
   const ficha = String(fd.get('ficha')||'').trim();
-  const ym    = String(fd.get('mes')||'').trim(); // AAAA-MM
+  const ym    = String(fd.get('mes')||'').trim();
   let bruta   = String(fd.get('bruta')||'').trim();
   let liquida = String(fd.get('liquida')||'').trim();
   if(!ficha || !ym || !bruta){ alert('Informe ficha, mês e venda bruta.'); return; }
   if(bruta.includes(',')) bruta = bruta.replace(/\./g,'').replace(',','.');
   if(liquida && liquida.includes(',')) liquida = liquida.replace(/\./g,'').replace(',','.');
-  const rec = { id:uid(), ficha, ym, bruta:parseFloat(bruta)||0, liquida: parseFloat(liquida||'0')||0 };
+  
+  const rec = { 
+    id: uid(), 
+    ficha, 
+    ym, 
+    bruta: parseFloat(bruta)||0, 
+    liquida: parseFloat(liquida||'0')||0 
+  };
+  
   const idx = vendas.findIndex(v=>v.ficha===ficha && v.ym===ym);
   if(idx>-1) vendas[idx] = { ...vendas[idx], ...rec };
   else vendas.push(rec);
-  saveVendas(); ev.target.reset(); renderVendas(); alert('Venda salva.');
+  
+  // Salva no Supabase
+  if (window.SupabaseAPI?.vendas) {
+    await window.SupabaseAPI.vendas.upsert(rec);
+  }
+  
+  ev.target.reset(); 
+  renderVendas(); 
+  alert('Venda salva.');
 });
+
 function renderVendas(){
   const tb = document.getElementById('tbodyVendas');
   const qFicha = (document.getElementById('fvBuscaFicha').value||'').trim().toLowerCase();
@@ -107,7 +222,11 @@ function renderVendas(){
       b.addEventListener('click',()=>{
         const id=b.getAttribute('data-del-venda');
         if(confirm('Excluir venda?')){
-          vendas = vendas.filter(x=>x.id!==id); saveVendas(); renderVendas();
+          vendas = vendas.filter(x=>x.id!==id); 
+          if (window.SupabaseAPI?.vendas) {
+            window.SupabaseAPI.vendas.delete(id);
+          }
+          renderVendas();
         }
       });
     });

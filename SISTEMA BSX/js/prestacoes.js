@@ -537,7 +537,7 @@ function renderValesPrestacao(){
 
 // Quitar (zera o saldo, marca quitado e registra log)
 tb.querySelectorAll('[data-vale-quitar]').forEach(b=>{
-  b.addEventListener('click', ()=>{
+  b.addEventListener('click', async ()=>{
     const id = b.getAttribute('data-vale-quitar');
     const v = (vales||[]).find(x=>x.id===id); 
     if(!v) return;
@@ -546,22 +546,25 @@ tb.querySelectorAll('[data-vale-quitar]').forEach(b=>{
     if (!confirm(`Quitar este vale? Isso zera o saldo de ${fmtBRL(saldoAntes)} e marca como quitado.`)) return;
 
     v.valor   = 0;
+    v.saldo   = 0;
     v.quitado = true;
-    try { saveVales?.(); } catch {}
+    
+    // Atualiza no Supabase
+    if (window.SupabaseAPI?.vales) {
+      await window.SupabaseAPI.vales.update(id, { saldo: 0, quitado: true });
+    }
 
-    // log amigável (sem vincular a uma prestação específica)
-    try {
-      window.valesLog?.add({
-        id: (typeof uid==='function'? uid(): 'vl_'+Math.random().toString(36).slice(2,9)),
-        valeId: v.id, cod: v.cod||'', gerenteId: v.gerenteId,
-        delta: saldoAntes,                 // quanto foi abatido agora
-        saldoAntes, saldoDepois: 0,
-        prestacaoId: window.__prestBeingEdited?.id || null,
-        periodoIni: document.getElementById('pcIni')?.value || null,
-        periodoFim: document.getElementById('pcFim')?.value || null,
-        createdAt: new Date().toISOString()
-      });
-    } catch {}
+    // log amigável
+    window.valesLog?.add({
+      id: (typeof uid==='function'? uid(): 'vl_'+Math.random().toString(36).slice(2,9)),
+      valeId: v.id, cod: v.cod||'', gerenteId: v.gerenteId,
+      delta: saldoAntes,
+      saldoAntes, saldoDepois: 0,
+      prestacaoId: window.__prestBeingEdited?.id || null,
+      periodoIni: document.getElementById('pcIni')?.value || null,
+      periodoFim: document.getElementById('pcFim')?.value || null,
+      createdAt: new Date().toISOString()
+    });
 
     renderValesPrestacao();
     pcSchedule();
@@ -584,70 +587,237 @@ tb.querySelectorAll('[data-vale-del]').forEach(b=>{
   const el = document.getElementById('pcValesTotalDesc');
   if(el) el.textContent = fmtBRL(totAberto);
 }
-/* ===== VALES_PERSIST — ÚNICO, COM AUDITORIA ===== */
-(function VALES_PERSIST(){
-  const BASE = 'bsx_vales_v1';
-  const EMP  = () => (localStorage.getItem('CURRENT_COMPANY') || 'BSX').toUpperCase();
-  const KEMP = () => `${EMP()}__${BASE}`;
-  const read = k => { 
-    try { 
-      return JSON.parse(localStorage.getItem(k)||'[]'); 
-    } catch (e) {       // ✅ compatível com todos os browsers
-      return []; 
-    } 
+/* ===== VALES - SUPABASE API ===== */
+(function VALES_SUPABASE_API(){
+  const EMP = () => localStorage.getItem('empresa_ativa') || window.getCompany?.() || 'BSX';
+  const getUser = () => window.Auth?.user?.()?.email || window.SupabaseAPI?.user?.email || '';
+
+  // Inicializa array vazio
+  window.vales = window.vales || [];
+
+  // API de Vales no Supabase
+  const ValesAPI = {
+    async getAll(empresa) {
+      const emp = empresa || EMP();
+      try {
+        const { data, error } = await window.SupabaseAPI.client
+          .from('vales')
+          .select('*')
+          .eq('company', emp)
+          .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        return (data || []).map(v => ({
+          id: v.uid,
+          gerenteId: v.gerente_id,
+          cod: v.cod || '',
+          valor: Number(v.valor) || 0,
+          saldo: Number(v.saldo) || 0,
+          obs: v.obs || '',
+          periodo: v.periodo || '',
+          quitado: v.quitado || false,
+          criadoEm: v.created_at
+        }));
+      } catch (e) {
+        console.error('[Vales] Erro getAll:', e);
+        return [];
+      }
+    },
+
+    async create(item) {
+      const emp = EMP();
+      try {
+        const { error } = await window.SupabaseAPI.client
+          .from('vales')
+          .insert({
+            uid: item.id,
+            gerente_id: item.gerenteId,
+            cod: item.cod || '',
+            valor: Number(item.valor) || 0,
+            saldo: Number(item.saldo ?? item.valor) || 0,
+            obs: item.obs || '',
+            periodo: item.periodo || '',
+            quitado: item.quitado || false,
+            company: emp,
+            created_by: getUser()
+          });
+        
+        if (error) throw error;
+        console.log('[Vales] ✅ Criado:', item.id);
+        return true;
+      } catch (e) {
+        console.error('[Vales] Erro create:', e);
+        return false;
+      }
+    },
+
+    async update(uid, dados) {
+      try {
+        const upd = {};
+        if (dados.saldo !== undefined) upd.saldo = Number(dados.saldo);
+        if (dados.quitado !== undefined) upd.quitado = dados.quitado;
+        if (dados.cod !== undefined) upd.cod = dados.cod;
+        if (dados.obs !== undefined) upd.obs = dados.obs;
+        if (dados.valor !== undefined) upd.valor = Number(dados.valor);
+
+        const { error } = await window.SupabaseAPI.client
+          .from('vales')
+          .update(upd)
+          .eq('uid', uid);
+        
+        if (error) throw error;
+        console.log('[Vales] ✅ Atualizado:', uid);
+        return true;
+      } catch (e) {
+        console.error('[Vales] Erro update:', e);
+        return false;
+      }
+    },
+
+    async delete(uid) {
+      try {
+        const { error } = await window.SupabaseAPI.client
+          .from('vales')
+          .delete()
+          .eq('uid', uid);
+        
+        if (error) throw error;
+        
+        // Remove logs também
+        await window.SupabaseAPI.client
+          .from('vales_log')
+          .delete()
+          .eq('vale_id', uid);
+        
+        console.log('[Vales] ✅ Deletado:', uid);
+        return true;
+      } catch (e) {
+        console.error('[Vales] Erro delete:', e);
+        return false;
+      }
+    },
+
+    async migrate() {
+      const emp = EMP();
+      const KEY = `${emp}__bsx_vales_v1`;
+      const KEY_LEG = 'bsx_vales_v1';
+      
+      let local = [];
+      try { local = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch {}
+      if (!local.length) {
+        try { local = JSON.parse(localStorage.getItem(KEY_LEG) || '[]'); } catch {}
+      }
+      
+      if (!local.length) {
+        console.log('[Vales] Nada para migrar');
+        return { migrated: 0 };
+      }
+
+      console.log(`[Vales] 🔄 Migrando ${local.length} vales...`);
+      
+      const { data: existing } = await window.SupabaseAPI.client
+        .from('vales')
+        .select('uid')
+        .eq('company', emp);
+      
+      const existingSet = new Set((existing || []).map(v => v.uid));
+      
+      let migrated = 0;
+      for (const v of local) {
+        if (existingSet.has(v.id)) continue;
+        const ok = await this.create(v);
+        if (ok) migrated++;
+      }
+
+      console.log(`[Vales] ✅ Migrados: ${migrated}`);
+      return { migrated };
+    }
   };
-  
 
-  // Carga preferindo chave da empresa; cai para legado se vazio
-  const pref = read(KEMP());
-  const leg  = read(BASE);
+  // Registra API global
+  window.SupabaseAPI = window.SupabaseAPI || {};
+  window.SupabaseAPI.vales = ValesAPI;
 
-  window.__VALES_KEY = pref.length ? KEMP() : (leg.length ? BASE : KEMP());
-  window.vales = Array.isArray(window.vales) ? window.vales : (pref.length ? pref : leg);
+  // Função para carregar vales do Supabase (síncrona - retorna cache)
+  window.__valesReload = function() {
+    return window.vales || [];
+  };
 
-  // Salvamento com verificação e fallback
-  window.saveVales = function(){
-    const arr = Array.isArray(window.vales) ? window.vales : [];
-    let key = window.__VALES_KEY || KEMP();
+  // Função assíncrona para carregar do Supabase
+  window.__valesReloadAsync = async function() {
+    if (!window.SupabaseAPI?.client) return window.vales || [];
     try {
-      localStorage.setItem(key, JSON.stringify(arr));
-        window.__VALES_KEY = key;
+      const data = await ValesAPI.getAll();
+      window.vales = data;
+      console.log('[Vales] ✅ Carregados do Supabase:', data.length);
+      return data;
+    } catch (e) {
+      console.warn('[Vales] Erro ao carregar:', e);
+      return window.vales || [];
+    }
+  };
 
-        // ✅ NOTIFICA SINCRONIZAÇÃO
+  // saveVales - salva cada vale no Supabase
+  window.saveVales = async function() {
+    if (!window.SupabaseAPI?.client) return;
+    const arr = window.vales || [];
+    
+    for (const v of arr) {
+      try {
+        const { data } = await window.SupabaseAPI.client
+          .from('vales')
+          .select('uid')
+          .eq('uid', v.id)
+          .maybeSingle();
+        
+        if (data) {
+          await ValesAPI.update(v.id, {
+            saldo: v.saldo ?? v.valor,
+            quitado: v.quitado,
+            obs: v.obs,
+            cod: v.cod
+          });
+        } else {
+          await ValesAPI.create(v);
+        }
+      } catch (e) {
+        console.warn('[Vales] Erro sync:', v.id, e);
+      }
+    }
+    
     if (typeof window.SyncManager !== 'undefined') {
       window.SyncManager.notify('vales', { count: arr.length });
     }
-      
-    } catch(e){
-      console.error('[VALES] saveVales erro:', e);
-    }
   };
 
-  // Ao trocar de empresa, recarrega da chave correta
-  document.addEventListener('empresa:change', ()=>{
-    window.__VALES_KEY = KEMP();
-    window.vales = read(KEMP());
+  // Ao trocar de empresa, recarrega do Supabase
+  document.addEventListener('empresa:change', async () => {
+    await window.__valesReloadAsync();
     try { renderValesPrestacao?.(); } catch {}
   });
 
-  // Reagir a alterações vindas de outra aba
-  window.addEventListener('storage', (e)=>{
-    const k = e?.key || '';
-    if (k === BASE || k.endsWith(`__${BASE}`)) {
-      try { window.vales = read(window.__VALES_KEY || KEMP()); } catch (e) {}
-      try { renderValesPrestacao?.(); } catch {}
-    }
-  });
-
-  // Auditoria rápida no console
-  window._valesAudit = function(){
-    console.table([
-      { onde:'empresa', chave:KEMP(), qtd: read(KEMP()).length },
-      { onde:'legado',  chave:BASE,   qtd: read(BASE).length  }
-    ]);
-    console.log('memória (window.vales)=', Array.isArray(window.vales), 
-                'qtd:', window.vales?.length || 0, 'key:', window.__VALES_KEY);
+  // Função de migração global
+  window.migrarValesParaSupabase = async function() {
+    const r1 = await ValesAPI.migrate();
+    const r2 = await window.SupabaseAPI?.valesLog?.migrate?.() || { migrated: 0 };
+    console.log(`[Vales] ✅ Migração completa - Vales: ${r1.migrated}, Logs: ${r2.migrated}`);
+    return { vales: r1.migrated, logs: r2.migrated };
   };
+
+  // Carrega vales do Supabase na inicialização
+  function initVales() {
+    if (window.SupabaseAPI?.client) {
+      window.__valesReloadAsync().then(() => {
+        try { renderValesPrestacao?.(); } catch {}
+      });
+    } else {
+      setTimeout(initVales, 500);
+    }
+  }
+  setTimeout(initVales, 1000);
+
+  console.log('[Vales] ✅ API Supabase inicializada');
 })();
 
 
@@ -2666,12 +2836,13 @@ console.log('✅ Despesas salvas no Supabase');
 
 
 // ====== FUNÇÃO: aplicar/estornar parcelas de VALE ao SALVAR ======
-function __applyValesOnSave(prevRec, recPrest){
+async function __applyValesOnSave(prevRec, recPrest){
   try{
     const EPS = 0.005;
     const prevMap = new Map((prevRec?.valeParcAplicado || []).map(x => [x.id, Number(x.aplicado)||0]));
     const curMap  = new Map((prestacaoAtual?.valeParcAplicado || []).map(x => [x.id, Number(x.aplicado)||0]));
     const eventos = [];
+    const valesParaAtualizar = [];
 
     (window.vales || []).forEach(v => {
       const prev  = prevMap.get(v.id) || 0;
@@ -2684,6 +2855,7 @@ function __applyValesOnSave(prevRec, recPrest){
       if (saldoDepois < EPS) saldoDepois = 0;
 
       v.valor = Number(saldoDepois.toFixed(2));
+      v.saldo = v.valor;
 
       if (v.valor === 0) {
         v.quitado   = true;
@@ -2692,6 +2864,9 @@ function __applyValesOnSave(prevRec, recPrest){
         v.quitado = false;
         delete v.quitadoEm;
       }
+
+      // Marca para atualizar no Supabase
+      valesParaAtualizar.push({ id: v.id, saldo: v.valor, quitado: v.quitado });
 
       eventos.push({
         id: (typeof uid==='function'? uid(): 'vl_'+Math.random().toString(36).slice(2,9)),
@@ -2705,9 +2880,14 @@ function __applyValesOnSave(prevRec, recPrest){
     });
 
     if (eventos.length){
-      try { window.valesLog?.bulkAdd?.(eventos); } catch {}
-      try { saveVales?.(); } catch {}
-      __valesReload();
+      // Atualiza no Supabase
+      if (window.SupabaseAPI?.vales) {
+        for (const upd of valesParaAtualizar) {
+          await window.SupabaseAPI.vales.update(upd.id, { saldo: upd.saldo, quitado: upd.quitado });
+        }
+      }
+      // Log
+      window.valesLog?.bulkAdd?.(eventos);
     }
     try { renderValesPrestacao?.(); } catch {}
     try { window.dispatchEvent(new Event('vales:updated')); } catch {}
@@ -2720,43 +2900,155 @@ function __applyValesOnSave(prevRec, recPrest){
 });
 })();
 
-/* ========== DB de LOG de pagamentos de VALE (por empresa) ========== */
-(function VALES_LOG_DB(){
-  const BASE='bsx_vales_log_v1';
-  const EMP = () => (localStorage.getItem('CURRENT_COMPANY')||'BSX').toUpperCase();
-  const KEY = () => `${EMP()}__${BASE}`;
-  const read = () => { 
-  try { 
-    return JSON.parse(localStorage.getItem(KEY())||'[]'); 
-  } catch (e) {       // ✅
-    return []; 
-  } 
-};
+/* ========== VALES LOG - SUPABASE ========== */
+(function VALES_LOG_SUPABASE(){
+  const EMP = () => localStorage.getItem('empresa_ativa') || window.getCompany?.() || 'BSX';
 
-  const write = (arr) => localStorage.setItem(KEY(), JSON.stringify(arr||[]));
+  const ValesLogAPI = {
+    async add(ev) {
+      if (!window.SupabaseAPI?.client) return false;
+      const emp = EMP();
+      try {
+        const { error } = await window.SupabaseAPI.client
+          .from('vales_log')
+          .insert({
+            uid: ev.id || 'vl_' + Math.random().toString(36).slice(2, 9),
+            vale_id: ev.valeId,
+            cod: ev.cod || '',
+            gerente_id: ev.gerenteId,
+            delta: Number(ev.delta) || 0,
+            saldo_antes: Number(ev.saldoAntes) || 0,
+            saldo_depois: Number(ev.saldoDepois) || 0,
+            prestacao_id: ev.prestacaoId || null,
+            periodo_ini: ev.periodoIni || null,
+            periodo_fim: ev.periodoFim || null,
+            company: emp
+          });
+        
+        if (error) throw error;
+        return true;
+      } catch (e) {
+        console.error('[ValesLog] Erro add:', e);
+        return false;
+      }
+    },
 
-  window.valesLog = {
-    add(ev){ const arr = read(); arr.push(ev); write(arr); },
-    bulkAdd(evs){
+    async bulkAdd(evs) {
       if (!Array.isArray(evs) || !evs.length) return;
-      const arr = read(); evs.forEach(e=>arr.push(e)); write(arr);
+      for (const ev of evs) {
+        await this.add(ev);
+      }
     },
-    list(filter={}){
-      let arr = read();
-      if (filter.valeId)    arr = arr.filter(x => x.valeId === filter.valeId);
-      if (filter.gerenteId) arr = arr.filter(x => x.gerenteId === filter.gerenteId);
-      return arr;
+
+    async list(filter = {}) {
+      if (!window.SupabaseAPI?.client) return [];
+      const emp = EMP();
+      try {
+        let query = window.SupabaseAPI.client
+          .from('vales_log')
+          .select('*')
+          .eq('company', emp)
+          .order('created_at', { ascending: false });
+        
+        if (filter.valeId) query = query.eq('vale_id', filter.valeId);
+        if (filter.gerenteId) query = query.eq('gerente_id', filter.gerenteId);
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        return (data || []).map(l => ({
+          id: l.uid,
+          valeId: l.vale_id,
+          cod: l.cod,
+          gerenteId: l.gerente_id,
+          delta: Number(l.delta),
+          saldoAntes: Number(l.saldo_antes),
+          saldoDepois: Number(l.saldo_depois),
+          prestacaoId: l.prestacao_id,
+          periodoIni: l.periodo_ini,
+          periodoFim: l.periodo_fim,
+          createdAt: l.created_at
+        }));
+      } catch (e) {
+        console.error('[ValesLog] Erro list:', e);
+        return [];
+      }
     },
-    removeByValeId(valeId){
-      const arr = read();
-      const novo = arr.filter(x => x.valeId !== valeId);
-      write(novo);
-    },    
+
+    async removeByValeId(valeId) {
+      if (!window.SupabaseAPI?.client) return false;
+      try {
+        await window.SupabaseAPI.client
+          .from('vales_log')
+          .delete()
+          .eq('vale_id', valeId);
+        return true;
+      } catch (e) {
+        console.error('[ValesLog] Erro remove:', e);
+        return false;
+      }
+    },
+
+    async migrate() {
+      const emp = EMP();
+      const KEY = `${emp}__bsx_vales_log_v1`;
+      const KEY_LEG = 'bsx_vales_log_v1';
+      
+      let local = [];
+      try { local = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch {}
+      if (!local.length) {
+        try { local = JSON.parse(localStorage.getItem(KEY_LEG) || '[]'); } catch {}
+      }
+      
+      if (!local.length) {
+        console.log('[ValesLog] Nada para migrar');
+        return { migrated: 0 };
+      }
+
+      console.log(`[ValesLog] 🔄 Migrando ${local.length} logs...`);
+      
+      let migrated = 0;
+      for (const ev of local) {
+        const ok = await this.add(ev);
+        if (ok) migrated++;
+      }
+
+      console.log(`[ValesLog] ✅ Migrados: ${migrated}`);
+      return { migrated };
+    }
   };
+
+  // Registra API global
+  window.SupabaseAPI = window.SupabaseAPI || {};
+  window.SupabaseAPI.valesLog = ValesLogAPI;
+
+  // Interface compatível com código existente
+  window.valesLog = {
+    add(ev) {
+      ValesLogAPI.add(ev);
+    },
+    bulkAdd(evs) {
+      ValesLogAPI.bulkAdd(evs);
+    },
+    list(filter) {
+      // Para compatibilidade síncrona, retorna array vazio
+      // Use listAsync para buscar do Supabase
+      console.warn('[ValesLog] list() é síncrono - use listAsync() para Supabase');
+      return [];
+    },
+    async listAsync(filter) {
+      return await ValesLogAPI.list(filter);
+    },
+    removeByValeId(valeId) {
+      ValesLogAPI.removeByValeId(valeId);
+    }
+  };
+
+  console.log('[ValesLog] ✅ API Supabase inicializada');
 })();
 
 /* ===== EXCLUIR UM VALE (com histórico) ===== */
-window.deleteValeById = function(id){
+window.deleteValeById = async function(id){
   const v = (window.vales||[]).find(x => x.id === id);
   if (!v){ alert('Vale não encontrado.'); return; }
 
@@ -2764,15 +3056,15 @@ window.deleteValeById = function(id){
 Isso também APAGA TODO o histórico desse vale.`;
   if (!confirm(msg)) return;
 
-  // 1) Remove o vale do "banco"
+  // 1) Remove do Supabase
+  if (window.SupabaseAPI?.vales) {
+    await window.SupabaseAPI.vales.delete(id);
+  }
+
+  // 2) Remove da memória
   window.vales = (window.vales||[]).filter(x => x.id !== id);
-  try { saveVales?.(); } catch {}
 
-  // 2) Apaga histórico desse vale
-  try { window.valesLog?.removeByValeId?.(id); } catch {}
-
-  // 3) (Opcional, mas recomendado) Remove pagamentos VALE desta prestação
-  //    que referenciem o código apagado (para a tela ficar limpa)
+  // 3) Remove pagamentos VALE desta prestação que referenciem o código apagado
   try {
     const cod = String(v.cod || '').trim();
     prestacaoAtual.pagamentos = (prestacaoAtual.pagamentos||[])
@@ -3861,19 +4153,23 @@ window.addEventListener('vales:updated', ()=>{
       gerenteId: gid,
       cod: (document.getElementById('dlgVcod')?.value || '').trim(),
       valor,
+      saldo: valor,
       obs: (document.getElementById('dlgVobs')?.value || '').trim(),
       periodo: (document.getElementById('dlgVperiodo')?.value || '').trim(),
       quitado: false,
       criadoEm: new Date().toISOString()
     };
 
-    (window.vales ||= []).push(novo);
-    try { saveVales?.(); } catch {}
-    try {
-      // garante que o DOM já tenha o pcValesBody antes de renderizar
+    // Salva no Supabase
+    if (window.SupabaseAPI?.vales) {
+      window.SupabaseAPI.vales.create(novo).then(() => {
+        (window.vales ||= []).push(novo);
+        requestAnimationFrame(()=> renderValesPrestacao?.());
+      });
+    } else {
+      (window.vales ||= []).push(novo);
       requestAnimationFrame(()=> renderValesPrestacao?.());
-    } catch {}
-    
+    }
 
     dlg.close();
     form.reset();
@@ -4057,17 +4353,8 @@ window.__syncPrestMirrors = function(){
 // Sinaliza que a página dedicada está ativa (usado para desativar botões antigos)
 window.VALES_PAGE_ENABLED = true;
 
-// util: (re)carrega banco por empresa
-window.__valesReload = window.__valesReload || function(){
-  try{
-    const EMP = () => (localStorage.getItem('CURRENT_COMPANY') || 'BSX').toUpperCase();
-    const KEY = () => window.__VALES_KEY || `${EMP()}__bsx_vales_v1`;
-    window.__VALES_KEY = KEY();
-    const arr = JSON.parse(localStorage.getItem(KEY()) || '[]');
-    window.vales = Array.isArray(arr) ? arr : [];
-  }catch{}
-  return window.vales || [];
-};
+// util: (re)carrega banco por empresa - usa versão definida na API Supabase
+// window.__valesReload já definido acima
 
 // permissão (somente admin edita)
 function vlsCanEdit(){
@@ -4145,7 +4432,7 @@ function vlsRenderTabela(){
   });
 
   tb.querySelectorAll('[data-vls-quitar]').forEach(b=>{
-    b.addEventListener('click', ()=>{
+    b.addEventListener('click', async ()=>{
       if (!vlsCanEdit()) return;
       const id = b.getAttribute('data-vls-quitar');
       const v  = (__valesReload()||[]).find(x=>x.id===id);
@@ -4154,17 +4441,23 @@ function vlsRenderTabela(){
       if (!confirm(`Quitar este vale? Isso zera o saldo de ${fmtBRL(saldoAntes)}.`)) return;
 
       v.valor = 0;
+      v.saldo = 0;
       v.quitado = true;
-      try { saveVales?.(); } catch {}
-      try {
-        window.valesLog?.add({
-          id: (typeof uid==='function'? uid(): 'vl_'+Math.random().toString(36).slice(2,9)),
-          valeId: v.id, cod: v.cod||'', gerenteId: v.gerenteId,
-          delta: saldoAntes, saldoAntes, saldoDepois: 0,
-          prestacaoId: null, periodoIni: null, periodoFim: null,
-          createdAt: new Date().toISOString()
-        });
-      } catch {}
+      
+      // Atualiza no Supabase
+      if (window.SupabaseAPI?.vales) {
+        await window.SupabaseAPI.vales.update(id, { saldo: 0, quitado: true });
+      }
+      
+      // Log
+      window.valesLog?.add({
+        id: (typeof uid==='function'? uid(): 'vl_'+Math.random().toString(36).slice(2,9)),
+        valeId: v.id, cod: v.cod||'', gerenteId: v.gerenteId,
+        delta: saldoAntes, saldoAntes, saldoDepois: 0,
+        prestacaoId: null, periodoIni: null, periodoFim: null,
+        createdAt: new Date().toISOString()
+      });
+      
       vlsRenderTabela();
       try { renderValesPrestacao?.(); } catch {}
       try { window.dispatchEvent(new Event('vales:updated')); } catch {}
@@ -4199,31 +4492,37 @@ function vlsSalvarNovo(){
   const novo = {
     id: (typeof uid==='function' ? uid() : 'v_'+Math.random().toString(36).slice(2,9)),
     gerenteId: gid,
-    cod, valor: vnum, obs, periodo,
+    cod, valor: vnum, saldo: vnum, obs, periodo,
     quitado: false,
     criadoEm: new Date().toISOString()
   };
-  (window.vales ||= []).push(novo);
-  try { saveVales?.(); } catch {}
-  __valesReload();
 
-  try {
-    window.valesLog?.add({
-      id: (typeof uid==='function'? uid(): 'vl_'+Math.random().toString(36).slice(2,9)),
-      valeId: novo.id, cod: novo.cod||'', gerenteId: novo.gerenteId,
-      delta: -(Number(novo.valor)||0),          // aumenta saldo devedor (entrada do vale)
-      saldoAntes: 0, saldoDepois: Number(novo.valor)||0,
-      prestacaoId: null, periodoIni: null, periodoFim: null,
-      createdAt: new Date().toISOString()
+  // Salva no Supabase
+  if (window.SupabaseAPI?.vales) {
+    window.SupabaseAPI.vales.create(novo).then(() => {
+      (window.vales ||= []).push(novo);
+      
+      // Log de criação
+      window.valesLog?.add({
+        id: (typeof uid==='function'? uid(): 'vl_'+Math.random().toString(36).slice(2,9)),
+        valeId: novo.id, cod: novo.cod||'', gerenteId: novo.gerenteId,
+        delta: -(Number(novo.valor)||0),
+        saldoAntes: 0, saldoDepois: Number(novo.valor)||0,
+        prestacaoId: null, periodoIni: null, periodoFim: null,
+        createdAt: new Date().toISOString()
+      });
+      
+      vlsRenderTabela();
+      try { renderValesPrestacao?.(); } catch {}
+      try { window.dispatchEvent(new Event('vales:updated')); } catch {}
     });
-  } catch {}
-  
+  } else {
+    (window.vales ||= []).push(novo);
+    vlsRenderTabela();
+  }
 
   document.getElementById('dlgVlsNovo')?.close();
   document.getElementById('vlsForm')?.reset();
-  vlsRenderTabela();
-  try { renderValesPrestacao?.(); } catch {}
-  try { window.dispatchEvent(new Event('vales:updated')); } catch {}
 }
 
 
@@ -4278,7 +4577,7 @@ function ensureHistDialog(){
   dlg.addEventListener('click', (e)=>{ if (e.target===dlg) dlg.close(); });
 }
 
-function vlsOpenHist(id){
+async function vlsOpenHist(id){
   const gname = (gid)=> (window.gerentes||[]).find(x=>String(x.uid)===String(gid))?.nome || '—';
   const v = (__valesReload()||[]).find(x=>x.id===id);
   if (!v) return;
@@ -4289,8 +4588,15 @@ function vlsOpenHist(id){
     `Histórico — Vale ${v.cod||''} (${gname(v.gerenteId)})`;
 
   const tb  = dlg.querySelector('#vlsHistBody');
-  const logs = (window.valesLog?.list({valeId:id}) || [])
-    .sort((a,b)=> String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
+  tb.innerHTML = '<tr><td colspan="4">Carregando...</td></tr>';
+  dlg.showModal();
+
+  // Carrega logs do Supabase
+  let logs = [];
+  if (window.SupabaseAPI?.valesLog?.list) {
+    logs = await window.SupabaseAPI.valesLog.list({valeId: id});
+  }
+  logs.sort((a,b)=> String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
 
   tb.innerHTML = logs.length ? logs.map(ev=>{
     const delta = Number(ev.delta)||0;
@@ -4303,12 +4609,10 @@ function vlsOpenHist(id){
       <td>${per}</td>
     </tr>`;
   }).join('') : '<tr><td colspan="4">Nenhum evento registrado para este vale.</td></tr>';
-
-  dlg.showModal();
 }
 
 
-function vlsInit(){
+async function vlsInit(){
   const A = window.UserAuth || {};
   if (!(A.isAdmin?.() || A.can?.('vales_view'))) {
     alert('Você não tem permissão para ver a página de Vales.');
@@ -4316,6 +4620,11 @@ function vlsInit(){
   }
   document.getElementById('btnAbrirVale')?.remove();
   document.getElementById('btnVerTodosVales')?.remove();
+
+  // Carrega vales do Supabase antes de renderizar
+  if (window.__valesReloadAsync) {
+    await window.__valesReloadAsync();
+  }
 
   vlsFillFiltro();
   vlsRenderTabela();
@@ -4340,13 +4649,12 @@ if (tbHist && !tbHist.__histWired){
 
 
   // reagir a mudanças externas
-  window.addEventListener('storage', (e)=>{
-    const k = e?.key || '';
-    if (k.includes('bsx_vales_v1') || k.includes('bsx_vales_log_v1')) vlsRenderTabela();
-  });
   window.addEventListener('vales:updated', vlsRenderTabela);
-  document.addEventListener('empresa:change', ()=>{ __valesReload(); vlsFillFiltro(); vlsRenderTabela(); });
-  document.addEventListener('DOMContentLoaded', ()=>{ __valesReload(); vlsFillFiltro(); vlsRenderTabela(); });
+  document.addEventListener('empresa:change', async ()=>{ 
+    await window.__valesReloadAsync?.(); 
+    vlsFillFiltro(); 
+    vlsRenderTabela(); 
+  });
 }
 
 // inicializa quando a aba “Vales” for exibida (se você usa openTab)

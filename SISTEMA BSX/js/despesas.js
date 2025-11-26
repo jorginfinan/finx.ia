@@ -1,5 +1,9 @@
 // ==== DESPESAS ====
+// VERSÃO: 2025-11-26-v2-SUPABASE
 // ===== INICIALIZAÇÃO GLOBAL DE DESPESAS =====
+
+console.log('🟣🟣🟣 [despesas.js] VERSÃO SUPABASE 2025-11-26-v2 CARREGADA! 🟣🟣🟣');
+
 // ✅ CARREGAR DESPESAS DO SUPABASE
 // ✅ CARREGAR DESPESAS DO SUPABASE (com proteção de dependência)
 async function loadDespesas() {
@@ -154,9 +158,9 @@ window.loadDespesas = loadDespesas;
   };
 });
 
-// Helpers
+// Helpers - ✅ USA window.fichas e window.vendas (Supabase)
 function getRotaByFicha(ficha) {
-    const rec = (fichas || []).find(f => String(f.ficha) === String(ficha));
+    const rec = (window.fichas || []).find(f => String(f.ficha) === String(ficha));
     return rec ? rec.area : '';
   }
   function getVendaMesByDespesa(ficha, dataISO, periodoIni, periodoFim) {
@@ -166,7 +170,7 @@ function getRotaByFicha(ficha) {
     let prevY = yyyy, prevM = mm - 1;
     if (prevM === 0) { prevM = 12; prevY = yyyy - 1; }
     const prevYM = `${prevY}-${String(prevM).padStart(2,'0')}`;
-    return (vendas || []).find(v => String(v.ficha) === String(ficha) && v.ym === prevYM) || null;
+    return (window.vendas || []).find(v => String(v.ficha) === String(ficha) && v.ym === prevYM) || null;
   }
 
   function renderDespesas(){
@@ -1416,3 +1420,53 @@ document.addEventListener('DOMContentLoaded', () => {
   buildDespesasFilterOptions();
   renderDespesas();
 });
+
+// ✅ Re-renderiza quando fichas/vendas forem carregadas do Supabase
+(function initDespesasSupabaseSync() {
+  let fichasLoaded = false;
+  let vendasLoaded = false;
+  
+  // Observa mudanças em window.fichas e window.vendas
+  const checkAndRender = () => {
+    const nowFichas = Array.isArray(window.fichas) && window.fichas.length > 0;
+    const nowVendas = Array.isArray(window.vendas);
+    
+    if (nowFichas && !fichasLoaded) {
+      fichasLoaded = true;
+      console.log('[Despesas] ✅ Fichas carregadas, atualizando filtros...');
+      if (typeof buildDespesasFilterOptions === 'function') {
+        buildDespesasFilterOptions();
+      }
+      if (typeof renderDespesas === 'function') {
+        renderDespesas();
+      }
+    }
+    
+    if (nowVendas && !vendasLoaded) {
+      vendasLoaded = true;
+      console.log('[Despesas] ✅ Vendas carregadas, atualizando...');
+      if (typeof renderDespesas === 'function') {
+        renderDespesas();
+      }
+    }
+  };
+  
+  // Verifica periodicamente até que os dados estejam carregados
+  const interval = setInterval(() => {
+    checkAndRender();
+    if (fichasLoaded && vendasLoaded) {
+      clearInterval(interval);
+      console.log('[Despesas] ✅ Sincronização com Supabase completa');
+    }
+  }, 500);
+  
+  // Para após 30 segundos se não carregar
+  setTimeout(() => clearInterval(interval), 30000);
+  
+  // Escuta evento de mudança de empresa
+  document.addEventListener('empresa:change', () => {
+    fichasLoaded = false;
+    vendasLoaded = false;
+    console.log('[Despesas] 🔄 Empresa mudou, aguardando novos dados...');
+  });
+})();

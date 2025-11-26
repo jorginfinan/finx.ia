@@ -1,3 +1,6 @@
+/* ==== Dashboard - VERSÃO SUPABASE 2025-11-26-v2 ==== */
+console.log('🟠🟠🟠 [dashboard.js] VERSÃO SUPABASE 2025-11-26-v2 CARREGADA! 🟠🟠🟠');
+
 /* ==== Util: ler a primeira chave que existir no localStorage ==== */
 function fromLS(keys){
   for (const k of keys.filter(Boolean)) {
@@ -52,7 +55,7 @@ function calcSaldoCaixaMes(ym){
 }
 
 // Limiar padrão (R$ 50) e taxa ideal (4% se não houver outra no window)
-const LIMIAR_ALERTA = 250;
+const LIMIAR_ALERTA = 350;
 
 function limiar_alerta(despesa,
   limiar = (typeof window.LIMIAR_ALERTA === 'number' ? window.LIMIAR_ALERTA : LIMIAR_ALERTA),
@@ -102,12 +105,12 @@ function getDespesas(){
 }
 
 function getVendas(){
-  try { if (Array.isArray(window.vendas)) return window.vendas; } catch(_){}
-  try { return JSON.parse(localStorage.getItem('DB_VENDAS')||'[]') || []; } catch(_) { return []; }
+  // ✅ USA APENAS window.vendas (Supabase) - sem fallback localStorage
+  return Array.isArray(window.vendas) ? window.vendas : [];
 }
 function getFichas(){
-  try { if (Array.isArray(window.fichas)) return window.fichas; } catch(_){}
-  try { return JSON.parse(localStorage.getItem('DB_FICHAS')||'[]') || []; } catch(_) { return []; }
+  // ✅ USA APENAS window.fichas (Supabase) - sem fallback localStorage
+  return Array.isArray(window.fichas) ? window.fichas : [];
 }
 
 /* Rota/área exibida por ficha */
@@ -293,9 +296,21 @@ async function refresh(){
   const ym = ($('dashMes')?.value) || ymNow();
   renderSaldo(ym);
   
-  // ✅ Garante que despesas estão carregadas do Supabase antes de renderizar alertas
+  // ✅ Garante que despesas estão carregadas do Supabase
   if (typeof loadDespesas === 'function' && (!window.despesas || !window.despesas.length)) {
     await loadDespesas();
+  }
+  
+  // ✅ Garante que fichas estão carregadas do Supabase
+  if (typeof window.carregarFichas === 'function' && (!window.fichas || !window.fichas.length)) {
+    console.log('[Dashboard] Aguardando fichas do Supabase...');
+    await window.carregarFichas();
+  }
+  
+  // ✅ Garante que vendas estão carregadas do Supabase
+  if (typeof window.carregarVendas === 'function' && (!window.vendas || !window.vendas.length)) {
+    console.log('[Dashboard] Aguardando vendas do Supabase...');
+    await window.carregarVendas();
   }
   
   renderDashboardResultado();

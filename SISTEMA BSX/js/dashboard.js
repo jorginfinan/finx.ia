@@ -92,24 +92,15 @@ const ymLast  = (ym) => {
 
 /* Pega dados (preferindo globais, com fallback no localStorage) */
 function getDespesas(){
-  try { if (Array.isArray(window.despesas) && window.despesas.length) return window.despesas; } catch(_){}
-  try {
-    // ✅ Lê da chave com prefixo de empresa (BSX__bsx_despesas_v1)
-    const empresa = localStorage.getItem('CURRENT_COMPANY') || 'BSX';
-    const baseKey = (typeof window.DB_DESPESAS!=='undefined') ? window.DB_DESPESAS : 'bsx_despesas_v1';
-    const keyWithPrefix = `${empresa}__${baseKey}`;
-    
-    // Tenta com prefixo primeiro
-    let arr = JSON.parse(localStorage.getItem(keyWithPrefix)||'null');
-    
-    // Se não encontrar, tenta sem prefixo
-    if (!Array.isArray(arr)) {
-      arr = JSON.parse(localStorage.getItem(baseKey)||'[]');
-    }
-    
-    return Array.isArray(arr) ? arr : [];
-  } catch(_) { return []; }
+  // ✅ Retorna as despesas já carregadas do Supabase (via loadDespesas)
+  if (Array.isArray(window.despesas) && window.despesas.length) {
+    return window.despesas;
+  }
+  // Fallback: tenta carregar se ainda não foi carregado
+  console.warn('[Dashboard] Despesas não carregadas ainda, retornando array vazio');
+  return [];
 }
+
 function getVendas(){
   try { if (Array.isArray(window.vendas)) return window.vendas; } catch(_){}
   try { return JSON.parse(localStorage.getItem('DB_VENDAS')||'[]') || []; } catch(_) { return []; }
@@ -298,13 +289,18 @@ async function renderDashboardResultado(){
   );
 }
 /* -------------------- Ciclo do dashboard -------------------- */
-function refresh(){
+async function refresh(){
   const ym = ($('dashMes')?.value) || ymNow();
   renderSaldo(ym);
+  
+  // ✅ Garante que despesas estão carregadas do Supabase antes de renderizar alertas
+  if (typeof loadDespesas === 'function' && (!window.despesas || !window.despesas.length)) {
+    await loadDespesas();
+  }
+  
   renderDashboardResultado();
   renderAlerts(ym);
 }
-
 function init(){
   const input = $('dashMes'); if (input && !input.value) input.value = ymNow();
   input?.addEventListener('change', refresh);

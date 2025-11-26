@@ -1,10 +1,21 @@
 // ============================================
 // FICHAS E VENDAS - SUPABASE
+// VERSÃO: 2025-11-26-v3-SUPABASE
 // ============================================
 
-// Inicializa arrays globais
-window.fichas = window.fichas || [];
-window.vendas = window.vendas || [];
+console.log('🔵🔵🔵 [fichas.js] VERSÃO SUPABASE 2025-11-26-v3 CARREGADA! 🔵🔵🔵');
+
+// Flag para indicar que dados vieram do Supabase
+window.__fichasFromSupabase = false;
+window.__vendasFromSupabase = false;
+
+// Inicializa arrays globais (mas não sobrescreve se já tiver dados do Supabase)
+if (!window.__fichasFromSupabase) {
+  window.fichas = window.fichas || [];
+}
+if (!window.__vendasFromSupabase) {
+  window.vendas = window.vendas || [];
+}
 
 // ========== FUNÇÕES SUPABASE ==========
 
@@ -18,7 +29,8 @@ async function carregarFichas() {
     console.log('[Fichas] 🔄 Carregando do Supabase...');
     const data = await window.SupabaseAPI.fichas.getAll();
     window.fichas = data || [];
-    console.log('[Fichas] ✅ Carregadas:', window.fichas.length, window.fichas);
+    window.__fichasFromSupabase = true;  // Marca que veio do Supabase
+    console.log('[Fichas] ✅ Carregadas:', window.fichas.length);
     return window.fichas;
   } catch (e) {
     console.error('[Fichas] ❌ Erro:', e);
@@ -36,6 +48,7 @@ async function carregarVendas() {
     console.log('[Vendas] 🔄 Carregando do Supabase...');
     const data = await window.SupabaseAPI.vendas.getAll();
     window.vendas = data || [];
+    window.__vendasFromSupabase = true;  // Marca que veio do Supabase
     console.log('[Vendas] ✅ Carregadas:', window.vendas.length);
     return window.vendas;
   } catch (e) {
@@ -65,6 +78,8 @@ async function saveVendas() {
 // Expor globalmente para debug
 window.carregarFichas = carregarFichas;
 window.carregarVendas = carregarVendas;
+window.renderFichaArea = null; // Será definido depois
+window.renderVendas = null;    // Será definido depois
 
 // Inicialização - carrega dados do Supabase
 (function initFichasVendas() {
@@ -188,21 +203,34 @@ window.carregarVendas = carregarVendas;
 
 // ==== FICHAS ====
 function renderFichaArea(){
+  console.log('🟢 [renderFichaArea] Iniciando... window.fichas.length:', window.fichas?.length);
+  
   const tbody = document.getElementById('tbodyFichaArea');
-  tbody.innerHTML = (fichas||[]).sort((a,b)=> String(a.ficha).localeCompare(String(b.ficha))).map(r=>{
+  if (!tbody) {
+    console.warn('[renderFichaArea] ⚠️ tbody não encontrado!');
+    return;
+  }
+  
+  // ✅ USA EXPLICITAMENTE window.fichas (do Supabase)
+  const fichasArr = window.fichas || [];
+  console.log('🟢 [renderFichaArea] Renderizando', fichasArr.length, 'fichas');
+  
+  tbody.innerHTML = fichasArr.sort((a,b)=> String(a.ficha).localeCompare(String(b.ficha))).map(r=>{
     const del = currentUser?.isAdmin ? `<button class="btn danger" data-del-ficha="${r.ficha}">Excluir</button>` : '';
     return `<tr><td>${r.ficha}</td><td>${r.area||''}</td><td>${del}</td></tr>`;
   }).join('') || '<tr><td colspan="3">Nenhuma ficha cadastrada.</td></tr>';
 
   const sel = document.getElementById('selFichaVenda');
-  sel.innerHTML = (fichas||[]).sort((a,b)=> String(a.ficha).localeCompare(String(b.ficha))).map(r=>`<option value="${r.ficha}">${r.ficha} — ${r.area||''}</option>`).join('');
+  if (sel) {
+    sel.innerHTML = fichasArr.sort((a,b)=> String(a.ficha).localeCompare(String(b.ficha))).map(r=>`<option value="${r.ficha}">${r.ficha} — ${r.area||''}</option>`).join('');
+  }
 
   if(currentUser?.isAdmin){
     document.querySelectorAll('[data-del-ficha]').forEach(b=>{
       b.addEventListener('click', async ()=>{
         const f=b.getAttribute('data-del-ficha');
         if(confirm(`Excluir ficha ${f}? (Não remove vendas)`)){
-          fichas = fichas.filter(x=>x.ficha!==f); 
+          window.fichas = window.fichas.filter(x=>x.ficha!==f); 
           if (window.SupabaseAPI?.fichas) {
             await window.SupabaseAPI.fichas.delete(f);
           }
@@ -212,16 +240,20 @@ function renderFichaArea(){
       });
     });
   }
+  
+  console.log('🟢 [renderFichaArea] ✅ Concluído');
 }
+// Exporta para window
+window.renderFichaArea = renderFichaArea;
 // >>> FONTE ÚNICA: array global `fichas` + Supabase
 async function setFichaArea(ficha, area){
   ficha = String(ficha||'').trim();
   area  = String(area ||'').trim();
   if (!ficha || !area) return;
 
-  const i = (fichas||[]).findIndex(x => String(x.ficha) === ficha);
-  if (i >= 0) fichas[i].area = area;
-  else (fichas ||= []).push({ ficha, area });
+  const i = (window.fichas||[]).findIndex(x => String(x.ficha) === ficha);
+  if (i >= 0) window.fichas[i].area = area;
+  else (window.fichas ||= []).push({ ficha, area });
 
   // Salva no Supabase
   if (window.SupabaseAPI?.fichas) {
@@ -231,7 +263,7 @@ async function setFichaArea(ficha, area){
 
 function getAreaByFicha(ficha){
   ficha = String(ficha||'').trim();
-  const it = (fichas||[]).find(x => String(x.ficha) === ficha);
+  const it = (window.fichas||[]).find(x => String(x.ficha) === ficha);
   return it ? (it.area || '') : '';
 }
 
@@ -242,8 +274,8 @@ document.getElementById('formFichaArea').addEventListener('submit', async (ev)=>
   const area  = String(fd.get('area')||'').trim();
   if(!ficha || !area){ alert('Informe ficha e área.'); return; }
   
-  const i = fichas.findIndex(x=>x.ficha===ficha);
-  if(i>-1){ fichas[i].area = area; } else { fichas.push({ficha, area}); }
+  const i = window.fichas.findIndex(x=>x.ficha===ficha);
+  if(i>-1){ window.fichas[i].area = area; } else { window.fichas.push({ficha, area}); }
   
   // Salva no Supabase
   if (window.SupabaseAPI?.fichas) {
@@ -270,9 +302,9 @@ document.getElementById('formFichaVenda').addEventListener('submit', async (ev)=
   if(liquida && liquida.includes(',')) liquida = liquida.replace(/\./g,'').replace(',','.');
   
   const rec = { id:uid(), ficha, ym, bruta:parseFloat(bruta)||0, liquida: parseFloat(liquida||'0')||0 };
-  const idx = vendas.findIndex(v=>v.ficha===ficha && v.ym===ym);
-  if(idx>-1) vendas[idx] = { ...vendas[idx], ...rec };
-  else vendas.push(rec);
+  const idx = window.vendas.findIndex(v=>v.ficha===ficha && v.ym===ym);
+  if(idx>-1) window.vendas[idx] = { ...window.vendas[idx], ...rec };
+  else window.vendas.push(rec);
   
   // Salva no Supabase
   if (window.SupabaseAPI?.vendas) {
@@ -285,21 +317,24 @@ document.getElementById('formFichaVenda').addEventListener('submit', async (ev)=
 });
 function renderVendas(){
   const tb = document.getElementById('tbodyVendas');
-  const qFicha = (document.getElementById('fvBuscaFicha').value||'').trim().toLowerCase();
-  const qArea  = (document.getElementById('fvBuscaArea').value||'').trim().toLowerCase();
-  const de = document.getElementById('fvDe').value || '0000-00';
-  const ate = document.getElementById('fvAte').value || '9999-12';
+  if (!tb) return;
+  
+  const qFicha = (document.getElementById('fvBuscaFicha')?.value||'').trim().toLowerCase();
+  const qArea  = (document.getElementById('fvBuscaArea')?.value||'').trim().toLowerCase();
+  const de = document.getElementById('fvDe')?.value || '0000-00';
+  const ate = document.getElementById('fvAte')?.value || '9999-12';
 
-  const rows = (vendas||[]).filter(v=>{
+  // ✅ USA window.vendas e window.fichas
+  const rows = (window.vendas||[]).filter(v=>{
     if(v.ym < de || v.ym > ate) return false;
     if(qFicha && !String(v.ficha).toLowerCase().includes(qFicha)) return false;
-    const area = (fichas.find(f=>f.ficha===v.ficha)?.area || '').toLowerCase();
+    const area = (window.fichas.find(f=>f.ficha===v.ficha)?.area || '').toLowerCase();
     if(qArea && !area.includes(qArea)) return false;
     return true;
   }).sort((a,b)=> a.ficha===b.ficha ? a.ym.localeCompare(b.ym) : String(a.ficha).localeCompare(String(b.ficha)));
 
   tb.innerHTML = rows.map(v=>{
-    const area = fichas.find(f=>f.ficha===v.ficha)?.area || '';
+    const area = window.fichas.find(f=>f.ficha===v.ficha)?.area || '';
     const del = currentUser?.isAdmin ? `<button class="btn danger" data-del-venda="${v.id}">Excluir</button>` : '';
     const [y,m] = v.ym.split('-');
     return `<tr>
@@ -317,7 +352,7 @@ function renderVendas(){
       b.addEventListener('click', async ()=>{
         const id=b.getAttribute('data-del-venda');
         if(confirm('Excluir venda?')){
-          vendas = vendas.filter(x=>x.id!==id); 
+          window.vendas = window.vendas.filter(x=>x.id!==id); 
           if (window.SupabaseAPI?.vendas) {
             await window.SupabaseAPI.vendas.delete(id);
           }
@@ -327,6 +362,8 @@ function renderVendas(){
     });
   }
 }
+// Exporta para window
+window.renderVendas = renderVendas;
 ['fvBuscaFicha','fvBuscaArea','fvDe','fvAte'].forEach(id=>{
   document.getElementById(id).addEventListener('input', renderVendas);
   document.getElementById(id).addEventListener('change', renderVendas);
@@ -336,16 +373,16 @@ document.getElementById('fvExport').addEventListener('click',()=>{
   const qArea  = (document.getElementById('fvBuscaArea').value||'').trim().toLowerCase();
   const de = document.getElementById('fvDe').value || '0000-00';
   const ate = document.getElementById('fvAte').value || '9999-12';
-  const rows = (vendas||[]).filter(v=>{
+  const rows = (window.vendas||[]).filter(v=>{
     if(v.ym < de || v.ym > ate) return false;
     if(qFicha && !String(v.ficha).toLowerCase().includes(qFicha)) return false;
-    const area = (fichas.find(f=>f.ficha===v.ficha)?.area || '').toLowerCase();
+    const area = (window.fichas.find(f=>f.ficha===v.ficha)?.area || '').toLowerCase();
     if(qArea && !area.includes(qArea)) return false;
     return true;
   });
   const header = ['FICHA','ÁREA','MÊS','VENDA BRUTA','VENDA LÍQUIDA'];
   const lines=[header.join(';')].concat(rows.map(v=>{
-    const area = fichas.find(f=>f.ficha===v.ficha)?.area || '';
+    const area = window.fichas.find(f=>f.ficha===v.ficha)?.area || '';
     const [y,m] = v.ym.split('-');
     return [v.ficha, area, `${m}/${y}`, (v.bruta||0).toFixed(2).replace('.',','), (v.liquida||0).toFixed(2).replace('.',',')].join(';');
   }));
@@ -494,7 +531,7 @@ function mapRow(obj){
 
 async function upsertVendas(rows){
   const idx = new Map();
-  (vendas||[]).forEach((v,i)=> idx.set(`${v.ficha}|${v.ym}`, i));
+  (window.vendas||[]).forEach((v,i)=> idx.set(`${v.ficha}|${v.ym}`, i));
   let novos=0, atualizados=0;
 
   for (const r of rows) {
@@ -509,14 +546,14 @@ async function upsertVendas(rows){
     
     if (idx.has(key)){
       const i = idx.get(key);
-      rec.id = vendas[i].id; // mantém ID original
-      vendas[i].bruta = rec.bruta;
-      vendas[i].liquida = rec.liquida;
-      vendas[i].updatedAt = new Date().toISOString();
+      rec.id = window.vendas[i].id; // mantém ID original
+      window.vendas[i].bruta = rec.bruta;
+      window.vendas[i].liquida = rec.liquida;
+      window.vendas[i].updatedAt = new Date().toISOString();
       atualizados++;
     } else {
       rec.createdAt = new Date().toISOString();
-      vendas.push(rec);
+      window.vendas.push(rec);
       novos++;
     }
     

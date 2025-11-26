@@ -750,41 +750,239 @@ function formatDate(date) {
 
 // ====================== FINANCEIRO: Confirmação de valores vindos de Prestações ======================
 
-// ✅ CONSTANTES E FUNÇÕES GLOBAIS (declaradas UMA ÚNICA VEZ)
+// ============================================
+// PENDÊNCIAS - INTEGRAÇÃO SUPABASE
+// ============================================
 (function initFinanceiroPendencias() {
-  // Só inicializa se ainda não foi feito
   if (window.__FIN_PEND_INITIALIZED) return;
   window.__FIN_PEND_INITIALIZED = true;
 
-  // Constantes globais
+  // Constantes (compatibilidade)
   window.DB_CAIXA_PEND = 'DB_CAIXA_PEND';
   window.DB_CAIXA_CONF_OK = 'DB_CAIXA_CONF_OK';
 
-  // Funções auxiliares internas
-  function getJSON(key, fallback) {
-    try { 
-      return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; 
-    } catch(_) { 
-      return fallback; 
-    }
-  }
+  // ===== API SUPABASE =====
+  const PendenciasAPI = {
+    get client() { return window.SupabaseAPI?.client; },
 
-  function setJSON(key, val) {
-    try {
-      localStorage.setItem(key, JSON.stringify(val));
-    } catch(e) {
-      console.error('Erro ao salvar no localStorage:', e);
-    }
-  }
+    async getAll(empresa) {
+      try {
+        if (!this.client) {
+          // Fallback localStorage
+          try { return JSON.parse(localStorage.getItem('DB_CAIXA_PEND') || '[]'); } catch { return []; }
+        }
+        const company = empresa || window.getCompany?.() || 'BSX';
+        const { data, error } = await this.client
+          .from('pendencias')
+          .select('*')
+          .eq('company', company)
+          .eq('status', 'PENDENTE')
+          .order('data', { ascending: false });
+        
+        if (error) { console.error('[Pendencias] Erro:', error); return []; }
+        
+        return (data || []).map(r => ({
+          id: r.id, uid: r.uid, altUID: r.alt_uid,
+          gerenteId: r.gerente_id, gerenteNome: r.gerente,
+          valorOriginal: Number(r.valor_original) || 0,
+          valorConfirm: Number(r.valor_confirm) || 0,
+          forma: r.forma || 'PIX', data: r.data || '',
+          info: r.info || '', prestId: r.prestacao_id,
+          tipoCaixa: r.tipo_caixa || 'RECEBIDO',
+          status: r.status || 'PENDENTE', edited: r.edited || false
+        }));
+      } catch(e) { console.error('[Pendencias] Erro:', e); return []; }
+    },
 
-  // ===== FUNÇÕES GLOBAIS DE PENDÊNCIAS =====
-  
-  window.__getPendencias = function() { 
-    return getJSON(window.DB_CAIXA_PEND, []); 
+    async create(item) {
+      try {
+        if (!this.client) {
+          // Fallback localStorage
+          const arr = JSON.parse(localStorage.getItem('DB_CAIXA_PEND') || '[]');
+          arr.push(item);
+          localStorage.setItem('DB_CAIXA_PEND', JSON.stringify(arr));
+          return item.uid;
+        }
+        const company = window.getCompany?.() || 'BSX';
+        const uid = item.uid || window.uid?.() || crypto.randomUUID();
+        
+        await this.client.from('pendencias').insert([{
+          uid, alt_uid: item.altUID || null,
+          gerente: item.gerenteNome || '', gerente_id: item.gerenteId || null,
+          valor_original: Number(item.valorOriginal) || 0,
+          valor_confirm: Number(item.valorConfirm || item.valorOriginal) || 0,
+          forma: item.forma || 'PIX',
+          data: item.data || new Date().toISOString().slice(0,10),
+          info: item.info || '', prestacao_id: item.prestId || null,
+          tipo_caixa: item.tipoCaixa || 'RECEBIDO',
+          status: 'PENDENTE', edited: false, company
+        }]);
+        console.log('[Pendencias] ✅ Criada:', uid);
+        return uid;
+      } catch(e) { console.error('[Pendencias] Erro ao criar:', e); throw e; }
+    },
+
+    async update(uid, dados) {
+      try {
+        if (!this.client) return;
+        const dbRow = {};
+        if (dados.valorConfirm !== undefined) dbRow.valor_confirm = Number(dados.valorConfirm);
+        if (dados.edited !== undefined) dbRow.edited = dados.edited;
+        if (dados.status !== undefined) dbRow.status = dados.status;
+        
+        await this.client.from('pendencias').update(dbRow).eq('uid', uid);
+        console.log('[Pendencias] ✅ Atualizada:', uid);
+      } catch(e) { console.error('[Pendencias] Erro ao atualizar:', e); }
+    },
+
+    async delete(uid) {
+      try {
+        if (!this.client) {
+          let arr = JSON.parse(localStorage.getItem('DB_CAIXA_PEND') || '[]');
+          arr = arr.filter(p => p.uid !== uid);
+          localStorage.setItem('DB_CAIXA_PEND', JSON.stringify(arr));
+          return;
+        }
+        await this.client.from('pendencias').delete().eq('uid', uid);
+        console.log('[Pendencias] ✅ Deletada:', uid);
+      } catch(e) { console.error('[Pendencias] Erro ao deletar:', e); }
+    },
+
+    async confirm(uid) {
+      try {
+        if (!this.client) {
+          const s = new Set(JSON.parse(localStorage.getItem('DB_CAIXA_CONF_OK') || '[]'));
+          s.add(uid);
+          localStorage.setItem('DB_CAIXA_CONF_OK', JSON.stringify([...s]));
+          return;
+        }
+        const company = window.getCompany?.() || 'BSX';
+        await this.client.from('pendencias_confirmadas').upsert([{
+          uid, company, confirmed_by: window.currentUser?.nome || ''
+        }], { onConflict: 'uid' });
+        await this.delete(uid);
+        console.log('[Pendencias] ✅ Confirmada:', uid);
+      } catch(e) { console.error('[Pendencias] Erro ao confirmar:', e); }
+    },
+
+    async isConfirmed(uid) {
+      try {
+        if (!this.client) {
+          const s = new Set(JSON.parse(localStorage.getItem('DB_CAIXA_CONF_OK') || '[]'));
+          return s.has(uid);
+        }
+        const { data } = await this.client
+          .from('pendencias_confirmadas')
+          .select('uid').eq('uid', uid).maybeSingle();
+        return !!data;
+      } catch { return false; }
+    },
+
+    async getConfirmedSet() {
+      try {
+        if (!this.client) {
+          return new Set(JSON.parse(localStorage.getItem('DB_CAIXA_CONF_OK') || '[]'));
+        }
+        const company = window.getCompany?.() || 'BSX';
+        const { data } = await this.client
+          .from('pendencias_confirmadas')
+          .select('uid').eq('company', company);
+        return new Set((data || []).map(r => r.uid));
+      } catch { return new Set(); }
+    },
+
+    async migrate() {
+      try {
+        const raw = localStorage.getItem('DB_CAIXA_PEND');
+        if (!raw) { console.log('[Pendencias] Nada para migrar'); return { migrated: 0 }; }
+        
+        const local = JSON.parse(raw);
+        if (!Array.isArray(local) || !local.length) return { migrated: 0 };
+        
+        console.log(`[Pendencias] 🔄 Migrando ${local.length} pendências...`);
+        let migrated = 0;
+        
+        for (const item of local) {
+          try {
+            const { data: existing } = await this.client
+              .from('pendencias').select('uid').eq('uid', item.uid).maybeSingle();
+            if (existing) continue;
+            
+            await this.create(item);
+            migrated++;
+          } catch(e) { console.warn('Erro ao migrar:', e); }
+        }
+        
+        // Migra confirmações
+        const confRaw = localStorage.getItem('DB_CAIXA_CONF_OK');
+        if (confRaw) {
+          const confs = JSON.parse(confRaw);
+          for (const uid of confs) {
+            try {
+              await this.client.from('pendencias_confirmadas')
+                .upsert([{ uid, company: window.getCompany?.() || 'BSX' }], { onConflict: 'uid' });
+            } catch {}
+          }
+          console.log(`[Pendencias] ✅ ${confs.length} confirmações migradas`);
+        }
+        
+        console.log(`[Pendencias] ✅ Migradas: ${migrated}`);
+        localStorage.setItem('DB_CAIXA_PEND_backup', raw);
+        return { migrated };
+      } catch(e) { console.error('[Pendencias] Erro:', e); return { migrated: 0 }; }
+    }
   };
 
-  window.__setPendencias = function(arr) { 
-    setJSON(window.DB_CAIXA_PEND, arr); 
+  // Expor globalmente
+  window.PendenciasAPI = PendenciasAPI;
+  window.migrarPendenciasParaSupabase = () => PendenciasAPI.migrate();
+
+  // ===== FUNÇÕES DE COMPATIBILIDADE =====
+  let _pendCache = null;
+  
+  window.__getPendencias = function() {
+    if (_pendCache) return _pendCache;
+    // Síncrono para compatibilidade - usa cache ou localStorage
+    try { return JSON.parse(localStorage.getItem('DB_CAIXA_PEND') || '[]'); } catch { return []; }
+  };
+
+  window.__getPendenciasAsync = async function() {
+    _pendCache = await PendenciasAPI.getAll();
+    // Atualiza localStorage para funções síncronas
+    try { localStorage.setItem('DB_CAIXA_PEND', JSON.stringify(_pendCache)); } catch {}
+    return _pendCache;
+  };
+
+  window.__setPendencias = function(arr) {
+    _pendCache = arr;
+    try { localStorage.setItem('DB_CAIXA_PEND', JSON.stringify(arr)); } catch {}
+  };
+
+  window.__addPendencia = async function(item) {
+    await PendenciasAPI.create(item);
+    _pendCache = null; // Invalida cache
+  };
+
+  window.__removePendencia = async function(uid) {
+    await PendenciasAPI.delete(uid);
+    _pendCache = null;
+  };
+
+  window.__getConfSet = function() {
+    try { return new Set(JSON.parse(localStorage.getItem('DB_CAIXA_CONF_OK') || '[]')); }
+    catch { return new Set(); }
+  };
+
+  window.__getConfSetAsync = async function() {
+    return await PendenciasAPI.getConfirmedSet();
+  };
+
+  window.__addConf = async function(uid) {
+    if (!uid) return;
+    await PendenciasAPI.confirm(uid);
+    // Atualiza localStorage
+    const s = window.__getConfSet(); s.add(uid);
+    try { localStorage.setItem('DB_CAIXA_CONF_OK', JSON.stringify([...s])); } catch {}
   };
 
   window.__getLanc = function() {
@@ -793,161 +991,110 @@ function formatDate(date) {
 
   window.__setLanc = function(novo) {
     try {
-      if (Array.isArray(novo)) window.lanc = novo; 
-      else if (Array.isArray(window.lanc)) {
-        window.lanc.splice(0, window.lanc.length, ...(novo||[]));
-      }
+      if (Array.isArray(novo)) window.lanc = novo;
       window.saveLanc?.();
-    } catch(_) {}
-  };
-
-  window.__getConfSet = function() {
-    try { 
-      return new Set(JSON.parse(localStorage.getItem(window.DB_CAIXA_CONF_OK)||'[]')); 
-    } catch(_) { 
-      return new Set(); 
-    }
-  };
-
-  window.__addConf = function(uid) {
-    if (!uid) return;
-    const s = window.__getConfSet(); 
-    s.add(uid);
-    try { 
-      localStorage.setItem(window.DB_CAIXA_CONF_OK, JSON.stringify([...s])); 
-    } catch(_) {}
+    } catch {}
   };
 
   // ===== FUNÇÕES DE UID =====
-
   window.__pgMakeUIDs = function(prest, pg) {
-    const pid   = prest?.id ?? 'prest';
-    const data  = pg?.data || prest?.fim || prest?.ini || '';
-    const v     = Number(pg?.valor)||0;
+    const pid = prest?.id ?? 'prest';
+    const data = pg?.data || prest?.fim || prest?.ini || '';
+    const v = Number(pg?.valor) || 0;
     const forma = String(pg?.forma || pg?.tipo || '').trim().toUpperCase();
-
     const stable = `P:${pid}|D:${data}|V:${v.toFixed(2)}|F:${forma}`;
     const legacy = `prest:${pid}:${pg?.id ?? ''}:${data}:${v}`;
-
     return { stable, legacy };
   };
 
   window.__negMakeUID = function(prest, valorAbs) {
-    const pid  = prest?.id ?? 'prest';
+    const pid = prest?.id ?? 'prest';
     const data = prest?.fim || prest?.ini || '';
-    const v    = Number(valorAbs)||0;
-    
-    const stable = `NEG:${pid}|D:${data}|V:${v.toFixed(2)}`;
-    const legacy = `prest:saida:${pid}:${data}:${v}`;
-    
-    return { stable, legacy };
+    const v = Number(valorAbs) || 0;
+    return { stable: `NEG:${pid}|D:${data}|V:${v.toFixed(2)}`, legacy: `prest:saida:${pid}:${data}:${v}` };
   };
 
-  // ===== SINCRONIZAÇÃO DE PENDÊNCIAS =====
-
-  window.syncPendenciasFromPrest = function() {
+  // ===== SINCRONIZAÇÃO =====
+  window.syncPendenciasFromPrest = async function() {
     try {
       const DB_PREST_KEY = window.DB_PREST || 'bsx_prestacoes_v1';
-      
       let prests = [];
       try {
         const raw = localStorage.getItem(DB_PREST_KEY);
         prests = raw ? JSON.parse(raw) : [];
         if (!Array.isArray(prests)) prests = [];
-      } catch(e) {
-        console.error('Erro ao ler prestações:', e);
-        return 0;
-      }
-      
-      const pend = window.__getPendencias();
+      } catch { return 0; }
+
+      // Carrega pendências do Supabase
+      const pend = await window.__getPendenciasAsync();
       const pendUIDs = new Set(pend.map(p => p.uid).filter(Boolean));
       const pendAlt = new Set(pend.map(p => p.altUID).filter(Boolean));
 
       const lancs = window.__getLanc();
-      const confirmadosFromUID = new Set(
-        [].concat(
-          (lancs||[]).map(x => x?.meta?.fromUID).filter(Boolean),
-          Array.from(window.__getConfSet())
-        )
-      );
+      const confirmados = await window.__getConfSetAsync();
+      const confirmadosFromUID = new Set([
+        ...(lancs || []).map(x => x?.meta?.fromUID).filter(Boolean),
+        ...confirmados
+      ]);
 
       let novos = 0;
 
-      for (let idx = 0; idx < prests.length; idx++) {
-        const p = prests[idx];
-        
-        const gerenteNome = (window.gerentes||[]).find(g => 
+      for (const p of prests) {
+        const gerenteNome = (window.gerentes || []).find(g =>
           String(g.uid) === String(p.gerenteId)
-        )?.nome || p?.gerenteNome || (window.gerentes?.length ? '(excluído)' : '(carregando...)');
+        )?.nome || p?.gerenteNome || '(excluído)';
 
-// 1) Pagamentos normais (ENTRADA) - EXCETO DIVIDA_PAGA
-const pagamentos = []
-  .concat(Array.isArray(p.pagamentos) ? p.pagamentos : [])
-  .concat(Array.isArray(p.pagamentosNormais) ? p.pagamentosNormais : [])
-  .filter(x => {
-    const f = String((x.forma||x.tipo||'')+'').trim().toUpperCase();
-    // ✅ EXCLUI DIVIDA_PAGA (já tratado em criarPendenciaPagamento)
-    return !x?.cancelado && 
-           f !== 'ADIANTAMENTO' && 
-           f !== 'VALE' && 
-           f !== 'DIVIDA_PAGA';
-  });
+        const pagamentos = []
+          .concat(Array.isArray(p.pagamentos) ? p.pagamentos : [])
+          .concat(Array.isArray(p.pagamentosNormais) ? p.pagamentosNormais : [])
+          .filter(x => {
+            const f = String((x.forma || x.tipo || '') + '').trim().toUpperCase();
+            return !x?.cancelado && f !== 'ADIANTAMENTO' && f !== 'VALE' && f !== 'DIVIDA_PAGA';
+          });
 
-        // ✅ ADICIONA APENAS OS PAGAMENTOS LANÇADOS
-        // NÃO cria pendência automática para prestação negativa
-        for (let j = 0; j < pagamentos.length; j++) {
-          const pg = pagamentos[j];
+        for (const pg of pagamentos) {
           const uids = window.__pgMakeUIDs(p, pg);
-          
-          // ✅ VERIFICA SE JÁ EXISTE OU JÁ FOI CONFIRMADO
+
           if (pendUIDs.has(uids.stable) || pendUIDs.has(uids.legacy) ||
               pendAlt.has(uids.stable) || pendAlt.has(uids.legacy) ||
               confirmadosFromUID.has(uids.stable) || confirmadosFromUID.has(uids.legacy)) {
-            console.log('⚠️ Pagamento já existe ou foi confirmado, não recria:', uids.stable);
             continue;
           }
-          
-          pend.push({
-            id: (crypto?.randomUUID ? crypto.randomUUID() : 'pend_'+Date.now()+'_'+Math.random()),
-            uid: uids.stable,
-            altUID: uids.legacy,
-            prestId: p.id,
-            gerenteId: p.gerenteId,
-            gerenteNome: gerenteNome,
+
+          await PendenciasAPI.create({
+            uid: uids.stable, altUID: uids.legacy,
+            prestId: p.id, gerenteId: p.gerenteId, gerenteNome,
             data: pg.data || p.fim || p.ini || '',
-            valorOriginal: Number(pg.valor)||0,
-            valorConfirm: Number(pg.valor)||0,
-            info: 'Prest. ' + (p.ini||p.periodoIni||'').slice(5).split('-').reverse().join('/') + 
-                  '–' + (p.fim||p.periodoFim||'').slice(5).split('-').reverse().join('/'),
+            valorOriginal: Number(pg.valor) || 0,
+            valorConfirm: Number(pg.valor) || 0,
+            info: 'Prest. ' + (p.ini || '').slice(5).split('-').reverse().join('/') +
+                  '–' + (p.fim || '').slice(5).split('-').reverse().join('/'),
             forma: pg.forma || pg.tipo || 'PRESTAÇÃO',
-            status: 'PENDENTE',
-            edited: false,
-            createdAt: new Date().toISOString(),
             tipoCaixa: 'RECEBIDO'
           });
-          
+
           pendUIDs.add(uids.stable);
-          pendAlt.add(uids.legacy);
           novos++;
         }
-
-        // ❌ REMOVIDO: Não cria mais pendência automática para prestação negativa (restam)
-        // Só vai para confirmação o que for lançado explicitamente como pagamento
       }
 
       if (novos > 0) {
-        window.__setPendencias(pend);
-        console.log('✅ Sincronizadas', novos, 'novas pendências (não confirmadas)');
+        _pendCache = null; // Invalida cache
+        console.log('✅ Sincronizadas', novos, 'novas pendências');
       }
-      
       return novos;
-    } catch(e) {
-      console.error('Erro em syncPendenciasFromPrest:', e);
-      return 0;
-    }
+    } catch (e) { console.error('Erro em syncPendenciasFromPrest:', e); return 0; }
   };
 
-  console.log('✅ Funções do Financeiro inicializadas e disponíveis globalmente');
+  // Carrega pendências do Supabase no início
+  setTimeout(async () => {
+    if (window.SupabaseAPI?.client) {
+      await window.__getPendenciasAsync();
+      console.log('[Pendencias] ✅ Cache carregado do Supabase');
+    }
+  }, 2000);
+
+  console.log('✅ [Pendencias] API Supabase inicializada. Use migrarPendenciasParaSupabase() para migrar.');
 })();
 
 // ===== HELPER PARA FORMATAÇÃO DE DATA =====

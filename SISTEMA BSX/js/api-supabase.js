@@ -512,257 +512,248 @@
       
     }
     
-
     // ============================================
-// API DE FICHAS
-// ============================================
-
-class FichasAPI {
-    constructor() {
-      this.table = 'fichas';
-      this.client = supabaseClient;
-    }
+    // API DE FICHAS
+    // ============================================
     
-    async getAll() {
-      try {
-        const company = window.getCompany ? window.getCompany() : 'BSX';
-        const { data, error } = await this.client
-          .from(this.table)
-          .select('*')
-          .eq('company', company)
-          .order('ficha');
-        
-        if (error) throw error;
-        return (data || []).map(f => ({
-          ficha: f.ficha,
-          area: f.area || ''
-        }));
-      } catch (error) {
-        console.error('[FichasAPI] Erro getAll:', error);
-        return [];
-      }
-    }
-    
-    async upsert(ficha, area) {
-      try {
-        const company = window.getCompany ? window.getCompany() : 'BSX';
-        ficha = String(ficha || '').trim();
-        area = String(area || '').trim();
-        if (!ficha) return null;
-        
-        const { data, error } = await this.client
-          .from(this.table)
-          .upsert({
-            ficha,
-            area,
-            company,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'ficha,company' })
-          .select()
-          .single();
-        
-        if (error) throw error;
-        console.log('[FichasAPI] ✅ Upsert:', ficha);
-        return data;
-      } catch (error) {
-        console.error('[FichasAPI] Erro upsert:', error);
-        return null;
-      }
-    }
-    
-    async delete(ficha) {
-      try {
-        const company = window.getCompany ? window.getCompany() : 'BSX';
-        const { error } = await this.client
-          .from(this.table)
-          .delete()
-          .eq('ficha', ficha)
-          .eq('company', company);
-        
-        if (error) throw error;
-        return true;
-      } catch (error) {
-        console.error('[FichasAPI] Erro delete:', error);
-        return false;
-      }
-    }
-    
-    async migrate() {
-      const company = window.getCompany ? window.getCompany() : 'BSX';
-      const KEY = `${company}__bsx_fichas`;
-      const KEY_LEG = 'bsx_fichas';
-      
-      let local = [];
-      try { local = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch {}
-      if (!local.length) {
-        try { local = JSON.parse(localStorage.getItem(KEY_LEG) || '[]'); } catch {}
+    class FichasAPI {
+      constructor() {
+        this.table = 'fichas';
+        this.client = supabaseClient;
       }
       
-      if (!local.length) {
-        console.log('[FichasAPI] Nada para migrar');
-        return { migrated: 0 };
-      }
-      
-      console.log(`[FichasAPI] 🔄 Migrando ${local.length} fichas...`);
-      let migrated = 0;
-      
-      for (const f of local) {
-        const ok = await this.upsert(f.ficha, f.area);
-        if (ok) migrated++;
-      }
-      
-      console.log(`[FichasAPI] ✅ Migradas: ${migrated}`);
-      return { migrated };
-    }
-  }
-  
-  // ============================================
-  // API DE VENDAS
-  // ============================================
-  
-  class VendasAPI {
-    constructor() {
-      this.table = 'vendas';
-      this.client = supabaseClient;
-    }
-    
-    async getAll() {
-      try {
-        const company = window.getCompany ? window.getCompany() : 'BSX';
-        const { data, error } = await this.client
-          .from(this.table)
-          .select('*')
-          .eq('company', company)
-          .order('ym', { ascending: false });
-        
-        if (error) throw error;
-        return (data || []).map(v => ({
-          id: v.uid,
-          ficha: v.ficha,
-          ym: v.ym,
-          bruta: Number(v.bruta) || 0,
-          liquida: Number(v.liquida) || 0
-        }));
-      } catch (error) {
-        console.error('[VendasAPI] Erro getAll:', error);
-        return [];
-      }
-    }
-    
-    async upsert(venda) {
-      try {
-        const company = window.getCompany ? window.getCompany() : 'BSX';
-        const uid = venda.id || 'vnd_' + Math.random().toString(36).slice(2, 11);
-        
-        // Verifica se já existe
-        const { data: existing } = await this.client
-          .from(this.table)
-          .select('uid')
-          .eq('ficha', venda.ficha)
-          .eq('ym', venda.ym)
-          .eq('company', company)
-          .maybeSingle();
-        
-        if (existing) {
-          // Update
+      async getAll() {
+        try {
+          const empresaId = await getEmpresaId();
+          if (!empresaId) {
+            console.warn('[FichasAPI] empresa_id não encontrado');
+            return [];
+          }
+          
           const { data, error } = await this.client
             .from(this.table)
-            .update({
-              bruta: Number(venda.bruta) || 0,
-              liquida: Number(venda.liquida) || 0,
-              updated_at: new Date().toISOString()
-            })
-            .eq('ficha', venda.ficha)
-            .eq('ym', venda.ym)
-            .eq('company', company)
-            .select()
-            .single();
+            .select('*')
+            .eq('empresa_id', empresaId)
+            .order('ficha');
           
           if (error) throw error;
-          return data;
-        } else {
-          // Insert
-          const { data, error } = await this.client
-            .from(this.table)
-            .insert({
-              uid,
-              ficha: venda.ficha,
-              ym: venda.ym,
-              bruta: Number(venda.bruta) || 0,
-              liquida: Number(venda.liquida) || 0,
-              company
-            })
-            .select()
-            .single();
-          
-          if (error) throw error;
-          return data;
+          return (data || []).map(f => ({
+            ficha: f.ficha,
+            area: f.area || ''
+          }));
+        } catch (error) {
+          console.error('[FichasAPI] Erro getAll:', error);
+          return [];
         }
-      } catch (error) {
-        console.error('[VendasAPI] Erro upsert:', error);
-        return null;
+      }
+      
+      async upsert(ficha, area) {
+        try {
+          const empresaId = await getEmpresaId();
+          if (!empresaId) {
+            console.warn('[FichasAPI] empresa_id não encontrado');
+            return null;
+          }
+          
+          ficha = String(ficha || '').trim();
+          area = String(area || '').trim();
+          if (!ficha) return null;
+          
+          // Verifica se já existe
+          const { data: existing } = await this.client
+            .from(this.table)
+            .select('id')
+            .eq('ficha', ficha)
+            .eq('empresa_id', empresaId)
+            .maybeSingle();
+          
+          if (existing) {
+            // Update
+            const { data, error } = await this.client
+              .from(this.table)
+              .update({ area })
+              .eq('id', existing.id)
+              .select()
+              .single();
+            
+            if (error) throw error;
+            console.log('[FichasAPI] ✅ Atualizada:', ficha);
+            return data;
+          } else {
+            // Insert
+            const { data, error } = await this.client
+              .from(this.table)
+              .insert({
+                ficha,
+                area,
+                empresa_id: empresaId
+              })
+              .select()
+              .single();
+            
+            if (error) throw error;
+            console.log('[FichasAPI] ✅ Criada:', ficha);
+            return data;
+          }
+        } catch (error) {
+          console.error('[FichasAPI] Erro upsert:', error);
+          return null;
+        }
+      }
+      
+      async delete(ficha) {
+        try {
+          const empresaId = await getEmpresaId();
+          if (!empresaId) return false;
+          
+          const { error } = await this.client
+            .from(this.table)
+            .delete()
+            .eq('ficha', ficha)
+            .eq('empresa_id', empresaId);
+          
+          if (error) throw error;
+          return true;
+        } catch (error) {
+          console.error('[FichasAPI] Erro delete:', error);
+          return false;
+        }
       }
     }
     
-    async delete(id) {
-      try {
-        const company = window.getCompany ? window.getCompany() : 'BSX';
-        const { error } = await this.client
-          .from(this.table)
-          .delete()
-          .eq('uid', id)
-          .eq('company', company);
-        
-        if (error) throw error;
-        return true;
-      } catch (error) {
-        console.error('[VendasAPI] Erro delete:', error);
-        return false;
+    // ============================================
+    // API DE VENDAS
+    // ============================================
+    
+    class VendasAPI {
+      constructor() {
+        this.table = 'vendas';
+        this.client = supabaseClient;
+      }
+      
+      async getAll() {
+        try {
+          const empresaId = await getEmpresaId();
+          if (!empresaId) {
+            console.warn('[VendasAPI] empresa_id não encontrado');
+            return [];
+          }
+          
+          const { data, error } = await this.client
+            .from(this.table)
+            .select('*')
+            .eq('empresa_id', empresaId)
+            .order('ano_mes', { ascending: false });
+          
+          if (error) throw error;
+          
+          // Mapeia para formato JS (ym, bruta, liquida)
+          return (data || []).map(v => ({
+            id: v.uid || v.id,
+            ficha: v.ficha,
+            ym: v.ano_mes,           // ano_mes → ym
+            bruta: Number(v.venda_bruta) || 0,    // venda_bruta → bruta
+            liquida: Number(v.venda_liquida) || 0  // venda_liquida → liquida
+          }));
+        } catch (error) {
+          console.error('[VendasAPI] Erro getAll:', error);
+          return [];
+        }
+      }
+      
+      async upsert(venda) {
+        try {
+          const empresaId = await getEmpresaId();
+          if (!empresaId) {
+            console.warn('[VendasAPI] empresa_id não encontrado');
+            return null;
+          }
+          
+          const uid = venda.id || 'vnd_' + Math.random().toString(36).slice(2, 11);
+          const anoMes = venda.ym || venda.ano_mes;
+          
+          // Verifica se já existe
+          const { data: existing } = await this.client
+            .from(this.table)
+            .select('id, uid')
+            .eq('ficha', venda.ficha)
+            .eq('ano_mes', anoMes)
+            .eq('empresa_id', empresaId)
+            .maybeSingle();
+          
+          if (existing) {
+            // Update
+            const { data, error } = await this.client
+              .from(this.table)
+              .update({
+                venda_bruta: Number(venda.bruta) || 0,
+                venda_liquida: Number(venda.liquida) || 0
+              })
+              .eq('id', existing.id)
+              .select()
+              .single();
+            
+            if (error) throw error;
+            console.log('[VendasAPI] ✅ Atualizada:', venda.ficha, anoMes);
+            return data;
+          } else {
+            // Insert
+            const { data, error } = await this.client
+              .from(this.table)
+              .insert({
+                uid,
+                ficha: venda.ficha,
+                ano_mes: anoMes,
+                venda_bruta: Number(venda.bruta) || 0,
+                venda_liquida: Number(venda.liquida) || 0,
+                empresa_id: empresaId
+              })
+              .select()
+              .single();
+            
+            if (error) throw error;
+            console.log('[VendasAPI] ✅ Criada:', venda.ficha, anoMes);
+            return data;
+          }
+        } catch (error) {
+          console.error('[VendasAPI] Erro upsert:', error);
+          return null;
+        }
+      }
+      
+      async delete(id) {
+        try {
+          const empresaId = await getEmpresaId();
+          if (!empresaId) return false;
+          
+          const { error } = await this.client
+            .from(this.table)
+            .delete()
+            .eq('uid', id)
+            .eq('empresa_id', empresaId);
+          
+          if (error) throw error;
+          return true;
+        } catch (error) {
+          console.error('[VendasAPI] Erro delete:', error);
+          return false;
+        }
       }
     }
     
-    async migrate() {
-      const company = window.getCompany ? window.getCompany() : 'BSX';
-      const KEY = `${company}__bsx_vendas`;
-      const KEY_LEG = 'bsx_vendas';
-      
-      let local = [];
-      try { local = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch {}
-      if (!local.length) {
-        try { local = JSON.parse(localStorage.getItem(KEY_LEG) || '[]'); } catch {}
-      }
-      
-      if (!local.length) {
-        console.log('[VendasAPI] Nada para migrar');
-        return { migrated: 0 };
-      }
-      
-      console.log(`[VendasAPI] 🔄 Migrando ${local.length} vendas...`);
-      let migrated = 0;
-      
-      for (const v of local) {
-        const ok = await this.upsert(v);
-        if (ok) migrated++;
-      }
-      
-      console.log(`[VendasAPI] ✅ Migradas: ${migrated}`);
-      return { migrated };
-    }
-  }
-
     // ============================================
     // EXPORTAR API
     // ============================================
     
     window.SupabaseAPI = {
-        usuarios: new UsuariosAPI(),
-        gerentes: new GerentesAPI(),
-        despesas: new DespesasAPI(),
-        prestacoes: new PrestacoesAPI(),
-        fichas: new FichasAPI(),
-        vendas: new VendasAPI(),
-        client: supabaseClient
-      };
+      usuarios: new UsuariosAPI(),
+      gerentes: new GerentesAPI(),
+      despesas: new DespesasAPI(),
+      prestacoes: new PrestacoesAPI(),
+      fichas: new FichasAPI(),
+      vendas: new VendasAPI(),
+      client: supabaseClient
+    };
     
     // Aliases para compatibilidade
     window.SupabaseAPI.users = window.SupabaseAPI.usuarios;

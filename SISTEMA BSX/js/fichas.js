@@ -78,8 +78,10 @@ async function saveVendas() {
 // Expor globalmente para debug
 window.carregarFichas = carregarFichas;
 window.carregarVendas = carregarVendas;
-window.renderFichaArea = null; // Será definido depois
-window.renderVendas = null;    // Será definido depois
+// NÃO zera mais as funções:
+//// window.renderFichaArea = null;
+//// window.renderVendas   = null;
+
 
 // Inicialização - carrega dados do Supabase
 (function initFichasVendas() {
@@ -742,7 +744,4 @@ async function upsertAreasFromRows(rows){
     doImport();
   });
 })();
-
-
-
 })();

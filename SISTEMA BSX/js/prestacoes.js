@@ -1788,12 +1788,13 @@ const valePg = valesAplicados.reduce((sum, v) => {
     
     console.log('💰 [SaldoAcumulado] Resultado:', calculoSaldo);
 
-    // ✅ Valores retornados pelo módulo de saldo acumulado
-    baseComissao   = Number(calculoSaldo.baseCalculo)   || 0;   // base da 1ª comissão
-    valorComissao1 = Number(calculoSaldo.valorComissao) || 0;   // valor da 1ª comissão
-    
-    // Resultado após aplicar saldo acumulado + 1ª comissão
-    let resultadoAposSaldoEPrimeira = Number(calculoSaldo.resultado) || 0;
+ // ✅ Valores retornados pelo módulo de saldo acumulado
+baseComissao   = Number(calculoSaldo.baseCalculo)   || 0;   // base da 1ª comissão
+valorComissao1 = Number(calculoSaldo.valorComissao) || 0;   // valor da 1ª comissão
+
+// ✅ CORREÇÃO: Calcular resultado diretamente (base - comissão)
+// Não confiar em calculoSaldo.resultado pois pode estar incorreto
+let resultadoAposSaldoEPrimeira = baseComissao - valorComissao1;
     
     // Se o gerente tem segunda comissão, aplica a mesma lógica do modelo CAÇULA:
     // só calcula a 2ª comissão se ainda sobrou resultado POSITIVO

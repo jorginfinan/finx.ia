@@ -27,6 +27,7 @@
     
     function getEmpresaId() {
       const nome = window.getCompany ? window.getCompany() : 'BSX';
+      console.log('[API] getEmpresaId - nome empresa:', nome);
       // Busca ID da empresa no cache ou faz query
       return getEmpresaIdByNome(nome);
     }
@@ -35,10 +36,16 @@
     
     async function getEmpresaIdByNome(nome) {
       if (!empresasCache) {
-        const { data } = await supabaseClient.from('empresas').select('id, nome');
+        console.log('[API] Buscando empresas do Supabase...');
+        const { data, error } = await supabaseClient.from('empresas').select('id, nome');
+        if (error) {
+          console.error('[API] Erro ao buscar empresas:', error);
+        }
         empresasCache = data || [];
+        console.log('[API] Empresas encontradas:', empresasCache);
       }
       const emp = empresasCache.find(e => e.nome === nome);
+      console.log('[API] Empresa encontrada:', emp);
       return emp?.id || null;
     }
     
@@ -513,7 +520,7 @@
     }
     
     // ============================================
-    // API DE FICHAS
+    // API DE FICHAS (CADASTRO UNIVERSAL - TODAS EMPRESAS)
     // ============================================
     
     class FichasAPI {
@@ -524,19 +531,19 @@
       
       async getAll() {
         try {
-          const empresaId = await getEmpresaId();
-          if (!empresaId) {
-            console.warn('[FichasAPI] empresa_id não encontrado');
-            return [];
-          }
-          
+          // Fichas é cadastro universal - não filtra por empresa
           const { data, error } = await this.client
             .from(this.table)
             .select('*')
-            .eq('empresa_id', empresaId)
             .order('ficha');
           
-          if (error) throw error;
+          if (error) {
+            console.error('[FichasAPI] Erro na query:', error);
+            throw error;
+          }
+          
+          console.log('[FichasAPI] ✅ Carregadas:', data?.length || 0, 'fichas');
+          
           return (data || []).map(f => ({
             ficha: f.ficha,
             area: f.area || ''
@@ -549,22 +556,15 @@
       
       async upsert(ficha, area) {
         try {
-          const empresaId = await getEmpresaId();
-          if (!empresaId) {
-            console.warn('[FichasAPI] empresa_id não encontrado');
-            return null;
-          }
-          
           ficha = String(ficha || '').trim();
           area = String(area || '').trim();
           if (!ficha) return null;
           
-          // Verifica se já existe
+          // Verifica se já existe (por ficha, sem filtro de empresa)
           const { data: existing } = await this.client
             .from(this.table)
             .select('id')
             .eq('ficha', ficha)
-            .eq('empresa_id', empresaId)
             .maybeSingle();
           
           if (existing) {
@@ -580,13 +580,15 @@
             console.log('[FichasAPI] ✅ Atualizada:', ficha);
             return data;
           } else {
-            // Insert
+            // Insert - pega empresa atual só para o insert (se campo for obrigatório)
+            const empresaId = await getEmpresaId();
+            
             const { data, error } = await this.client
               .from(this.table)
               .insert({
                 ficha,
                 area,
-                empresa_id: empresaId
+                empresa_id: empresaId  // Usa empresa atual no insert
               })
               .select()
               .single();
@@ -603,14 +605,11 @@
       
       async delete(ficha) {
         try {
-          const empresaId = await getEmpresaId();
-          if (!empresaId) return false;
-          
+          // Deleta por ficha (universal)
           const { error } = await this.client
             .from(this.table)
             .delete()
-            .eq('ficha', ficha)
-            .eq('empresa_id', empresaId);
+            .eq('ficha', ficha);
           
           if (error) throw error;
           return true;
@@ -622,7 +621,7 @@
     }
     
     // ============================================
-    // API DE VENDAS
+    // API DE VENDAS (CADASTRO UNIVERSAL - TODAS EMPRESAS)
     // ============================================
     
     class VendasAPI {
@@ -633,27 +632,26 @@
       
       async getAll() {
         try {
-          const empresaId = await getEmpresaId();
-          if (!empresaId) {
-            console.warn('[VendasAPI] empresa_id não encontrado');
-            return [];
-          }
-          
+          // Vendas é cadastro universal - não filtra por empresa
           const { data, error } = await this.client
             .from(this.table)
             .select('*')
-            .eq('empresa_id', empresaId)
             .order('ano_mes', { ascending: false });
           
-          if (error) throw error;
+          if (error) {
+            console.error('[VendasAPI] Erro na query:', error);
+            throw error;
+          }
+          
+          console.log('[VendasAPI] ✅ Carregadas:', data?.length || 0, 'vendas');
           
           // Mapeia para formato JS (ym, bruta, liquida)
           return (data || []).map(v => ({
             id: v.uid || v.id,
             ficha: v.ficha,
-            ym: v.ano_mes,           // ano_mes → ym
-            bruta: Number(v.venda_bruta) || 0,    // venda_bruta → bruta
-            liquida: Number(v.venda_liquida) || 0  // venda_liquida → liquida
+            ym: v.ano_mes,
+            bruta: Number(v.venda_bruta) || 0,
+            liquida: Number(v.venda_liquida) || 0
           }));
         } catch (error) {
           console.error('[VendasAPI] Erro getAll:', error);
@@ -663,22 +661,15 @@
       
       async upsert(venda) {
         try {
-          const empresaId = await getEmpresaId();
-          if (!empresaId) {
-            console.warn('[VendasAPI] empresa_id não encontrado');
-            return null;
-          }
-          
           const uid = venda.id || 'vnd_' + Math.random().toString(36).slice(2, 11);
           const anoMes = venda.ym || venda.ano_mes;
           
-          // Verifica se já existe
+          // Verifica se já existe (por ficha + ano_mes, sem filtro de empresa)
           const { data: existing } = await this.client
             .from(this.table)
             .select('id, uid')
             .eq('ficha', venda.ficha)
             .eq('ano_mes', anoMes)
-            .eq('empresa_id', empresaId)
             .maybeSingle();
           
           if (existing) {
@@ -697,7 +688,9 @@
             console.log('[VendasAPI] ✅ Atualizada:', venda.ficha, anoMes);
             return data;
           } else {
-            // Insert
+            // Insert - pega empresa atual só para o insert (se campo for obrigatório)
+            const empresaId = await getEmpresaId();
+            
             const { data, error } = await this.client
               .from(this.table)
               .insert({
@@ -723,14 +716,11 @@
       
       async delete(id) {
         try {
-          const empresaId = await getEmpresaId();
-          if (!empresaId) return false;
-          
+          // Deleta por uid (universal)
           const { error } = await this.client
             .from(this.table)
             .delete()
-            .eq('uid', id)
-            .eq('empresa_id', empresaId);
+            .eq('uid', id);
           
           if (error) throw error;
           return true;

@@ -2442,6 +2442,7 @@ if (temSegundaComissao) {
 else {
   // Modelo padrão ou por rota positiva
   const _resColetas2 = coletas2 - despesas2;
+  const showNeg2 = perc2 > 0 && perc2 < 50;  // ← ADICIONAR ESTA LINHA
   
   ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', fmtBRL(coletas2),
                { bold:true, size:R_BOLD });

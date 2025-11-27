@@ -189,6 +189,7 @@ async function loadGerentes(){
         comissaoModo: (g.comissaoModo || (g.comissaoSequencial ? 'sequencial' : 'simples')),     
         comissaoPorRotaPositiva: !!g.comissao_por_rota_positiva || !!g.comissaoPorRotaPositiva,
         temSegundaComissao: !!g.tem_segunda_comissao || !!g.temSegundaComissao,
+        temSaldoAcumulado: !!g.tem_saldo_acumulado || !!g.temSaldoAcumulado,
         numero:   g.numero ?? g.rota ?? '',
         endereco: g.endereco ?? '',
         telefone: g.telefone ?? '',
@@ -1758,78 +1759,86 @@ const valePg = valesAplicados.reduce((sum, v) => {
   let valorComissao2 = 0;
   let resultado = 0;
         // SALDO ACUMULADO
-        if (window.SaldoAcumulado && g && perc1 > 0 && perc1 < 50 && baseCalculo !== 'COLETAS') {
-  
+        const usaSaldoAcumulado = window.SaldoAcumulado && g && perc1 > 0 && perc1 < 50 && 
+    (baseCalculo !== 'COLETAS' || g.temSaldoAcumulado || g.temSegundaComissao);
+
+  if (usaSaldoAcumulado) {
     console.log('📊 [SaldoAcumulado] Condições atendidas! Calculando...');
-    console.log('📊 [SaldoAcumulado] Parâmetros:', { gerenteId: g.uid, coletas, despesasTot, perc1, baseCalculo });
+    console.log('📊 [SaldoAcumulado] Parâmetros:', { 
+      gerenteId: g.uid, 
+      coletas, 
+      despesasTot, 
+      perc1, 
+      perc2,
+      baseCalculo,
+      temSegundaComissao 
+    });
     
- // ✅ SEMPRE busca saldo atual do Supabase
- const empresaAtual = window.getCompany ? window.getCompany() : 'BSX';
- let saldoDoSupabase = await window.SaldoAcumulado.getSaldo(g.uid, empresaAtual);
- let saldoParaCalcular = saldoDoSupabase;
- 
- // Se está EDITANDO, subtrai a contribuição desta prestação para não contar duas vezes
- if (window.__prestBeingEdited?.id && window.__prestBeingEdited?.saldoInfo) {
-   const contribuicaoDestaPrestacao = window.__prestBeingEdited.saldoInfo.saldoCarregarNovo || 0;
-   saldoParaCalcular = Math.max(0, saldoDoSupabase - contribuicaoDestaPrestacao);
-   console.log('🔄 Editando - saldo Supabase:', saldoDoSupabase, '- contribuição desta prestação:', contribuicaoDestaPrestacao, '= saldo para calcular:', saldoParaCalcular);
- } else {
-   console.log('🔍 [SaldoAcumulado] Saldo buscado do Supabase:', saldoParaCalcular);
- }
+    const empresaAtual = window.getCompany ? window.getCompany() : 'BSX';
     
+    // ✅ Busca saldo atual do Supabase
+    let saldoDoSupabase = await window.SaldoAcumulado.getSaldo(g.uid, empresaAtual);
+    let saldoParaCalcular = saldoDoSupabase;
+    
+    // Se está EDITANDO, subtrai a contribuição desta prestação para não contar duas vezes
+    if (window.__prestBeingEdited?.id && window.__prestBeingEdited?.saldoInfo) {
+      const contribuicaoDestaPrestacao = window.__prestBeingEdited.saldoInfo.saldoCarregarNovo || 0;
+      saldoParaCalcular = Math.max(0, saldoDoSupabase - contribuicaoDestaPrestacao);
+      console.log('🔄 Editando - saldo Supabase:', saldoDoSupabase, 
+                  '- contribuição desta prestação:', contribuicaoDestaPrestacao, 
+                  '= saldo para calcular:', saldoParaCalcular);
+    } else {
+      console.log('🔍 [SaldoAcumulado] Saldo buscado do Supabase:', saldoParaCalcular);
+    }
+    
+    // ✅ CORREÇÃO: Passa parâmetros adicionais para o módulo
     const calculoSaldo = await window.SaldoAcumulado.calcular({
       gerenteId: g.uid,
-      empresaId: window.getCompany ? window.getCompany() : 'BSX',
+      empresaId: empresaAtual,
       coletas: coletas,
       despesas: despesasTot,
       comissao: perc1,
-      saldoAnterior: saldoParaCalcular  // ✅ Usa o saldo correto
+      comissao2: temSegundaComissao ? perc2 : 0,  // ✅ NOVO: Segunda comissão
+      baseCalculo: baseCalculo,                     // ✅ NOVO: Tipo de base
+      saldoAnterior: saldoParaCalcular
     });
     
-    console.log('💰 [SaldoAcumulado] Resultado:', calculoSaldo);
+    console.log('💰 [SaldoAcumulado] Resultado do cálculo:', calculoSaldo);
 
- // ✅ Valores retornados pelo módulo de saldo acumulado
-baseComissao   = Number(calculoSaldo.baseCalculo)   || 0;   // base da 1ª comissão
-valorComissao1 = Number(calculoSaldo.valorComissao) || 0;   // valor da 1ª comissão
-
-// ✅ CORREÇÃO: Calcular resultado diretamente (base - comissão)
-// Não confiar em calculoSaldo.resultado pois pode estar incorreto
-let resultadoAposSaldoEPrimeira = baseComissao - valorComissao1;
+    // ✅ Valores retornados pelo módulo de saldo acumulado
+    baseComissao   = Number(calculoSaldo.baseCalculo) || 0;
+    valorComissao1 = Number(calculoSaldo.valorComissao) || 0;
+    valorComissao2 = Number(calculoSaldo.valorComissao2) || 0;
     
-    // Se o gerente tem segunda comissão, aplica a mesma lógica do modelo CAÇULA:
-    // só calcula a 2ª comissão se ainda sobrou resultado POSITIVO
-    if (temSegundaComissao && perc2 > 0) {
-      if (resultadoAposSaldoEPrimeira > 0) {
-        valorComissao2 = (resultadoAposSaldoEPrimeira * perc2) / 100;
-        resultado = resultadoAposSaldoEPrimeira - valorComissao2;
-      } else {
-        valorComissao2 = 0;
-        resultado = resultadoAposSaldoEPrimeira;
-      }
-    } else {
-      // Sem segunda comissão: o resultado do módulo já é o resultado final
-      valorComissao2 = 0;
-      resultado = resultadoAposSaldoEPrimeira;
-    }
-  
+    // ✅ CORREÇÃO: Usa o resultadoFinal que já considera ambas as comissões
+    resultado = Number(calculoSaldo.resultadoFinal) || calculoSaldo.resultado;
+    
     // Atualiza o snapshot com informações do saldo
     prestacaoAtual.saldoInfo = {
       saldoCarregarAnterior: calculoSaldo.saldoCarregarAnterior,
       saldoCarregarNovo: calculoSaldo.saldoCarregarNovo,
       baseCalculoSaldo: calculoSaldo.baseCalculo,
+      resultadoSemana: calculoSaldo.resultado,
       observacao: calculoSaldo.observacao,
       usandoSaldoAcumulado: true
     };
-    // 🔁 Mantém compatibilidade com o resumo antigo (usado em alguns lugares)
-prestacaoAtual.resumo = {
-  ...(prestacaoAtual.resumo || {}),
-  saldoNegAcarreado: Number(calculoSaldo.saldoCarregarNovo) || 0,
-  saldoAnterior:     Number(calculoSaldo.saldoCarregarAnterior) || 0
-};
-
-
-    console.log('💰 Saldo Acumulado aplicado:', calculoSaldo);
     
+    // Compatibilidade com o resumo antigo
+    prestacaoAtual.resumo = {
+      ...(prestacaoAtual.resumo || {}),
+      saldoNegAcarreado: Number(calculoSaldo.saldoCarregarNovo) || 0,
+      saldoAnterior:     Number(calculoSaldo.saldoCarregarAnterior) || 0
+    };
+
+    console.log('💰 Saldo Acumulado aplicado:', {
+      baseComissao,
+      valorComissao1,
+      valorComissao2,
+      resultado,
+      saldoAnterior: calculoSaldo.saldoCarregarAnterior,
+      saldoNovo: calculoSaldo.saldoCarregarNovo
+    });
+
   } else if (temSegundaComissao) {
     // MODELO 1: Dupla comissão (CAÇULA)
     
@@ -2772,6 +2781,25 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
   }
 
   arr.push(recPrest);
+
+  if (prestacaoAtual.saldoInfo?.usandoSaldoAcumulado) {
+    const empresaAtual = window.getCompany ? window.getCompany() : 'BSX';
+    const gerenteId = document.getElementById('pcGerente')?.value;
+    
+    if (gerenteId && window.SaldoAcumulado) {
+      try {
+        await window.SaldoAcumulado.setSaldo(
+          gerenteId, 
+          empresaAtual, 
+          prestacaoAtual.saldoInfo.saldoCarregarNovo
+        );
+        console.log('✅ Saldo acumulado atualizado no Supabase:', 
+                    prestacaoAtual.saldoInfo.saldoCarregarNovo);
+      } catch(e) {
+        console.error('❌ Erro ao salvar saldo acumulado:', e);
+      }
+    }
+  }
 
   // ✅ Salva no Supabase + localStorage
   if (typeof window.salvarPrestacaoGlobal === 'function') {

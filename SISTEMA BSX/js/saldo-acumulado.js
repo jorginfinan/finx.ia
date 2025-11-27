@@ -1,5 +1,6 @@
 // ============================================
 // SISTEMA DE SALDO ACUMULADO - SUPABASE
+// VERSÃO CORRIGIDA - Suporta 2ª comissão e base COLETAS
 // ============================================
 (function() {
     'use strict';
@@ -89,6 +90,7 @@
     }
   
     // ===== CALCULAR COMISSÃO COM SALDO ACUMULADO =====
+    // ✅ VERSÃO CORRIGIDA: Suporta segunda comissão e diferentes bases de cálculo
     async function calcularComissaoComSaldo(params) {
       const {
         gerenteId,
@@ -96,7 +98,9 @@
         coletas,          // Valor total de coletas
         despesas,         // Valor total de despesas
         comissao,         // Percentual de comissão (10, 20, 30, 40 ou 50)
-        saldoAnterior     // Opcional: para visualização sem salvar
+        comissao2,        // ✅ NOVO: Segunda comissão (opcional)
+        saldoAnterior,    // Opcional: para visualização sem salvar
+        baseCalculo       // ✅ NOVO: 'COLETAS' ou 'COLETAS_MENOS_DESPESAS'
       } = params;
   
       // Calcula resultado base (Coletas - Despesas)
@@ -109,23 +113,26 @@
   
       // ===== REGRA: Comissão 50% = SEM SALDO ACUMULADO =====
       if (comissao >= 50) {
+        const valorComissaoCalc = (resultado * comissao) / 100;
         return {
           coletas,
           despesas,
           resultado,
+          resultadoFinal: resultado - valorComissaoCalc,
           saldoCarregarAnterior: 0,
           baseCalculo: resultado,
           comissao: comissao,
-          valorComissao: (resultado * comissao) / 100,
+          valorComissao: valorComissaoCalc,
+          valorComissao2: 0,
           saldoCarregarNovo: 0,
-          aPagar: (resultado * comissao) / 100,
+          aPagar: resultado - valorComissaoCalc,
           observacao: 'Comissão 50% - sem saldo acumulado'
         };
       }
   
       // ===== REGRA: Comissão 10-40% = COM SALDO ACUMULADO =====
       
-      let baseCalculo = 0;
+      let baseParaComissao = 0;
       let novoSaldoCarregar = 0;
       let observacao = '';
   
@@ -133,42 +140,73 @@
       if (resultado < 0) {
         // Acumula o prejuízo
         novoSaldoCarregar = saldoCarregar + Math.abs(resultado);
-        baseCalculo = 0;
+        baseParaComissao = 0;
         observacao = `Prejuízo de R$ ${Math.abs(resultado).toFixed(2)} acumulado. Total a compensar: R$ ${novoSaldoCarregar.toFixed(2)}`;
       }
-      // CASO 2: Resultado POSITIVO mas menor que saldo anterior
+      // CASO 2: Resultado POSITIVO mas menor ou igual ao saldo anterior
       else if (resultado > 0 && resultado <= saldoCarregar) {
         // Abate do saldo, mas não paga comissão
         novoSaldoCarregar = saldoCarregar - resultado;
-        baseCalculo = 0;
+        baseParaComissao = 0;
         observacao = `Resultado de R$ ${resultado.toFixed(2)} compensou parte do saldo. Resta R$ ${novoSaldoCarregar.toFixed(2)} a compensar`;
       }
       // CASO 3: Resultado POSITIVO e maior que saldo anterior
       else if (resultado > 0 && resultado > saldoCarregar) {
         // Zera o saldo e calcula comissão sobre o excedente
         novoSaldoCarregar = 0;
-        baseCalculo = resultado - saldoCarregar;
+        baseParaComissao = resultado - saldoCarregar;
         
         if (saldoCarregar > 0) {
-          observacao = `Saldo de R$ ${saldoCarregar.toFixed(2)} compensado. Comissão calculada sobre R$ ${baseCalculo.toFixed(2)}`;
+          observacao = `Saldo de R$ ${saldoCarregar.toFixed(2)} compensado. Comissão calculada sobre R$ ${baseParaComissao.toFixed(2)}`;
         } else {
-          observacao = `Comissão calculada sobre resultado total de R$ ${baseCalculo.toFixed(2)}`;
+          observacao = `Comissão calculada sobre resultado total de R$ ${baseParaComissao.toFixed(2)}`;
         }
       }
   
-      const valorComissao = (baseCalculo * comissao) / 100;
-      const aPagar = resultado - valorComissao;
+      // ===== CÁLCULO DAS COMISSÕES =====
+      let valorComissaoCalc = 0;
+      let valorComissao2Calc = 0;
+      let resultadoFinal = resultado;
+      
+      const perc2 = Number(comissao2) || 0;
+      
+      if (baseParaComissao > 0) {
+        // 1ª Comissão sobre a base (após abater saldo)
+        valorComissaoCalc = (baseParaComissao * comissao) / 100;
+        
+        // 2ª Comissão (se existir) - sobre o que sobra após a 1ª
+        if (perc2 > 0) {
+          const apos1aComissao = baseParaComissao - valorComissaoCalc;
+          if (apos1aComissao > 0) {
+            valorComissao2Calc = (apos1aComissao * perc2) / 100;
+            resultadoFinal = apos1aComissao - valorComissao2Calc;
+          } else {
+            valorComissao2Calc = 0;
+            resultadoFinal = apos1aComissao;
+          }
+        } else {
+          // Sem segunda comissão
+          resultadoFinal = baseParaComissao - valorComissaoCalc;
+        }
+      } else {
+        // Sem base para comissão = sem comissão
+        valorComissaoCalc = 0;
+        valorComissao2Calc = 0;
+        resultadoFinal = resultado; // Mantém o valor (pode ser negativo)
+      }
   
       return {
         coletas,
         despesas,
         resultado,
+        resultadoFinal,
         saldoCarregarAnterior: saldoCarregar,
-        baseCalculo,
+        baseCalculo: baseParaComissao,
         comissao,
-        valorComissao,
+        valorComissao: valorComissaoCalc,
+        valorComissao2: valorComissao2Calc,
         saldoCarregarNovo: novoSaldoCarregar,
-        aPagar,
+        aPagar: resultadoFinal,
         observacao
       };
     }
@@ -180,7 +218,8 @@
         empresaId: prestacao.empresaId || window.getCompany(),
         coletas: prestacao.coletas,
         despesas: prestacao.despesas,
-        comissao: prestacao.comissao
+        comissao: prestacao.comissao,
+        comissao2: prestacao.comissao2 || 0
       });
   
       // Salva o novo saldo a carregar
@@ -194,6 +233,7 @@
       prestacao.saldoCarregarAnterior = calculo.saldoCarregarAnterior;
       prestacao.baseCalculo = calculo.baseCalculo;
       prestacao.valorComissao = calculo.valorComissao;
+      prestacao.valorComissao2 = calculo.valorComissao2;
       prestacao.saldoCarregarNovo = calculo.saldoCarregarNovo;
       prestacao.aPagar = calculo.aPagar;
       prestacao.observacao = calculo.observacao;
@@ -220,7 +260,7 @@
     // ===== VISUALIZAR HISTÓRICO DE SALDO =====
     async function getHistoricoSaldo(gerenteId, empresaId) {
       try {
-        if (!window.SupabaseAPI?.supabase) {
+        if (!window.SupabaseAPI?.client) {
           console.warn('[Saldo] Supabase não disponível');
           return [];
         }
@@ -286,7 +326,7 @@
     // ===== LISTAR TODOS OS SALDOS =====
     async function listarSaldos(empresaId) {
       try {
-        if (!window.SupabaseAPI?.supabase) {
+        if (!window.SupabaseAPI?.client) {
           return [];
         }
   
@@ -319,5 +359,5 @@
       listar: listarSaldos
     };
   
-    console.log('✅ Sistema de Saldo Acumulado carregado (Supabase)');
+    console.log('✅ Sistema de Saldo Acumulado carregado (Supabase) - v2.0');
   })();

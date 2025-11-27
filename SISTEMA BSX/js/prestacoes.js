@@ -1823,12 +1823,17 @@ const valePg = valesAplicados.reduce((sum, v) => {
       usandoSaldoAcumulado: true
     };
     
-    // Compatibilidade com o resumo antigo
-    prestacaoAtual.resumo = {
-      ...(prestacaoAtual.resumo || {}),
-      saldoNegAcarreado: Number(calculoSaldo.saldoCarregarNovo) || 0,
-      saldoAnterior:     Number(calculoSaldo.saldoCarregarAnterior) || 0
-    };
+ // Compatibilidade com o resumo antigo
+prestacaoAtual.resumo = {
+  ...(prestacaoAtual.resumo || {}),
+  // saldo negativo que veio ACUMULADO de semanas anteriores
+  negAnterior:       Number(calculoSaldo.saldoCarregarAnterior) || 0,
+  // saldo que vai ficar para a PRÓXIMA semana
+  saldoNegAcarreado: Number(calculoSaldo.saldoCarregarNovo) || 0,
+  // campo legado (se alguma parte antiga ainda usar esse nome)
+  saldoAnterior:     Number(calculoSaldo.saldoCarregarAnterior) || 0
+};
+
 
     console.log('💰 Saldo Acumulado aplicado:', {
       baseComissao,
@@ -1955,18 +1960,29 @@ const restam = aPagar - (pagos + adiantPg);
     pagos: pagos, 
     restam: restam, 
     baseColeta: coletas,
-    resultadoSemana: coletas - despesasTot,
-    negAnterior: 0, 
-    saldoNegAcarreado: prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0,
-    adiantPg: adiantPg, 
-    totalColetasLista: coletas, 
-    totalVales: valePg,
-    flags: { 
-      porRota: comissaoPorRotaPositiva, 
-      sequencial: false,
-      temSegundaComissao: temSegundaComissao,
-      baseCalculo: baseCalculo
-    }
+    baseColeta: coletas,
+resultadoSemana: coletas - despesasTot,
+// saldo negativo acumulado que já existia ANTES dessa prestação
+negAnterior: (
+  (prestacaoAtual.saldoInfo && Number(prestacaoAtual.saldoInfo.saldoCarregarAnterior || 0)) ||
+  (prestacaoAtual.resumo && Number(prestacaoAtual.resumo.negAnterior || 0)) ||
+  0
+),
+// saldo que vai ficar para a PRÓXIMA prestação
+saldoNegAcarreado: (
+  (prestacaoAtual.saldoInfo && Number(prestacaoAtual.saldoInfo.saldoCarregarNovo || 0)) ||
+  (prestacaoAtual.resumo && Number(prestacaoAtual.resumo.saldoNegAcarreado || 0)) ||
+  0
+),
+adiantPg: adiantPg,
+totalColetasLista: coletas, 
+totalVales: valePg,
+flags: { 
+  porRota: comissaoPorRotaPositiva, 
+  sequencial: false,
+  temSegundaComissao: temSegundaComissao,
+  baseCalculo: baseCalculo
+}
   };
 }
 // Atualiza estilo visual dos campos monetários

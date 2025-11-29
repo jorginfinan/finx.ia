@@ -1786,23 +1786,13 @@ const valePg = valesAplicados.reduce((sum, v) => {
     if (window.__prestBeingEdited?.id && window.__prestBeingEdited?.saldoInfo) {
       const saldoInfo = window.__prestBeingEdited.saldoInfo;
       
-      // Só estorna se tem contribuicaoDestaPrestacao salvo (campo novo)
-      // Isso indica que a prestação já contribuiu para o saldo atual no banco
-      if (saldoInfo.contribuicaoDestaPrestacao !== undefined && saldoInfo.contribuicaoDestaPrestacao > 0) {
-        saldoParaCalcular = Math.max(0, saldoDoSupabase - saldoInfo.contribuicaoDestaPrestacao);
-        console.log('🔄 Editando - saldo Supabase:', saldoDoSupabase, 
-                    '- contribuição desta prestação:', saldoInfo.contribuicaoDestaPrestacao, 
-                    '= saldo para calcular:', saldoParaCalcular);
-      }
-      // Senão, usa o saldo do banco direto (prestação antiga sem o campo novo)
-      else {
+      if (window.__prestBeingEdited?.id) {
+        // Ao editar, usa o saldo do banco diretamente
+        // O módulo saldo-acumulado.js fará o cálculo correto
         saldoParaCalcular = saldoDoSupabase;
         console.log('🔄 Editando - usando saldo do banco:', saldoParaCalcular);
       }
-    } else {
-      console.log('🔍 [SaldoAcumulado] Saldo buscado do Supabase:', saldoParaCalcular);
     }
-    
     // ✅ CORREÇÃO: Passa parâmetros adicionais para o módulo
     const calculoSaldo = await window.SaldoAcumulado.calcular({
       gerenteId: g.uid,
@@ -1839,7 +1829,7 @@ const valePg = valesAplicados.reduce((sum, v) => {
     
     prestacaoAtual.resumo = {
       ...(prestacaoAtual.resumo || {}),
-      // NÃO sobrescreve negAnterior - mantém o valor original
+      // Apenas atualiza o saldo a carregar, NÃO sobrescreve negAnterior
       saldoNegAcarreado: Number(calculoSaldo.saldoCarregarNovo) || 0
     };
 

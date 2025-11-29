@@ -1782,26 +1782,22 @@ const valePg = valesAplicados.reduce((sum, v) => {
     let saldoParaCalcular = saldoDoSupabase;
     
     // Se está EDITANDO uma prestação que JÁ FOI SALVA no Supabase,
-    // precisamos usar o saldo anterior REAL (que estava antes desta prestação)
+    // precisamos estornar a contribuição DESTA prestação para não contar duas vezes
     if (window.__prestBeingEdited?.id && window.__prestBeingEdited?.saldoInfo) {
       const saldoInfo = window.__prestBeingEdited.saldoInfo;
       
-      // Se tem saldoCarregarAnterior salvo, usa ele (é o saldo ANTES desta prestação)
-      if (saldoInfo.saldoCarregarAnterior !== undefined && saldoInfo.saldoCarregarAnterior > 0) {
-        saldoParaCalcular = saldoInfo.saldoCarregarAnterior;
-        console.log('🔄 Editando - usando saldoCarregarAnterior salvo:', saldoParaCalcular);
-      } 
-      // Se tem contribuicaoDestaPrestacao, estorna do saldo atual
-      else if (saldoInfo.contribuicaoDestaPrestacao !== undefined && saldoInfo.contribuicaoDestaPrestacao > 0) {
+      // Só estorna se tem contribuicaoDestaPrestacao salvo (campo novo)
+      // Isso indica que a prestação já contribuiu para o saldo atual no banco
+      if (saldoInfo.contribuicaoDestaPrestacao !== undefined && saldoInfo.contribuicaoDestaPrestacao > 0) {
         saldoParaCalcular = Math.max(0, saldoDoSupabase - saldoInfo.contribuicaoDestaPrestacao);
         console.log('🔄 Editando - saldo Supabase:', saldoDoSupabase, 
-                    '- contribuição anterior:', saldoInfo.contribuicaoDestaPrestacao, 
+                    '- contribuição desta prestação:', saldoInfo.contribuicaoDestaPrestacao, 
                     '= saldo para calcular:', saldoParaCalcular);
       }
-      // Senão, usa o saldo do banco direto (prestação ainda não contribuiu)
+      // Senão, usa o saldo do banco direto (prestação antiga sem o campo novo)
       else {
         saldoParaCalcular = saldoDoSupabase;
-        console.log('🔄 Editando - prestação sem contribuição anterior, usando saldo do banco:', saldoParaCalcular);
+        console.log('🔄 Editando - usando saldo do banco:', saldoParaCalcular);
       }
     } else {
       console.log('🔍 [SaldoAcumulado] Saldo buscado do Supabase:', saldoParaCalcular);

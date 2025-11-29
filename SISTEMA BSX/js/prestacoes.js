@@ -1837,17 +1837,11 @@ const valePg = valesAplicados.reduce((sum, v) => {
       usandoSaldoAcumulado: true
     };
     
- // Compatibilidade com o resumo antigo
- prestacaoAtual.resumo = {
-  ...(prestacaoAtual.resumo || {}),
-  // NÃO sobrescreve negAnterior - ele vem de outra fonte (dívidas anteriores)
-  // negAnterior:       mantém o valor original do resumo
-  // saldo que vai ficar para a PRÓXIMA semana
-  saldoNegAcarreado: Number(calculoSaldo.saldoCarregarNovo) || 0,
-  // campo para o saldo acumulado anterior (diferente de negAnterior)
-  saldoAcumuladoAnterior: Number(calculoSaldo.saldoCarregarAnterior) || 0
-};
-
+    prestacaoAtual.resumo = {
+      ...(prestacaoAtual.resumo || {}),
+      // NÃO sobrescreve negAnterior - mantém o valor original
+      saldoNegAcarreado: Number(calculoSaldo.saldoCarregarNovo) || 0
+    };
 
     console.log('💰 Saldo Acumulado aplicado:', {
       baseComissao,

@@ -1781,18 +1781,28 @@ const valePg = valesAplicados.reduce((sum, v) => {
     let saldoDoSupabase = await window.SaldoAcumulado.getSaldo(g.uid, empresaAtual);
     let saldoParaCalcular = saldoDoSupabase;
     
-    // Se está EDITANDO, subtrai a contribuição desta prestação para não contar duas vezes
+    // Se está EDITANDO uma prestação que JÁ FOI SALVA no Supabase,
+    // precisamos usar o saldo anterior REAL (que estava antes desta prestação)
     if (window.__prestBeingEdited?.id && window.__prestBeingEdited?.saldoInfo) {
-      // ✅ CORREÇÃO: Usa contribuicaoDestaPrestacao se existir, senão calcula do resultado
       const saldoInfo = window.__prestBeingEdited.saldoInfo;
-      const contribuicao = saldoInfo.contribuicaoDestaPrestacao !== undefined 
-        ? saldoInfo.contribuicaoDestaPrestacao 
-        : (saldoInfo.resultadoSemana < 0 ? Math.abs(saldoInfo.resultadoSemana) : 0);
       
-      saldoParaCalcular = Math.max(0, saldoDoSupabase - contribuicao);
-      console.log('🔄 Editando - saldo Supabase:', saldoDoSupabase, 
-                  '- contribuição desta prestação:', contribuicao, 
-                  '= saldo para calcular:', saldoParaCalcular);
+      // Se tem saldoCarregarAnterior salvo, usa ele (é o saldo ANTES desta prestação)
+      if (saldoInfo.saldoCarregarAnterior !== undefined && saldoInfo.saldoCarregarAnterior > 0) {
+        saldoParaCalcular = saldoInfo.saldoCarregarAnterior;
+        console.log('🔄 Editando - usando saldoCarregarAnterior salvo:', saldoParaCalcular);
+      } 
+      // Se tem contribuicaoDestaPrestacao, estorna do saldo atual
+      else if (saldoInfo.contribuicaoDestaPrestacao !== undefined && saldoInfo.contribuicaoDestaPrestacao > 0) {
+        saldoParaCalcular = Math.max(0, saldoDoSupabase - saldoInfo.contribuicaoDestaPrestacao);
+        console.log('🔄 Editando - saldo Supabase:', saldoDoSupabase, 
+                    '- contribuição anterior:', saldoInfo.contribuicaoDestaPrestacao, 
+                    '= saldo para calcular:', saldoParaCalcular);
+      }
+      // Senão, usa o saldo do banco direto (prestação ainda não contribuiu)
+      else {
+        saldoParaCalcular = saldoDoSupabase;
+        console.log('🔄 Editando - prestação sem contribuição anterior, usando saldo do banco:', saldoParaCalcular);
+      }
     } else {
       console.log('🔍 [SaldoAcumulado] Saldo buscado do Supabase:', saldoParaCalcular);
     }

@@ -1962,7 +1962,7 @@ const restam = aPagar - (pagos + adiantPg);
 resultadoSemana: coletas - despesasTot,
 // saldo negativo acumulado que já existia ANTES dessa prestação
 negAnterior: (
-  (prestacaoAtual.resumo && Number(prestacaoAtual.resumo.negAnterior || 0)) ||
+  (prestacaoAtual.resumo && Number(prestacaoAtual.resumo.deveAnt || 0)) ||
   0
 ),
 // saldo que vai ficar para a PRÓXIMA prestação
@@ -2384,7 +2384,7 @@ if (!dataURL) {
   const coletas2 = Number(r.coletas) || 0;
   const despesas2 = Number(r.despesas) || 0;
   const perc2 = Number(r.perc) || 0;
-  const deveAnt2 = Number(r.negAnterior || r.deveAnt || 0);
+  const deveAnt2 = Number(r.deveAnt || 0);
   const c1 = Number(r.comis1) || 0;
   const c2 = Number(r.comis2) || 0;
   const temSegundaComissao = c2 > 0;
@@ -3371,7 +3371,7 @@ window.prestToDataURL = function(rec) {
     const coletas2   = Number(r.coletas)   || 0;
     const despesas2  = Number(r.despesas)  || 0;
     const perc2      = Number(r.perc)      || 0;
-    const deveAnt2   = Number(r.negAnterior || r.deveAnt || 0);
+    const deveAnt2   = Number(r.deveAnt || 0);
     const _resColetas2 = coletas2 - despesas2;
     const showNeg2 = perc2 > 0 && perc2 < 50;
 

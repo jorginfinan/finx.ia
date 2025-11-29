@@ -182,7 +182,7 @@ async function loadGerentes(){
       
       // normaliza
       window.gerentes = arr.map(g => ({
-        id:       g.id,
+        id:       g.id,  // ← ADICIONE ESTA LINHA
         uid:      g.uid ?? g.id ?? uid(),
         nome:     g.nome ?? g.name ?? g.apelido ?? '—',
         comissao: Number(g.comissao ?? g.percent ?? 0),

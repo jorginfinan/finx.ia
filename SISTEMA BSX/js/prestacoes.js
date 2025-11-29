@@ -1962,7 +1962,6 @@ const restam = aPagar - (pagos + adiantPg);
 resultadoSemana: coletas - despesasTot,
 // saldo negativo acumulado que já existia ANTES dessa prestação
 negAnterior: (
-  (prestacaoAtual.saldoInfo && Number(prestacaoAtual.saldoInfo.saldoCarregarAnterior || 0)) ||
   (prestacaoAtual.resumo && Number(prestacaoAtual.resumo.negAnterior || 0)) ||
   0
 ),

@@ -38,11 +38,14 @@
         const passwordHash = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9';
         
         // Buscar ID da empresa BSX
-        const { data: empresa } = await client
+        let empresa;
+        const { data: empresaData } = await client
           .from('empresas')
           .select('id')
           .eq('nome', 'BSX')
           .single();
+        
+        empresa = empresaData;
 
         if (!empresa) {
           // Criar empresa BSX se não existir
@@ -74,7 +77,7 @@
           console.error('❌ Erro ao criar admin:', error);
         } else {
           console.log('✅ Admin criado com sucesso!');
-          console.log('📝 Use: admin / admin123');
+          console.log('🔑 Use: admin / admin123');
         }
       } else {
         console.log('✅ Admin já existe');
@@ -106,8 +109,8 @@
       
       if (Array.isArray(gerentes)) {
         window.gerentes = gerentes.map(g => ({
-          uid: g.uid || g.id,
-          id: g.uid || g.id,
+          id: g.id,           // ✅ CORRIGIDO: UUID do Supabase
+          uid: g.uid || g.id, // UID legado
           nome: g.nome || '(sem nome)',
           numero: g.numero || '',
           comissao: Number(g.comissao) || 0,
@@ -115,6 +118,7 @@
           comissaoModo: g.comissao_modo || g.comissaoModo || 'simples',
           comissaoPorRotaPositiva: g.comissao_por_rota_positiva || false,
           temSegundaComissao: g.tem_segunda_comissao || false,
+          temSaldoAcumulado: g.tem_saldo_acumulado || false,
           baseCalculo: g.base_calculo || g.baseCalculo || 'COLETAS_MENOS_DESPESAS',
           ativo: g.ativo !== false
         }));

@@ -4,7 +4,35 @@
 // ============================================
 (function() {
     'use strict';
-  
+      // === Helpers de ID ===
+
+    // tenta transformar o "gerenteId" que vem da tela (uid) no id (uuid) do Supabase
+    function resolveGerenteId(gerenteId) {
+      if (!gerenteId) return null;
+
+      // se já for um UUID (tem hífen e é grandinho) só devolve
+      if (typeof gerenteId === 'string' && gerenteId.includes('-') && gerenteId.length >= 30) {
+        return gerenteId;
+      }
+
+      const g = (window.gerentes || []).find(
+        x => String(x.uid) === String(gerenteId) || String(x.id) === String(gerenteId)
+      );
+
+      if (!g || !g.id) {
+        console.warn('[Saldo] Não consegui resolver gerenteId para UUID:', gerenteId);
+        return null;
+      }
+
+      return g.id;
+    }
+
+    // aqui eu deixo pronto caso um dia você use nome da empresa em vez do uuid
+    function resolveEmpresaId(empresaId) {
+      return empresaId; // hoje só repassa
+    }
+
+
     // ===== OBTER SALDO ACUMULADO DE UM GERENTE (SUPABASE) =====
     async function getSaldoCarregar(gerenteId, empresaId) {
       try {
@@ -12,25 +40,34 @@
           console.warn('[Saldo] Supabase não disponível');
           return 0;
         }
-  
+
+        const gId = resolveGerenteId(gerenteId);
+        const eId = resolveEmpresaId(empresaId);
+
+        if (!gId || !eId) {
+          console.warn('[Saldo] IDs inválidos ao buscar saldo:', { gerenteId, empresaId });
+          return 0;
+        }
+
         const { data, error } = await window.SupabaseAPI.client
           .from('saldo_acumulado')
           .select('saldo')
-          .eq('gerente_id', gerenteId)
-          .eq('company', empresaId)
+          .eq('gerente_id', gId)
+          .eq('empresa_id', eId)
           .maybeSingle();
-  
+
         if (error) {
           console.warn('[Saldo] Erro ao buscar:', error);
           return 0;
         }
-  
+
         return data?.saldo || 0;
       } catch(e) {
         console.warn('[Saldo] Erro:', e);
         return 0;
       }
     }
+
   
     // ===== SALVAR SALDO ACUMULADO (SUPABASE) =====
     async function setSaldoCarregar(gerenteId, empresaId, valor) {
@@ -38,56 +75,62 @@
         if (!window.SupabaseAPI?.client) {
           throw new Error('Supabase não disponível');
         }
-  
-        const gerente = (window.gerentes || []).find(g => g.uid === gerenteId);
+
+        const gId = resolveGerenteId(gerenteId);
+        const eId = resolveEmpresaId(empresaId);
+
+        if (!gId || !eId) {
+          throw new Error('IDs inválidos para salvar saldo');
+        }
+
         const timestamp = new Date().toISOString();
-  
-        // Verifica se já existe
-        const { data: existing } = await window.SupabaseAPI.client
+
+        // Verifica se já existe registro de saldo para (gerente, empresa)
+        const { data: existing, error: errExisting } = await window.SupabaseAPI.client
           .from('saldo_acumulado')
           .select('*')
-          .eq('gerente_id', gerenteId)
-          .eq('company', empresaId)
+          .eq('gerente_id', gId)
+          .eq('empresa_id', eId)
           .maybeSingle();
-  
+
+        if (errExisting) throw errExisting;
+
+        let error;
+
         if (existing) {
-          // Atualiza
-          const { error } = await window.SupabaseAPI.client
+          // Atualiza saldo
+          ({ error } = await window.SupabaseAPI.client
             .from('saldo_acumulado')
             .update({
-              saldo: valor,
-              updated_at: timestamp
+              saldo: valor
             })
-            .eq('id', existing.id);
-  
-          if (error) throw error;
+            .eq('id', existing.id));
         } else {
-          // Insere
-          const { error } = await window.SupabaseAPI.client
+          // Insere novo registro
+          ({ error } = await window.SupabaseAPI.client
             .from('saldo_acumulado')
             .insert([{
-              gerente_id: gerenteId,
-              gerente_nome: gerente?.nome || 'Desconhecido',
-              company: empresaId,
+              gerente_id: gId,
+              empresa_id: eId,
               saldo: valor,
-              created_at: timestamp,
-              updated_at: timestamp
-            }]);
-  
-          if (error) throw error;
+              created_at: timestamp
+            }]));
         }
-  
-        // Dispara evento
+
+        if (error) throw error;
+
+        // Dispara evento (mantém o id original da tela)
         window.dispatchEvent(new CustomEvent('saldo:atualizado', {
-          detail: { gerenteId, empresa: empresaId, saldo: valor }
+          detail: { gerenteId, empresaId, saldo: valor }
         }));
-  
+
         return { ok: true };
       } catch(e) {
         console.error('[Saldo] Erro ao salvar:', e);
         return { ok: false, error: e.message };
       }
     }
+
   
     // ===== CALCULAR COMISSÃO COM SALDO ACUMULADO =====
     // ✅ VERSÃO CORRIGIDA: Suporta segunda comissão e diferentes bases de cálculo
@@ -265,12 +308,14 @@
           return [];
         }
   
-        // Busca prestações do Supabase
+        const gId = resolveGerenteId(gerenteId);
+        const eId = resolveEmpresaId(empresaId);
+
         const { data: prestacoes, error } = await window.SupabaseAPI.client
           .from('prestacoes')
           .select('*')
-          .eq('gerente_id', gerenteId)
-          .eq('company', empresaId)
+          .eq('gerente_id', gId)
+          .eq('empresa_id', eId)
           .order('data', { ascending: false })
           .limit(50);
   
@@ -330,11 +375,14 @@
           return [];
         }
   
+        const eId = resolveEmpresaId(empresaId);
+
         const { data, error } = await window.SupabaseAPI.client
           .from('saldo_acumulado')
           .select('*')
-          .eq('company', empresaId)
-          .order('gerente_nome');
+          .eq('empresa_id', eId)
+          .order('gerente_id');
+
   
         if (error) {
           console.warn('[Saldo] Erro ao listar:', error);

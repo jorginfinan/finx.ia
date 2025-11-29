@@ -1783,10 +1783,15 @@ const valePg = valesAplicados.reduce((sum, v) => {
     
     // Se está EDITANDO, subtrai a contribuição desta prestação para não contar duas vezes
     if (window.__prestBeingEdited?.id && window.__prestBeingEdited?.saldoInfo) {
-      const contribuicaoDestaPrestacao = window.__prestBeingEdited.saldoInfo.saldoCarregarNovo || 0;
-      saldoParaCalcular = Math.max(0, saldoDoSupabase - contribuicaoDestaPrestacao);
+      // ✅ CORREÇÃO: Usa contribuicaoDestaPrestacao se existir, senão calcula do resultado
+      const saldoInfo = window.__prestBeingEdited.saldoInfo;
+      const contribuicao = saldoInfo.contribuicaoDestaPrestacao !== undefined 
+        ? saldoInfo.contribuicaoDestaPrestacao 
+        : (saldoInfo.resultadoSemana < 0 ? Math.abs(saldoInfo.resultadoSemana) : 0);
+      
+      saldoParaCalcular = Math.max(0, saldoDoSupabase - contribuicao);
       console.log('🔄 Editando - saldo Supabase:', saldoDoSupabase, 
-                  '- contribuição desta prestação:', contribuicaoDestaPrestacao, 
+                  '- contribuição desta prestação:', contribuicao, 
                   '= saldo para calcular:', saldoParaCalcular);
     } else {
       console.log('🔍 [SaldoAcumulado] Saldo buscado do Supabase:', saldoParaCalcular);
@@ -1818,6 +1823,8 @@ const valePg = valesAplicados.reduce((sum, v) => {
     prestacaoAtual.saldoInfo = {
       saldoCarregarAnterior: calculoSaldo.saldoCarregarAnterior,
       saldoCarregarNovo: calculoSaldo.saldoCarregarNovo,
+      // ✅ NOVO: Guarda apenas a contribuição DESTA prestação
+      contribuicaoDestaPrestacao: calculoSaldo.resultado < 0 ? Math.abs(calculoSaldo.resultado) : 0,
       baseCalculoSaldo: calculoSaldo.baseCalculo,
       resultadoSemana: calculoSaldo.resultado,
       observacao: calculoSaldo.observacao,

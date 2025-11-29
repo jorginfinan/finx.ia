@@ -1838,14 +1838,14 @@ const valePg = valesAplicados.reduce((sum, v) => {
     };
     
  // Compatibilidade com o resumo antigo
-prestacaoAtual.resumo = {
+ prestacaoAtual.resumo = {
   ...(prestacaoAtual.resumo || {}),
-  // saldo negativo que veio ACUMULADO de semanas anteriores
-  negAnterior:       Number(calculoSaldo.saldoCarregarAnterior) || 0,
+  // NÃO sobrescreve negAnterior - ele vem de outra fonte (dívidas anteriores)
+  // negAnterior:       mantém o valor original do resumo
   // saldo que vai ficar para a PRÓXIMA semana
   saldoNegAcarreado: Number(calculoSaldo.saldoCarregarNovo) || 0,
-  // campo legado (se alguma parte antiga ainda usar esse nome)
-  saldoAnterior:     Number(calculoSaldo.saldoCarregarAnterior) || 0
+  // campo para o saldo acumulado anterior (diferente de negAnterior)
+  saldoAcumuladoAnterior: Number(calculoSaldo.saldoCarregarAnterior) || 0
 };
 
 

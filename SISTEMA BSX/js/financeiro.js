@@ -1345,7 +1345,7 @@ function renderFinPendencias(){
       }
       
       const pend = __getPendencias();
-      const i = pend.findIndex(function(x) { return x.id === id; });
+      const i = pend.findIndex(function(x) { return x.id == id; });
       
       if (i < 0) {
         alert('Pendência não encontrada.');
@@ -1490,9 +1490,9 @@ function renderFinPendencias(){
       }
 
       const pendencias = __getPendencias();
-      const pendenciaDescartada = pendencias.find(function(x) { return x.id === id; });
+      const pendenciaDescartada = pendencias.find(function(x) { return x.id == id; });
       
-      const pend = pendencias.filter(function(x) { return x.id !== id; });
+      const pend = pendencias.filter(function(x) { return x.id != id; });
       __setPendencias(pend);
       
       // ✅ AUDITORIA - Registra descarte

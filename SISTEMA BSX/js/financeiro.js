@@ -942,7 +942,7 @@ function formatDate(date) {
       } catch(e) { console.error('[Pendencias] Erro:', e); return { migrated: 0 }; }
     }
   };
-  
+
 // Expor globalmente
 window.PendenciasAPI = PendenciasAPI;
 window.SupabaseAPI = window.SupabaseAPI || {};
@@ -950,21 +950,37 @@ window.SupabaseAPI.pendencias = PendenciasAPI;  // ✅ ADICIONE ESTA LINHA
 window.migrarPendenciasParaSupabase = () => PendenciasAPI.migrate();
 
 
-  // ===== FUNÇÕES DE COMPATIBILIDADE =====
-  let _pendCache = null;
-  
-  window.__getPendencias = function() {
-    if (_pendCache) return _pendCache;
-    // Síncrono para compatibilidade - usa cache ou localStorage
-    try { return JSON.parse(localStorage.getItem('DB_CAIXA_PEND') || '[]'); } catch { return []; }
-  };
+// ===== FUNÇÕES DE COMPATIBILIDADE =====
+let _pendCache = null;
+let _pendCacheLoaded = false;
 
-  window.__getPendenciasAsync = async function() {
-    _pendCache = await PendenciasAPI.getAll();
-    // Atualiza localStorage para funções síncronas
-    try { localStorage.setItem('DB_CAIXA_PEND', JSON.stringify(_pendCache)); } catch {}
-    return _pendCache;
-  };
+window.__getPendencias = function() {
+  if (_pendCache && _pendCacheLoaded) return _pendCache;
+  // Fallback para localStorage se cache não estiver pronto
+  try { return JSON.parse(localStorage.getItem('DB_CAIXA_PEND') || '[]'); } catch { return []; }
+};
+
+window.__getPendenciasAsync = async function() {
+  _pendCache = await PendenciasAPI.getAll();
+  _pendCacheLoaded = true;
+  // Atualiza localStorage para funções síncronas
+  try { localStorage.setItem('DB_CAIXA_PEND', JSON.stringify(_pendCache)); } catch {}
+  return _pendCache;
+};
+
+// ✅ Carrega do Supabase na inicialização
+(async function initPendenciasCache() {
+  try {
+    if (PendenciasAPI.client) {
+      _pendCache = await PendenciasAPI.getAll();
+      _pendCacheLoaded = true;
+      try { localStorage.setItem('DB_CAIXA_PEND', JSON.stringify(_pendCache)); } catch {}
+      console.log('[Pendencias] ✅ Cache inicializado do Supabase:', _pendCache.length);
+    }
+  } catch(e) {
+    console.warn('[Pendencias] Erro ao inicializar cache:', e);
+  }
+})();
 
   window.__setPendencias = function(arr) {
     _pendCache = arr;

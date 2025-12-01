@@ -950,80 +950,83 @@ window.SupabaseAPI.pendencias = PendenciasAPI;  // ✅ ADICIONE ESTA LINHA
 window.migrarPendenciasParaSupabase = () => PendenciasAPI.migrate();
 
 
-// ===== FUNÇÕES DE COMPATIBILIDADE =====
+// ===== FUNÇÕES DE COMPATIBILIDADE - SOMENTE SUPABASE =====
 let _pendCache = null;
-let _pendCacheLoaded = false;
 
 window.__getPendencias = function() {
-  if (_pendCache && _pendCacheLoaded) return _pendCache;
-  // Fallback para localStorage se cache não estiver pronto
-  try { return JSON.parse(localStorage.getItem('DB_CAIXA_PEND') || '[]'); } catch { return []; }
+  // Retorna o cache se existir, senão array vazio
+  // O cache é preenchido pelo __getPendenciasAsync
+  return _pendCache || [];
 };
 
 window.__getPendenciasAsync = async function() {
   _pendCache = await PendenciasAPI.getAll();
-  _pendCacheLoaded = true;
-  // Atualiza localStorage para funções síncronas
-  try { localStorage.setItem('DB_CAIXA_PEND', JSON.stringify(_pendCache)); } catch {}
+  console.log('[Pendencias] ✅ Carregado do Supabase:', _pendCache.length);
   return _pendCache;
 };
 
-// ✅ Carrega do Supabase na inicialização
-(async function initPendenciasCache() {
+window.__setPendencias = function(arr) {
+  _pendCache = arr;
+  // NÃO salva no localStorage - o Supabase é a fonte única
+};
+
+window.__addPendencia = async function(item) {
+  await PendenciasAPI.create(item);
+  _pendCache = await PendenciasAPI.getAll(); // Recarrega do Supabase
+};
+
+window.__removePendencia = async function(uid) {
+  await PendenciasAPI.delete(uid);
+  _pendCache = await PendenciasAPI.getAll(); // Recarrega do Supabase
+};
+
+window.__getConfSet = async function() {
+  return await PendenciasAPI.getConfirmedSet();
+};
+
+window.__getConfSetAsync = async function() {
+  return await PendenciasAPI.getConfirmedSet();
+};
+
+window.__addConf = async function(uid) {
+  if (!uid) return;
+  await PendenciasAPI.confirm(uid);
+};
+
+window.__getLanc = function() {
+  return Array.isArray(window.lanc) ? window.lanc : (window.lanc = []);
+};
+
+window.__setLanc = function(novo) {
   try {
+    if (Array.isArray(novo)) window.lanc = novo;
+    window.saveLanc?.();
+  } catch {}
+};
+
+// ✅ CARREGA DO SUPABASE NA INICIALIZAÇÃO
+(async function initPendenciasFromSupabase() {
+  try {
+    // Aguarda o client estar pronto
+    let tentativas = 0;
+    while (!PendenciasAPI.client && tentativas < 50) {
+      await new Promise(r => setTimeout(r, 100));
+      tentativas++;
+    }
+    
     if (PendenciasAPI.client) {
       _pendCache = await PendenciasAPI.getAll();
-      _pendCacheLoaded = true;
-      try { localStorage.setItem('DB_CAIXA_PEND', JSON.stringify(_pendCache)); } catch {}
-      console.log('[Pendencias] ✅ Cache inicializado do Supabase:', _pendCache.length);
+      console.log('[Pendencias] ✅ Inicializado do Supabase:', _pendCache.length, 'pendências');
+      
+      // Re-renderiza se a tela de pendências estiver aberta
+      if (typeof renderFinPendencias === 'function') {
+        renderFinPendencias();
+      }
     }
   } catch(e) {
-    console.warn('[Pendencias] Erro ao inicializar cache:', e);
+    console.error('[Pendencias] Erro ao inicializar:', e);
   }
 })();
-
-  window.__setPendencias = function(arr) {
-    _pendCache = arr;
-    try { localStorage.setItem('DB_CAIXA_PEND', JSON.stringify(arr)); } catch {}
-  };
-
-  window.__addPendencia = async function(item) {
-    await PendenciasAPI.create(item);
-    _pendCache = null; // Invalida cache
-  };
-
-  window.__removePendencia = async function(uid) {
-    await PendenciasAPI.delete(uid);
-    _pendCache = null;
-  };
-
-  window.__getConfSet = function() {
-    try { return new Set(JSON.parse(localStorage.getItem('DB_CAIXA_CONF_OK') || '[]')); }
-    catch { return new Set(); }
-  };
-
-  window.__getConfSetAsync = async function() {
-    return await PendenciasAPI.getConfirmedSet();
-  };
-
-  window.__addConf = async function(uid) {
-    if (!uid) return;
-    await PendenciasAPI.confirm(uid);
-    // Atualiza localStorage
-    const s = window.__getConfSet(); s.add(uid);
-    try { localStorage.setItem('DB_CAIXA_CONF_OK', JSON.stringify([...s])); } catch {}
-  };
-
-  window.__getLanc = function() {
-    return Array.isArray(window.lanc) ? window.lanc : (window.lanc = []);
-  };
-
-  window.__setLanc = function(novo) {
-    try {
-      if (Array.isArray(novo)) window.lanc = novo;
-      window.saveLanc?.();
-    } catch {}
-  };
 
   // ===== FUNÇÕES DE UID =====
   window.__pgMakeUIDs = function(prest, pg) {

@@ -942,10 +942,13 @@ function formatDate(date) {
       } catch(e) { console.error('[Pendencias] Erro:', e); return { migrated: 0 }; }
     }
   };
+  
+// Expor globalmente
+window.PendenciasAPI = PendenciasAPI;
+window.SupabaseAPI = window.SupabaseAPI || {};
+window.SupabaseAPI.pendencias = PendenciasAPI;  // ✅ ADICIONE ESTA LINHA
+window.migrarPendenciasParaSupabase = () => PendenciasAPI.migrate();
 
-  // Expor globalmente
-  window.PendenciasAPI = PendenciasAPI;
-  window.migrarPendenciasParaSupabase = () => PendenciasAPI.migrate();
 
   // ===== FUNÇÕES DE COMPATIBILIDADE =====
   let _pendCache = null;

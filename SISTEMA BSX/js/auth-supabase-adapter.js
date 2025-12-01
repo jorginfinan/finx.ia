@@ -58,7 +58,7 @@
             role: u.role || 'operador',
             pass: u.password,
             perms: u.permissoes || {},
-            companies: [],
+            companies: Array.isArray(u.companies) ? u.companies : [],
             ativo: u.ativo !== false
           }));
         } catch (err) {

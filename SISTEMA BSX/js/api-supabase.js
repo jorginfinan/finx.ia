@@ -116,6 +116,14 @@
         try {
           const empresaId = await getEmpresaId();
           
+          // ✅ SUPORTE A MÚLTIPLAS EMPRESAS
+          let companies = [];
+          if (Array.isArray(userData.companies) && userData.companies.length > 0) {
+            // Normaliza para uppercase
+            companies = userData.companies.map(c => String(c).toUpperCase());
+          }
+          // Se companies vazio, significa acesso a TODAS as empresas
+          
           const { data, error } = await this.client
             .from(this.table)
             .insert([{
@@ -125,6 +133,7 @@
               role: userData.role || 'operador',
               empresa_id: empresaId,
               permissoes: userData.permissoes || userData.perms || {},
+              companies: companies,  // ✅ NOVO: Array de empresas permitidas
               ativo: true
             }])
             .select()
@@ -140,6 +149,11 @@
       
       async update(id, patch) {
         try {
+          // ✅ SUPORTE A MÚLTIPLAS EMPRESAS
+          if (Array.isArray(patch.companies)) {
+            patch.companies = patch.companies.map(c => String(c).toUpperCase());
+          }
+          
           const { data, error } = await this.client
             .from(this.table)
             .update(patch)

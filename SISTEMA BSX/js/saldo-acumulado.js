@@ -283,9 +283,9 @@
       // ✅ CORREÇÃO: Base para comissão depende do tipo de cálculo
       if (baseCalculo === 'COLETAS') {
         // Gerente com comissão sobre COLETAS
-        // Só calcula comissão se compensou todo o saldo
-        // A base é as COLETAS totais (não o excedente)
-        baseParaComissao = coletas > 0 ? coletas : 0;
+        // Base = COLETAS - SALDO_ACUMULADO (desconta o saldo das coletas)
+        baseParaComissao = coletas - saldoCarregar;
+        if (baseParaComissao < 0) baseParaComissao = 0;
       } else {
         // Gerente com comissão sobre COLETAS - DESPESAS
         // Comissão sobre o excedente após compensar saldo

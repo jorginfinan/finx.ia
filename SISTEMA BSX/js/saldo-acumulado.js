@@ -1,6 +1,6 @@
 // ============================================
 // SISTEMA DE SALDO ACUMULADO - SUPABASE
-// VERSÃO CORRIGIDA v2.2 - Resolve UUID de gerente e empresa
+// VERSÃO CORRIGIDA v2.3 - Corrige baseCalculo para comissão
 // ============================================
 (function() {
   'use strict';
@@ -9,7 +9,6 @@
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   // Mapeamento de empresas (nome → UUID)
-  // Atualizado automaticamente ao carregar empresas do Supabase
   let empresasMap = {
     'BSX': 'b61cf5cb-e232-44b1-87b2-951adf7ea14c',
     'BETPLAY': '89a64c64-e583-4c39-8384-cef84f0f22db',
@@ -233,7 +232,8 @@
       baseCalculo
     } = params;
 
-    const resultado = baseCalculo === 'COLETAS' ? coletas : (coletas - despesas);
+    // ✅ RESULTADO para saldo = sempre coletas - despesas (lucro/prejuízo real)
+    const resultado = coletas - despesas;
 
     const saldoCarregar = saldoAnterior !== undefined 
       ? saldoAnterior 
@@ -241,14 +241,15 @@
 
     // Comissão 50% = SEM SALDO ACUMULADO
     if (comissao >= 50) {
-      const valorComissaoCalc = (resultado * comissao) / 100;
+      const baseComissao50 = baseCalculo === 'COLETAS' ? coletas : resultado;
+      const valorComissaoCalc = (baseComissao50 * comissao) / 100;
       return {
         coletas,
         despesas,
         resultado,
         resultadoFinal: resultado - valorComissaoCalc,
         saldoCarregarAnterior: 0,
-        baseCalculo: resultado,
+        baseCalculo: baseComissao50,
         comissao: comissao,
         valorComissao: valorComissaoCalc,
         valorComissao2: 0,
@@ -278,10 +279,21 @@
     else if (resultado > 0 && resultado > saldoCarregar) {
       // CASO 3: Resultado POSITIVO maior que saldo - zera saldo e calcula comissão
       novoSaldoCarregar = 0;
-      baseParaComissao = resultado - saldoCarregar;
+      
+      // ✅ CORREÇÃO: Base para comissão depende do tipo de cálculo
+      if (baseCalculo === 'COLETAS') {
+        // Gerente com comissão sobre COLETAS
+        // Só calcula comissão se compensou todo o saldo
+        // A base é as COLETAS totais (não o excedente)
+        baseParaComissao = coletas > 0 ? coletas : 0;
+      } else {
+        // Gerente com comissão sobre COLETAS - DESPESAS
+        // Comissão sobre o excedente após compensar saldo
+        baseParaComissao = resultado - saldoCarregar;
+      }
       
       if (saldoCarregar > 0) {
-        observacao = `Saldo R$ ${saldoCarregar.toFixed(2)} compensado. Base: R$ ${baseParaComissao.toFixed(2)}`;
+        observacao = `Saldo R$ ${saldoCarregar.toFixed(2)} compensado. Base comissão: R$ ${baseParaComissao.toFixed(2)}`;
       } else {
         observacao = `Comissão sobre R$ ${baseParaComissao.toFixed(2)}`;
       }
@@ -303,13 +315,13 @@
         const apos1aComissao = baseParaComissao - valorComissaoCalc;
         if (apos1aComissao > 0) {
           valorComissao2Calc = (apos1aComissao * perc2) / 100;
-          resultadoFinal = apos1aComissao - valorComissao2Calc;
+          resultadoFinal = resultado - valorComissaoCalc - valorComissao2Calc;
         } else {
           valorComissao2Calc = 0;
-          resultadoFinal = apos1aComissao;
+          resultadoFinal = resultado - valorComissaoCalc;
         }
       } else {
-        resultadoFinal = baseParaComissao - valorComissaoCalc;
+        resultadoFinal = resultado - valorComissaoCalc;
       }
     } else {
       valorComissaoCalc = 0;
@@ -341,7 +353,8 @@
       coletas: prestacao.coletas,
       despesas: prestacao.despesas,
       comissao: prestacao.comissao,
-      comissao2: prestacao.comissao2 || 0
+      comissao2: prestacao.comissao2 || 0,
+      baseCalculo: prestacao.baseCalculo || 'COLETAS_MENOS_DESPESAS'
     });
 
     await setSaldoCarregar(
@@ -475,5 +488,5 @@
     _empresasMap: empresasMap
   };
 
-  console.log('✅ Sistema de Saldo Acumulado carregado (Supabase) - v2.2');
+  console.log('✅ Sistema de Saldo Acumulado carregado (Supabase) - v2.3');
 })();

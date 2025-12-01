@@ -2002,7 +2002,7 @@ function atualizarEstilosMonetarios() {
 }
 
 // ===== CRIAR PENDÊNCIA DE PAGAMENTO (quando empresa deve ao gerente) =====
-function criarPendenciaPagamento(prestacao) {
+async function criarPendenciaPagamento(prestacao) {
   try {
     // ✅ BUSCA LANÇAMENTOS JÁ CONFIRMADOS (não deve recriar pendências para eles)
     const lancamentos = window.lanc || window.__getLanc?.() || [];
@@ -2048,7 +2048,7 @@ function criarPendenciaPagamento(prestacao) {
     const pendencias = __getPendencias();
     let criadas = 0;
     
-    pagamentosDivida.forEach(pag => {
+    for (const pag of pagamentosDivida) {
       const valorPagamento = Number(pag.valor) || 0;
       if (valorPagamento <= 0) return;
       
@@ -2091,14 +2091,24 @@ const novaPendencia = {
   tipo: 'PAGAR'         // ← Confirma que é PAGAMENTO
 };
       
-      pendencias.push(novaPendencia);
-      criadas++;
-      
-      console.log('✅ Pendência de dívida criada:', valorPagamento);
-    });
-    
-    if (criadas > 0) {
-      __setPendencias(pendencias);
+// ✅ SALVA NO SUPABASE
+if (window.PendenciasAPI?.create) {
+  await window.PendenciasAPI.create(novaPendencia);
+} else {
+  pendencias.push(novaPendencia);
+}
+criadas++;
+
+console.log('✅ Pendência de dívida criada:', valorPagamento);
+}
+
+if (criadas > 0) {
+// Recarrega do Supabase
+if (window.__getPendenciasAsync) {
+  await window.__getPendenciasAsync();
+} else {
+  __setPendencias(pendencias);
+}
       
       // Atualiza interface do financeiro
       try {

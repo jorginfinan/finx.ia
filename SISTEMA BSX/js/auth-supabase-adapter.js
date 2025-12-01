@@ -85,6 +85,7 @@
             nome,
             empresa_id: data?.empresa_id || null,
             permissoes: data?.perms || data?.permissoes || {},
+            companies: Array.isArray(data?.companies) ? data.companies : [],  // ✅ ADICIONA
             ativo: data?.ativo ?? true
           };
   

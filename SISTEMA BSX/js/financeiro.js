@@ -1289,12 +1289,13 @@ function renderFinPendencias(){
 }
 
 // Delegação de eventos da área de pendências
+// Delegação de eventos da área de pendências
 (function bindFinPendEvents(){
   if (window.__finPendBound) return; 
   window.__finPendBound = true;
 
   // Event listener para inputs
-  document.addEventListener('input', function(e) {
+  document.addEventListener('input', async function(e) {
     const inp = e.target.closest('#finPendenciasBox [data-pend-edit]');
     if (!inp) return;
 
@@ -1328,7 +1329,7 @@ function renderFinPendencias(){
   }, true);
 
   // Event listener para cliques
-  document.addEventListener('click', function(e) {
+  document.addEventListener('click', async function(e) {
     const target = e.target;
     
     const btnC = target.closest('#finPendenciasBox [data-pend-confirm]');
@@ -1402,14 +1403,19 @@ function renderFinPendencias(){
                               window.UserAuth?.currentUser()?.username || 'Usuário');
         }
     
-        // Adiciona ao array de lançamentos
-        lancs.push(novoLanc);
+// Adiciona ao array de lançamentos
+lancs.push(novoLanc);
         
-        // Salva
-        __setLanc(lancs);
-        if (typeof window.saveLanc === 'function') {
-          window.saveLanc();
-        }
+// ✅ SALVA NO SUPABASE
+if (window.SupabaseAPI?.lancamentos?.create) {
+  await window.SupabaseAPI.lancamentos.create(novoLanc);
+}
+
+// Salva localmente como backup
+__setLanc(lancs);
+if (typeof window.saveLanc === 'function') {
+  window.saveLanc();
+}
         
         // ✅ AUDITORIA - Registra confirmação
         if (typeof window.AuditLog !== 'undefined' && typeof window.AuditLog.log === 'function') {

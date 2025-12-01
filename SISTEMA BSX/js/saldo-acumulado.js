@@ -233,7 +233,7 @@
       baseCalculo
     } = params;
 
-    const resultado = coletas - despesas;
+    const resultado = baseCalculo === 'COLETAS' ? coletas : (coletas - despesas);
 
     const saldoCarregar = saldoAnterior !== undefined 
       ? saldoAnterior 

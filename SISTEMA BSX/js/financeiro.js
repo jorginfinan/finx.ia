@@ -22,20 +22,9 @@ function initFinanceiro() {
 (function persistFin(){
   const LS_KEY = 'bsx_fin_lanc';
 
-  const load = async () => {
-    // Tenta carregar do Supabase primeiro
-    if (window.SupabaseAPI?.lancamentos) {
-      try {
-        const data = await window.SupabaseAPI.lancamentos.getAll();
-        if (Array.isArray(data) && data.length > 0) {
-          console.log('[Financeiro] ✅ Carregado do Supabase:', data.length);
-          return data;
-        }
-      } catch(e) {
-        console.warn('[Financeiro] Erro Supabase, usando localStorage:', e);
-      }
-    }
-    // Fallback localStorage
+  const load = () => {
+    // Carrega do localStorage inicialmente (síncrono)
+    // O Supabase será carregado depois de forma assíncrona
     try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]') || []; }
     catch { return []; }
   };
@@ -194,6 +183,27 @@ window.saveLanc = window.saveLanc || function () {
 const LSK_FIN_SORT   = 'bsx_fin_sort_v1';
 const LSK_FIN_FILTER = 'bsx_fin_filter_v1';
 
+// ===== FUNÇÃO PARA RECARREGAR DO SUPABASE =====
+window.carregarFinanceiroSupabase = async function() {
+  try {
+    if (window.SupabaseAPI?.lancamentos) {
+      const data = await window.SupabaseAPI.lancamentos.getAll();
+      if (Array.isArray(data)) {
+        window.lanc = data;
+        try {
+          localStorage.setItem('bsx_fin_lanc', JSON.stringify(data));
+          localStorage.setItem('lanc', JSON.stringify(data));
+        } catch(_) {}
+        window.renderFin?.();
+        console.log('[Financeiro] ✅ Recarregado do Supabase:', data.length);
+        return data;
+      }
+    }
+  } catch(e) {
+    console.error('[Financeiro] Erro ao recarregar:', e);
+  }
+  return window.lanc || [];
+};
 // === Helpers globais de UID (deixe no ESCOPO GLOBAL)
 // ===== Helpers globais e robustos para UID =====
 window.__fin_getUidFromClick = function(el){
@@ -2121,14 +2131,21 @@ console.log('[Financeiro] Módulo carregado e pronto');
     // Função global para migrar
     window.migrarLancamentosParaSupabase = () => window.SupabaseAPI.lancamentos.migrate();
 
-    // Carrega do Supabase
-    window.SupabaseAPI.lancamentos.getAll().then(data => {
-      if (data.length > 0) {
-        window.lanc = data;
-        window.renderFin?.();
-        console.log('[Financeiro] ✅ Carregado do Supabase:', data.length);
-      }
-    });
+// ✅ Carrega do Supabase e SUBSTITUI o localStorage
+window.SupabaseAPI.lancamentos.getAll().then(data => {
+  if (Array.isArray(data)) {
+    window.lanc = data;
+    // Atualiza localStorage como cache
+    try {
+      localStorage.setItem('bsx_fin_lanc', JSON.stringify(data));
+      localStorage.setItem('lanc', JSON.stringify(data));
+    } catch(_) {}
+    window.renderFin?.();
+    console.log('[Financeiro] ✅ Carregado do Supabase:', data.length, 'lançamentos');
+  }
+}).catch(e => {
+  console.error('[Financeiro] Erro ao carregar do Supabase:', e);
+});
 
     console.log('✅ [Lancamentos API] Pronta! Use migrarLancamentosParaSupabase() para migrar.');
   });

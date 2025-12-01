@@ -1918,7 +1918,7 @@ const aPagar = resultado + totalAcrescimos - credito;
 
 // ✅ FÓRMULA CORRETA: RESTAM = A Pagar - Pagamentos
 // Pagamentos = Normal + Adiantamento (não inclui vales pois já estão nos acréscimos)
-const restam = aPagar - (pagos + adiantPg);
+const restam = aPagar - (pagos + adiantPg + pagamentosDivida);
 
   // UI - Atualizar campos
   const $ = function(id) { return document.getElementById(id); };

@@ -120,14 +120,15 @@
             ? (window.UserAuth.permsAllTrue ? window.UserAuth.permsAllTrue() : {})
             : (user.permissoes || {});
   
-          const session = {
-            id: user.id,
-            username: user.username,
-            nome: user.nome,
-            role: user.role || 'operador',
-            empresa_id: user.empresa_id || null,
-            perms
-          };
+            const session = {
+              id: user.id,
+              username: user.username,
+              nome: user.nome,
+              role: user.role || 'operador',
+              empresa_id: user.empresa_id || null,
+              perms,
+              companies: Array.isArray(user.companies) ? user.companies : []  // ✅ ADICIONA
+            };
   
           if (typeof window.UserAuth.setSession === 'function') {
             window.UserAuth.setSession(session);

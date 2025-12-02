@@ -1,4 +1,4 @@
-// js/ai.js — Chat moderno com IA CONTEXTUAL MELHORADA
+// js/ai.js — Assistente IA Inteligente para Gestão Financeira
 (function () {
   'use strict';
 
@@ -24,13 +24,14 @@
 
   if (!el.panel) return;
 
-  // ===== CONTEXTO CONVERSACIONAL (NOVO!) =====
+  // ===== CONTEXTO CONVERSACIONAL =====
   const conversationContext = {
-    lastTopic: null,        // último tópico discutido
-    lastEntity: null,       // última entidade mencionada (gerente, ficha, etc)
-    lastNumbers: [],        // últimos números mencionados
-    lastAction: null,       // última ação solicitada
-    turnHistory: []         // últimas 5 perguntas
+    lastTopic: null,
+    lastEntity: null,
+    lastPeriodo: null,
+    lastNumbers: [],
+    lastAction: null,
+    turnHistory: []
   };
 
   // ===== Estado e persistência =====
@@ -64,848 +65,776 @@
     localStorage.setItem(uiKey, JSON.stringify(data));
   }
 
-  // ===== Util =====
+  // ===== UTILITÁRIOS =====
   const now = () => new Date();
   const time = (d) => {
     try {
       if (!d) return '';
       const dateObj = d instanceof Date ? d : new Date(d);
       if (isNaN(dateObj.getTime())) return '';
-      if (typeof dateObj.toLocaleTimeString === 'function') {
-        try {
-          return dateObj.toLocaleTimeString('pt-BR', {
-            hour: '2-digit',
-            minute: '2-digit'
-          });
-        } catch (e) {}
-      }
-      const horas = String(dateObj.getHours()).padStart(2, '0');
-      const minutos = String(dateObj.getMinutes()).padStart(2, '0');
-      return `${horas}:${minutos}`;
-    } catch (e) {
-      return '';
-    }
+      return dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    } catch { return ''; }
   };
 
-  // ===== NLP MELHORADO - EXTRAÇÃO DE ENTIDADES =====
+  function fmt(n) {
+    return 'R$ ' + (Number(n) || 0).toLocaleString('pt-BR', { 
+      minimumFractionDigits: 2, 
+      maximumFractionDigits: 2 
+    });
+  }
+
+  function fmtPerc(n) {
+    return (Number(n) || 0).toFixed(1) + '%';
+  }
+
+  // ===== PARSER DE PERÍODO =====
+  const MESES = {
+    'janeiro': 0, 'jan': 0,
+    'fevereiro': 1, 'fev': 1,
+    'marco': 2, 'março': 2, 'mar': 2,
+    'abril': 3, 'abr': 3,
+    'maio': 4, 'mai': 4,
+    'junho': 5, 'jun': 5,
+    'julho': 6, 'jul': 6,
+    'agosto': 7, 'ago': 7,
+    'setembro': 8, 'set': 8,
+    'outubro': 9, 'out': 9,
+    'novembro': 10, 'nov': 10,
+    'dezembro': 11, 'dez': 11
+  };
+
+  function parsePeriodo(text) {
+    const s = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const hoje = new Date();
+    const anoAtual = hoje.getFullYear();
+    const mesAtual = hoje.getMonth();
+
+    // Detecta mês específico
+    for (const [nome, num] of Object.entries(MESES)) {
+      if (s.includes(nome)) {
+        // Verifica se tem ano
+        const anoMatch = s.match(/20\d{2}/);
+        const ano = anoMatch ? parseInt(anoMatch[0]) : anoAtual;
+        return {
+          tipo: 'mes',
+          mes: num,
+          ano: ano,
+          inicio: new Date(ano, num, 1),
+          fim: new Date(ano, num + 1, 0, 23, 59, 59),
+          label: `${nome.charAt(0).toUpperCase() + nome.slice(1)}/${ano}`
+        };
+      }
+    }
+
+    // Detecta períodos relativos
+    if (s.includes('hoje')) {
+      const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 0, 0, 0);
+      const fimHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 23, 59, 59);
+      return { tipo: 'dia', inicio: inicioHoje, fim: fimHoje, label: 'Hoje' };
+    }
+
+    if (s.includes('semana')) {
+      const inicioSemana = new Date(hoje);
+      inicioSemana.setDate(hoje.getDate() - hoje.getDay());
+      inicioSemana.setHours(0,0,0,0);
+      const fimSemana = new Date(inicioSemana);
+      fimSemana.setDate(inicioSemana.getDate() + 6);
+      fimSemana.setHours(23,59,59,999);
+      return { tipo: 'semana', inicio: inicioSemana, fim: fimSemana, label: 'Esta semana' };
+    }
+
+    if (s.includes('mes passado') || s.includes('ultimo mes') || s.includes('mes anterior')) {
+      const mesAnterior = mesAtual === 0 ? 11 : mesAtual - 1;
+      const anoMesAnterior = mesAtual === 0 ? anoAtual - 1 : anoAtual;
+      return {
+        tipo: 'mes',
+        mes: mesAnterior,
+        ano: anoMesAnterior,
+        inicio: new Date(anoMesAnterior, mesAnterior, 1),
+        fim: new Date(anoMesAnterior, mesAnterior + 1, 0, 23, 59, 59),
+        label: 'Mês passado'
+      };
+    }
+
+    if (s.includes('este mes') || s.includes('mes atual') || s.includes('esse mes')) {
+      return {
+        tipo: 'mes',
+        mes: mesAtual,
+        ano: anoAtual,
+        inicio: new Date(anoAtual, mesAtual, 1),
+        fim: new Date(anoAtual, mesAtual + 1, 0, 23, 59, 59),
+        label: 'Este mês'
+      };
+    }
+
+    if (s.includes('ano')) {
+      return {
+        tipo: 'ano',
+        ano: anoAtual,
+        inicio: new Date(anoAtual, 0, 1),
+        fim: new Date(anoAtual, 11, 31, 23, 59, 59),
+        label: `Ano ${anoAtual}`
+      };
+    }
+
+    // Default: mês atual
+    return {
+      tipo: 'mes',
+      mes: mesAtual,
+      ano: anoAtual,
+      inicio: new Date(anoAtual, mesAtual, 1),
+      fim: new Date(anoAtual, mesAtual + 1, 0, 23, 59, 59),
+      label: 'Este mês'
+    };
+  }
+
+  // ===== EXTRAÇÃO DE ENTIDADES =====
   function extractEntities(text) {
     const s = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     
-    const entities = {
-      gerentes: [],
-      fichas: [],
-      numeros: [],
-      datas: [],
-      formas: [],
-      acoes: [],
-      topicos: []
+    return {
+      periodo: parsePeriodo(text),
+      gerentes: extrairNomesGerentes(s),
+      fichas: (s.match(/\b\d{4}\b/g) || []),
+      temComparativo: /compar|melhor|pior|mais|menos|maior|menor|ranking|top|primeiro|ultimo/.test(s),
+      temTendencia: /tendencia|evolucao|cresceu|caiu|subiu|desceu|variacao/.test(s),
+      temAlerta: /alerta|problema|atencao|cuidado|critico|urgente|acima|estoura/.test(s)
     };
-
-    // Extrai nomes de gerentes (padrão: números seguidos de nome)
-    const gerentePattern = /\b(\d{3})\s+([a-záéíóú]+)\b/gi;
-    let match;
-    while ((match = gerentePattern.exec(s)) !== null) {
-      entities.gerentes.push(match[1] + ' ' + match[2].toUpperCase());
-    }
-
-    // Extrai fichas (números de 4 dígitos)
-    const fichaPattern = /\bficha\s*(\d{4})\b|\b(\d{4})\b(?=\s|$)/gi;
-    while ((match = fichaPattern.exec(s)) !== null) {
-      const ficha = match[1] || match[2];
-      if (ficha) entities.fichas.push(ficha);
-    }
-
-    // Extrai números gerais
-    const numeroPattern = /\b\d+(?:[.,]\d+)?\b/g;
-    while ((match = numeroPattern.exec(s)) !== null) {
-      entities.numeros.push(match[0]);
-    }
-
-    // Extrai formas de pagamento
-    if (s.includes('pix')) entities.formas.push('PIX');
-    if (s.includes('dinheiro')) entities.formas.push('DINHEIRO');
-    if (s.includes('cartao') || s.includes('cartão')) entities.formas.push('CARTÃO');
-
-    // Extrai ações
-    const acoes = {
-      'mostrar|exibir|listar|ver': 'listar',
-      'calcular|somar|total': 'calcular',
-      'comparar|versus|vs': 'comparar',
-      'maior|maximo|máximo': 'maior',
-      'menor|minimo|mínimo': 'menor',
-      'filtrar|selecionar': 'filtrar'
-    };
-    for (const [pattern, acao] of Object.entries(acoes)) {
-      if (new RegExp(pattern).test(s)) {
-        entities.acoes.push(acao);
-        break;
-      }
-    }
-
-    // Extrai tópicos
-    const topicos = {
-      'prestac(ao|ão|oes|ões)': 'prestacoes',
-      'despesa': 'despesas',
-      'financeir': 'financeiro',
-      'venda': 'vendas',
-      'ficha': 'fichas',
-      'gerente': 'gerentes',
-      'devedor|inadimpl': 'devedores',
-      'aberto': 'abertos',
-      'pagar': 'apagar'
-    };
-    for (const [pattern, topico] of Object.entries(topicos)) {
-      if (new RegExp(pattern).test(s)) {
-        entities.topicos.push(topico);
-      }
-    }
-
-    return entities;
   }
 
-  // ===== SISTEMA DE INFERÊNCIA CONTEXTUAL =====
-  function resolveWithContext(text, entities) {
-    const s = text.toLowerCase();
+  function extrairNomesGerentes(s) {
+    const pattern = /\b(\d{3})\s+([a-záéíóúãõ]+)\b/gi;
+    const matches = [];
+    let match;
+    while ((match = pattern.exec(s)) !== null) {
+      matches.push({ numero: match[1], nome: match[2] });
+    }
+    return matches;
+  }
+
+  // ===== DETECÇÃO DE INTENÇÃO AVANÇADA =====
+  function detectIntent(text) {
+    const s = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     
-    // Se a pergunta é vaga, usa o contexto
-    const vaguePatterns = [
-      /^(e )?ele\??$/i,
-      /^(e )?isso\??$/i,
-      /^(e )?este\??$/i,
-      /^(e )?este\s+\w+\??$/i,
-      /^quanto\??$/i,
-      /^qual\??$/i,
-      /^quantos?\??$/i,
-      /^(e )?depois\??$/i,
-      /^(e )?agora\??$/i,
-      /^continua/i
+    // Mapeamento de padrões para intenções
+    const intents = [
+      // Caixa e Financeiro
+      { pattern: /caixa|saldo|balanco|entrada|saida/, type: 'caixa_periodo', confidence: 0.9 },
+      { pattern: /fluxo\s*(de\s*)?caixa/, type: 'fluxo_caixa', confidence: 0.95 },
+      
+      // Rankings e Comparativos
+      { pattern: /(quem|qual).*(paga|pagou).*(melhor|mais\s*rapido|pontual|primeiro)/, type: 'ranking_pagamento', confidence: 0.95 },
+      { pattern: /(quem|qual).*(paga|pagou).*(pior|atrasado|devagar|ultimo)/, type: 'ranking_inadimplente', confidence: 0.95 },
+      { pattern: /(maior|mais).*(devedor|divida|deve|aberto)/, type: 'maior_devedor', confidence: 0.9 },
+      { pattern: /(menor|menos).*(devedor|divida|deve)/, type: 'menor_devedor', confidence: 0.9 },
+      
+      // Despesas
+      { pattern: /despesa.*(acima|estoura|passa|ultrapassa|permitid|ideal|limit)/, type: 'despesas_acima', confidence: 0.95 },
+      { pattern: /(quem|qual).*(mais|maior).*(despesa|gast)/, type: 'ranking_despesas', confidence: 0.9 },
+      { pattern: /total.*(despesa|gasto)/, type: 'total_despesas', confidence: 0.85 },
+      
+      // Prestações
+      { pattern: /prestac.*(aberta|pendente|atrasad)/, type: 'prestacoes_abertas', confidence: 0.9 },
+      { pattern: /prestac.*(fechad|quitad|pag)/, type: 'prestacoes_fechadas', confidence: 0.9 },
+      { pattern: /total.*prestac/, type: 'total_prestacoes', confidence: 0.85 },
+      
+      // Gerentes específicos
+      { pattern: /gerente.*(lista|todos|quais|quantos)/, type: 'listar_gerentes', confidence: 0.9 },
+      { pattern: /\d{3}\s+[a-z]/, type: 'info_gerente', confidence: 0.8 },
+      
+      // Análises e Insights
+      { pattern: /resum|visao\s*geral|status|como\s*(esta|vai|anda)|situacao/, type: 'resumo_geral', confidence: 0.85 },
+      { pattern: /alert|problema|atencao|cuidado|critico/, type: 'alertas', confidence: 0.9 },
+      { pattern: /tendencia|evolucao|historico|comparar.*mes/, type: 'tendencia', confidence: 0.85 },
+      { pattern: /previsao|projecao|estimativa/, type: 'previsao', confidence: 0.8 },
+      
+      // Ajuda
+      { pattern: /ajuda|help|o\s*que\s*(voce|vc)\s*(faz|pode)|como\s*(usar|funciona)/, type: 'ajuda', confidence: 0.95 }
     ];
 
-    const isVague = vaguePatterns.some(p => p.test(text.trim()));
-
-    if (isVague || entities.gerentes.length === 0 && entities.fichas.length === 0) {
-      // Tenta inferir do contexto
-      if (conversationContext.lastEntity) {
-        entities.gerentes = entities.gerentes.concat(
-          conversationContext.lastEntity.gerentes || []
-        );
-        entities.fichas = entities.fichas.concat(
-          conversationContext.lastEntity.fichas || []
-        );
+    for (const intent of intents) {
+      if (intent.pattern.test(s)) {
+        return { type: intent.type, confidence: intent.confidence };
       }
-      if (conversationContext.lastTopic && entities.topicos.length === 0) {
-        entities.topicos.push(conversationContext.lastTopic);
-      }
-    }
-
-    // Atualiza contexto
-    if (entities.gerentes.length || entities.fichas.length) {
-      conversationContext.lastEntity = {
-        gerentes: entities.gerentes,
-        fichas: entities.fichas
-      };
-    }
-    if (entities.topicos.length) {
-      conversationContext.lastTopic = entities.topicos[0];
-    }
-    if (entities.acoes.length) {
-      conversationContext.lastAction = entities.acoes[0];
-    }
-
-    // Adiciona ao histórico de turnos
-    conversationContext.turnHistory.unshift({
-      text,
-      entities,
-      timestamp: Date.now()
-    });
-    if (conversationContext.turnHistory.length > 5) {
-      conversationContext.turnHistory.pop();
-    }
-
-    return entities;
-  }
-
-  // ===== SISTEMA DE SINÔNIMOS E VARIAÇÕES =====
-  function normalizarPergunta(text) {
-    let s = text.toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-
-    // Sinônimos de ações
-    const sinonimos = {
-      // Ações de consulta
-      'me diga|me diz|me fala|fala pra mim': 'mostre',
-      'preciso saber|quero saber|gostaria de saber': 'qual',
-      'pode me mostrar|consegue mostrar': 'mostre',
-      
-      // Ações de cálculo
-      'faz a conta|calcula': 'calcule',
-      'soma tudo|soma todos': 'total',
-      
-      // Entidades
-      'gerenciador|responsavel|responsável': 'gerente',
-      'boleto|cobranca|cobrança': 'prestacao',
-      'gasto|custo|despesa': 'despesa',
-      'entrada|recebimento': 'recebido',
-      'saida|saída|pagamento': 'pago',
-      
-      // Quantificadores
-      'quem tem mais|o maior|a maior': 'maior',
-      'quem tem menos|o menor|a menor': 'menor',
-      'todos|todas': 'total',
-      
-      // Tempo
-      'esse mes|este mes|neste mes': 'mes atual',
-      'mes passado|mes anterior': 'mes anterior',
-      'hoje': 'dia atual'
-    };
-
-    for (const [pattern, replace] of Object.entries(sinonimos)) {
-      s = s.replace(new RegExp(pattern, 'gi'), replace);
-    }
-
-    return s;
-  }
-
-  // ===== PROCESSAMENTO INTELIGENTE DE PERGUNTAS =====
-  function smartProcessQuestion(text) {
-    const normalized = normalizarPergunta(text);
-    const entities = extractEntities(normalized);
-    const contextEntities = resolveWithContext(text, entities);
-
-    // Gera uma consulta enriquecida
-    const enrichedQuery = {
-      original: text,
-      normalized,
-      entities: contextEntities,
-      intent: detectIntent(normalized, contextEntities),
-      confidence: calculateConfidence(contextEntities)
-    };
-
-    return enrichedQuery;
-  }
-
-  // ===== DETECÇÃO DE INTENÇÃO =====
-  function detectIntent(text, entities) {
-    const s = text.toLowerCase();
-
-    // Intenções específicas
-    if (s.includes('maior') && (entities.topicos.includes('devedores') || s.includes('aberto'))) {
-      return { type: 'maior_devedor', confidence: 0.9 };
-    }
-    if (s.includes('total') && entities.topicos.includes('prestacoes')) {
-      return { type: 'total_prestacoes', confidence: 0.9 };
-    }
-    if (s.includes('total') && entities.topicos.includes('despesas')) {
-      return { type: 'total_despesas', confidence: 0.9 };
-    }
-    if (s.includes('acima') || s.includes('estour') || s.includes('alert')) {
-      return { type: 'despesas_acima', confidence: 0.85 };
-    }
-    
-    // Lista de gerentes
-    if ((s.includes('lista') || s.includes('quais') || s.includes('todos')) && 
-        (s.includes('gerente') || s.includes('gerentes'))) {
-      return { type: 'listar_gerentes', confidence: 0.9 };
-    }
-    if (s.includes('quantos gerente')) {
-      return { type: 'listar_gerentes', confidence: 0.9 };
-    }
-    
-    if (entities.gerentes.length > 0) {
-      if (entities.topicos.includes('prestacoes')) {
-        return { type: 'prestacao_gerente', confidence: 0.9 };
-      }
-      if (entities.topicos.includes('despesas')) {
-        return { type: 'despesas_gerente', confidence: 0.9 };
-      }
-      return { type: 'info_gerente', confidence: 0.7 };
-    }
-    if (entities.fichas.length > 0) {
-      return { type: 'info_ficha', confidence: 0.85 };
-    }
-    if (s.includes('resumo') || s.includes('visao geral') || s.includes('status')) {
-      return { type: 'resumo_geral', confidence: 0.8 };
     }
 
     return { type: 'desconhecido', confidence: 0.3 };
   }
 
-  // ===== CÁLCULO DE CONFIANÇA =====
-  function calculateConfidence(entities) {
-    let score = 0.5; // base
-
-    if (entities.gerentes.length > 0) score += 0.2;
-    if (entities.fichas.length > 0) score += 0.15;
-    if (entities.topicos.length > 0) score += 0.15;
-    if (entities.acoes.length > 0) score += 0.1;
-
-    return Math.min(score, 1.0);
-  }
-
-  // ===== GERAÇÃO DE RESPOSTAS CONTEXTUAIS =====
-  function generateContextualResponse(query, ctx) {
-    const { intent, entities, confidence } = query;
-
-    // Se a confiança é baixa, pede esclarecimento
-    if (confidence < 0.5) {
-      return gerarPedidoEsclarecimento(query, ctx);
-    }
-
-    // Processa baseado na intenção
-    switch (intent.type) {
-      case 'maior_devedor':
-        return processMaiorDevedor(ctx);
-      
-      case 'listar_gerentes':
-        return processListarGerentes(ctx);
-      
-      case 'total_prestacoes':
-        if (entities.gerentes.length > 0) {
-          return processTotalPrestacaoGerente(entities.gerentes[0], ctx);
-        }
-        return processTotalPrestacoes(ctx);
-      
-      case 'total_despesas':
-        if (entities.gerentes.length > 0) {
-          return processTotalDespesasGerente(entities.gerentes[0], ctx);
-        }
-        return processTotalDespesas(ctx);
-      
-      case 'despesas_acima':
-        return processDespesasAcima(ctx);
-      
-      case 'prestacao_gerente':
-        return processPrestacaoGerente(entities.gerentes[0], ctx);
-      
-      case 'despesas_gerente':
-        return processDespesasGerente(entities.gerentes[0], ctx);
-      
-      case 'info_ficha':
-        return processInfoFicha(entities.fichas[0], ctx);
-      
-      case 'resumo_geral':
-        return processResumoGeral(ctx);
-      
-      default:
-        return processDefault(query, ctx);
-    }
-  }
-
-  // ===== PROCESSADORES ESPECÍFICOS =====
-  
-  function processListarGerentes(ctx) {
-    const g = ctx.gerentes || [];
-    if (!g.length) return 'Nenhum gerente cadastrado no momento.';
-    
-    const lista = g.map((x, i) => 
-      `${i+1}. <strong>${x.numero || '---'}</strong> ${x.nome} (${x.comissao}%)`
-    ).join('<br>');
-    
-    return `<strong>👥 Gerentes cadastrados (${g.length}):</strong><br><br>${lista}`;
-  }
-  
-  function processMaiorDevedor(ctx) {
-    const p = ctx.prestacoes || [];
-    if (!p.length) return 'Sem prestações abertas no momento.';
-    
-    // Debug: mostra o que tem nas prestações
-    console.log('[AI] Prestações para ranking:', p.map(x => ({
-      gerente: x.gerente,
-      restante: x.restante,
-      valor: x.valor,
-      recebido: x.recebido
-    })));
-    
-    // Ordena por restante (valor em aberto)
-    const maiores = [...p]
-      .sort((a,b) => (b.restante||0) - (a.restante||0))
-      .slice(0, 5);
-    
-    // Se todos têm restante = 0, tenta ordenar por valor total
-    const todosZerados = maiores.every(x => (x.restante || 0) === 0);
-    
-    if (todosZerados) {
-      // Tenta mostrar por valor total (a pagar)
-      const porValor = [...p]
-        .sort((a,b) => (b.valor||0) - (a.valor||0))
-        .slice(0, 5);
-      
-      if (porValor.some(x => (x.valor || 0) > 0)) {
-        const resp = porValor.map((x,i) => 
-          `${i+1}. <strong>${x.gerente}</strong>: ${fmt(x.valor||0)} (a pagar)`
-        ).join('<br>');
-        
-        return `<strong>Prestações por valor (a pagar):</strong><br><br>${resp}<br><br>` +
-          `<em>ℹ️ Nenhum valor "em aberto" encontrado. Mostrando valores totais.</em>`;
-      }
-      
-      // Mostra informação de debug
-      return `<strong>Prestações encontradas:</strong> ${p.length}<br><br>` +
-        `Todos os valores em aberto estão zerados.<br><br>` +
-        `<em>💡 Verifique se as prestações têm o campo "restam" preenchido no sistema.</em>`;
-    }
-    
-    const resp = maiores.map((x,i) => 
-      `${i+1}. <strong>${x.gerente}</strong>: ${fmt(x.restante||0)} em aberto`
-    ).join('<br>');
-    
-    return `<strong>Maiores valores em aberto:</strong><br><br>${resp}`;
-  }
-
-  function processTotalPrestacoes(ctx) {
-    const p = ctx.prestacoes || [];
-    if (!p.length) return 'Sem prestações abertas.';
-    
-    const total = p.reduce((a,b) => a + (b.valor||0), 0);
-    const aberto = p.reduce((a,b) => a + (b.restante||0), 0);
-    const recebido = p.reduce((a,b) => a + (b.recebido||0), 0);
-    
-    return `<strong>Resumo de Prestações:</strong><br><br>` +
-      `• Total: ${fmt(total)}<br>` +
-      `• Recebido: ${fmt(recebido)}<br>` +
-      `• Em aberto: ${fmt(aberto)}`;
-  }
-
-  function processTotalPrestacaoGerente(gerente, ctx) {
-    const p = (ctx.prestacoes || []).filter(x => 
-      x.gerente && x.gerente.toLowerCase().includes(gerente.toLowerCase())
-    );
-    
-    if (!p.length) return `Sem prestações para "${gerente}".`;
-    
-    const total = p.reduce((a,b) => a + (b.valor||0), 0);
-    const aberto = p.reduce((a,b) => a + (b.restante||0), 0);
-    
-    return `<strong>${p[0].gerente}</strong>:<br><br>` +
-      `• Total: ${fmt(total)}<br>` +
-      `• Em aberto: ${fmt(aberto)}`;
-  }
-
-  function processTotalDespesas(ctx) {
-    const d = ctx.despesas || [];
-    if (!d.length) return 'Sem despesas nesta tela.';
-    
-    const total = d.reduce((a,b) => a + (Number(b.valor)||0), 0);
-    const acima = d.filter(x => (x.diff||0) > 0);
-    
-    return `<strong>Despesas:</strong><br><br>` +
-      `• Total: ${fmt(total)}<br>` +
-      `• Acima do ideal: ${acima.length} itens`;
-  }
-
-  function processDespesasAcima(ctx) {
-    const d = ctx.despesas || [];
-    const acima = d.filter(x => (x.diff||0) > 0);
-    
-    if (!acima.length) return 'Nenhuma despesa acima do ideal!';
-    
-    const top = acima
-      .sort((a,b) => (b.diff||0) - (a.diff||0))
-      .slice(0, 10);
-    
-    const resp = top.map((x,i) => 
-      `${i+1}. ${x.gerente} - Ficha ${x.ficha}: ${fmt(x.diff)} acima`
-    ).join('<br>');
-    
-    return `<strong>Despesas acima do ideal (top 10):</strong><br><br>${resp}`;
-  }
-
-  function processInfoFicha(ficha, ctx) {
-    const vendas = (ctx.vendas || []).filter(x => String(x.ficha) === String(ficha));
-    const despesas = (ctx.despesas || []).filter(x => String(x.ficha) === String(ficha));
-    
-    if (!vendas.length && !despesas.length) {
-      return `Sem dados para a ficha ${ficha}.`;
-    }
-    
-    let resp = `<strong>Ficha ${ficha}:</strong><br><br>`;
-    
-    if (vendas.length) {
-      const totalBruta = vendas.reduce((a,b) => a + (Number(b.bruta)||0), 0);
-      resp += `• Vendas: ${fmt(totalBruta)}<br>`;
-    }
-    
-    if (despesas.length) {
-      const totalDesp = despesas.reduce((a,b) => a + (Number(b.valor)||0), 0);
-      resp += `• Despesas: ${fmt(totalDesp)}`;
-    }
-    
-    return resp;
-  }
-
-  function processResumoGeral(ctx) {
-    const parts = [];
-    
-    // Gerentes
-    if (ctx.gerentes && ctx.gerentes.length) {
-      parts.push(`<strong>👥 Gerentes:</strong> ${ctx.gerentes.length} cadastrados`);
-    }
-    
-    // Prestações
-    if (ctx.prestacoes && ctx.prestacoes.length) {
-      const totalAberto = ctx.prestacoes.reduce((a,b) => a + (b.restante||0), 0);
-      const totalRecebido = ctx.prestacoes.reduce((a,b) => a + (b.recebido||0), 0);
-      parts.push(`<strong>📋 Prestações em aberto:</strong> ${ctx.prestacoes.length}<br>` +
-        `• A receber: ${fmt(totalAberto)}<br>` +
-        `• Já recebido: ${fmt(totalRecebido)}`);
-    }
-    
-    // Dashboard (se disponível na tela)
-    if (ctx.dashboard) {
-      parts.push(`<strong>📊 Painel:</strong><br>` +
-        `• Total valor: ${fmt(ctx.dashboard.totalValor||0)}<br>` +
-        `• Recebido: ${fmt(ctx.dashboard.totalRec||0)}<br>` +
-        `• Em aberto: ${fmt(ctx.dashboard.totalAberto||0)}`);
-    }
-    
-    // Financeiro
-    if (ctx.financeiro && ctx.financeiro.length) {
-      const rec = ctx.financeiro.filter(x => /RECEBIDO|CONFIRMADO/i.test(x.status));
-      const pag = ctx.financeiro.filter(x => /PAGO/i.test(x.status));
-      const totalRec = rec.reduce((a,b) => a + (Number(b.valor)||0), 0);
-      const totalPag = pag.reduce((a,b) => a + (Number(b.valor)||0), 0);
-      parts.push(`<strong>💰 Financeiro:</strong><br>` +
-        `• Total recebido: ${fmt(totalRec)}<br>` +
-        `• Total pago: ${fmt(totalPag)}<br>` +
-        `• Saldo: ${fmt(totalRec - totalPag)}`);
-    }
-    
-    // Pendências
-    if (ctx.pendencias && ctx.pendencias.length) {
-      const aReceber = ctx.pendencias.filter(p => p.tipo === 'RECEBIDO' || p.tipo === 'RECEBER');
-      const aPagar = ctx.pendencias.filter(p => p.tipo === 'PAGO' || p.tipo === 'PAGAR');
-      parts.push(`<strong>⏳ Pendências:</strong><br>` +
-        `• A receber: ${aReceber.length} (${fmt(aReceber.reduce((a,b) => a + b.valor, 0))})<br>` +
-        `• A pagar: ${aPagar.length} (${fmt(aPagar.reduce((a,b) => a + b.valor, 0))})`);
-    }
-    
-    if (!parts.length) {
-      return 'Sem dados disponíveis no momento.<br><br>' +
-        'Verifique se você está conectado e se há dados cadastrados no sistema.';
-    }
-    
-    return parts.join('<br><br>');
-  }
-
-  function gerarPedidoEsclarecimento(query, ctx) {
-    const sugestoes = [];
-    
-    // Mostra o que está disponível
-    const disponivel = [];
-    if (ctx.gerentes && ctx.gerentes.length) disponivel.push(`${ctx.gerentes.length} gerentes`);
-    if (ctx.prestacoes && ctx.prestacoes.length) disponivel.push(`${ctx.prestacoes.length} prestações`);
-    if (ctx.financeiro && ctx.financeiro.length) disponivel.push(`${ctx.financeiro.length} lançamentos`);
-    
-    if (disponivel.length) {
-      sugestoes.push(`<em>📊 Dados disponíveis: ${disponivel.join(', ')}</em>`);
-    }
-    
-    if (ctx.prestacoes && ctx.prestacoes.length) {
-      sugestoes.push('• "Quem tem maior valor em aberto?"');
-      sugestoes.push('• "Total de prestações"');
-    }
-    
-    if (ctx.despesas && ctx.despesas.length) {
-      sugestoes.push('• "Despesas acima do ideal"');
-      sugestoes.push('• "Total de despesas"');
-    }
-    
-    if (ctx.gerentes && ctx.gerentes.length) {
-      sugestoes.push('• "Lista de gerentes"');
-    }
-    
-    sugestoes.push('• "Resumo geral"');
-    
-    return `Hmm, não entendi bem...<br><br>` +
-      `Você pode tentar:<br>` +
-      sugestoes.join('<br>') +
-      `<br><br>Ou seja mais específico na pergunta!`;
-  }
-
-  function processDefault(query, ctx) {
-    // Fallback inteligente baseado no que foi detectado
-    if (query.entities.topicos.includes('prestacoes')) {
-      return processTotalPrestacoes(ctx);
-    }
-    if (query.entities.topicos.includes('despesas')) {
-      return processTotalDespesas(ctx);
-    }
-    
-    return gerarPedidoEsclarecimento(query, ctx);
-  }
-
-  // ===== FUNÇÕES AUXILIARES =====
-  function fmt(n) {
-    return 'R$ ' + (Number(n)||0).toFixed(2)
-      .replace(/\B(?=(\d{3})+(?!\d))/g, '.')
-      .replace('.', ',')
-      .replace(/,(\d{2})$/, ',$1');
-  }
-
-  // ===== COLETA DE CONTEXTO DO SUPABASE (ASYNC) =====
-  async function collectContext() {
-    const ctx = { 
-      dashboard: null, 
-      prestacoes: [], 
-      despesas: [], 
-      financeiro: [], 
-      vendas: [], 
+  // ===== COLETA DE DADOS DO SUPABASE =====
+  async function collectData(periodo) {
+    const ctx = {
       gerentes: [],
-      saldo: null 
+      prestacoes: [],
+      lancamentos: [],
+      pendencias: [],
+      despesas: [],
+      periodo: periodo
     };
 
-    // Função auxiliar para extrair número de texto formatado
-    function parseValor(texto) {
-      if (!texto) return 0;
-      const match = texto.match(/[\d.,]+/);
-      if (!match) return 0;
-      return parseFloat(match[0].replace(/\./g, '').replace(',', '.')) || 0;
-    }
-
-    // Empresa atual
     const empresaAtual = getCompany();
-    console.log('[AI] Coletando contexto para empresa:', empresaAtual);
+    console.log('[AI] Coletando dados para:', empresaAtual, periodo?.label);
 
-    // Dashboard (da tela)
-    try {
-      const totValor = document.getElementById('dashResTotValor')?.innerText || '';
-      const totRec = document.getElementById('dashResTotRec')?.innerText || '';
-      const totAber = document.getElementById('dashResTotAber')?.innerText || '';
-      if (totValor || totRec || totAber) {
-        ctx.dashboard = {
-          totalValor: parseValor(totValor),
-          totalRec: parseValor(totRec),
-          totalAberto: parseValor(totAber)
-        };
-      }
-    } catch(e) { console.warn('[AI] Erro dashboard:', e); }
-
-    // ===== GERENTES DO SUPABASE =====
+    // Gerentes
     try {
       if (window.SupabaseAPI?.gerentes?.getAll) {
         const gerentes = await window.SupabaseAPI.gerentes.getAll();
-        console.log('[AI] Gerentes raw do Supabase:', gerentes?.slice(0, 2)); // Debug
-        
         ctx.gerentes = (gerentes || []).map(g => ({
           id: g.id,
           uid: g.uid || g.id,
-          nome: g.nome || g.apelido || g.name || '',
+          nome: g.nome || g.apelido || '',
           numero: g.numero || g.rota || '',
           comissao: Number(g.comissao) || 0
         }));
-        console.log('[AI] ✅ Gerentes carregados:', ctx.gerentes.length);
       } else if (Array.isArray(window.gerentes)) {
-        ctx.gerentes = window.gerentes.map(g => ({
-          id: g.id,
-          uid: g.uid || g.id,
-          nome: g.nome || '',
-          numero: g.numero || '',
-          comissao: Number(g.comissao) || 0
-        }));
+        ctx.gerentes = window.gerentes;
       }
     } catch(e) { console.warn('[AI] Erro gerentes:', e); }
 
-    // ===== PRESTAÇÕES DO SUPABASE =====
+    // Prestações
     try {
       if (window.SupabaseAPI?.prestacoes?.getAll) {
         const prestacoes = await window.SupabaseAPI.prestacoes.getAll();
-        console.log('[AI] Prestações raw do Supabase:', prestacoes?.slice(0, 2)); // Debug
-        
-        ctx.prestacoes = (prestacoes || []).filter(p => !p.fechado).map(p => {
-          // Encontra o nome do gerente
-          const gerente = ctx.gerentes.find(g => 
-            g.uid === p.gerente_id || g.id === p.gerente_id || 
-            g.uid === p.gerenteId || String(g.id) === String(p.gerente_id)
-          );
-          
-          // ✅ Parse do resumo se vier como string JSON
+        ctx.prestacoes = (prestacoes || []).map(p => {
           let resumo = p.resumo;
           if (typeof resumo === 'string') {
-            try { resumo = JSON.parse(resumo); } catch(e) { resumo = {}; }
+            try { resumo = JSON.parse(resumo); } catch { resumo = {}; }
           }
           resumo = resumo || {};
           
-          // ✅ Tenta múltiplos caminhos para os valores
-          const aPagar = Number(resumo.aPagar) || Number(resumo.a_pagar) || 
-                         Number(p.a_pagar) || Number(p.aPagar) || 0;
-          const restam = Number(resumo.restam) || Number(resumo.restante) || 
-                         Number(p.restam) || Number(p.restante) || 0;
-          const pagos = Number(resumo.pagos) || Number(resumo.recebido) || 
-                        Number(p.pagos) || Number(p.recebido) || 0;
-          const coletas = Number(resumo.coletas) || Number(p.coletas) || 0;
-          const despesas = Number(resumo.despesas) || Number(p.despesas) || 0;
-          
-          // Número do gerente para exibição
-          const gerenteNum = gerente?.numero || p.gerente_numero || '';
-          const gerenteNome = gerente?.nome || p.gerente_nome || p.gerenteNome || 'Desconhecido';
+          const gerente = ctx.gerentes.find(g => 
+            g.uid === p.gerente_id || g.id === p.gerente_id || 
+            String(g.id) === String(p.gerente_id)
+          );
           
           return {
             id: p.id,
-            gerente: gerenteNum ? `${gerenteNum} ${gerenteNome}` : gerenteNome,
             gerenteId: p.gerente_id || p.gerenteId,
-            periodo: `${p.ini || ''} a ${p.fim || ''}`,
-            valor: aPagar,
-            restante: restam,
-            recebido: pagos,
-            coletas: coletas,
-            despesas: despesas,
-            // Debug
-            _raw: { aPagar, restam, pagos, resumo }
+            gerenteNome: gerente?.nome || p.gerente_nome || '',
+            gerenteNumero: gerente?.numero || '',
+            ini: p.ini,
+            fim: p.fim,
+            fechado: !!p.fechado,
+            aPagar: Number(resumo.aPagar) || Number(p.a_pagar) || 0,
+            restam: Number(resumo.restam) || Number(p.restam) || 0,
+            pagos: Number(resumo.pagos) || Number(p.pagos) || 0,
+            coletas: Number(resumo.coletas) || 0,
+            despesas: Number(resumo.despesas) || 0,
+            createdAt: p.created_at || p.createdAt
           };
         });
         
-        // Log de debug
-        if (ctx.prestacoes.length) {
-          console.log('[AI] Exemplo prestação mapeada:', ctx.prestacoes[0]);
+        // Filtra por período se especificado
+        if (periodo?.inicio && periodo?.fim) {
+          ctx.prestacoes = ctx.prestacoes.filter(p => {
+            const dataP = new Date(p.fim || p.ini || p.createdAt);
+            return dataP >= periodo.inicio && dataP <= periodo.fim;
+          });
         }
-        console.log('[AI] ✅ Prestações carregadas:', ctx.prestacoes.length);
-      } else if (typeof window.getPrestacoes === 'function') {
-        const arr = window.getPrestacoes() || [];
-        ctx.prestacoes = arr.filter(p => !p.fechado).map(p => ({
-          id: p.id,
-          gerente: p.gerenteNome || '',
-          valor: Number(p?.resumo?.aPagar || 0),
-          restante: Number(p?.resumo?.restam || 0),
-          recebido: Number(p?.resumo?.pagos || 0)
-        }));
       }
     } catch(e) { console.warn('[AI] Erro prestações:', e); }
 
-    // ===== LANÇAMENTOS/FINANCEIRO DO SUPABASE =====
+    // Lançamentos (Financeiro)
     try {
       if (window.SupabaseAPI?.lancamentos?.getAll) {
         const lancamentos = await window.SupabaseAPI.lancamentos.getAll();
-        ctx.financeiro = (lancamentos || []).map(l => {
-          const gerente = ctx.gerentes.find(g => 
-            g.uid === l.gerente_id || g.id === l.gerente_id
-          );
-          return {
-            id: l.id,
-            gerente: gerente?.nome || l.gerente_nome || '',
-            valor: Number(l.valor || 0),
-            status: l.status || '',
-            forma: l.forma || '',
-            tipo: l.tipo || '',
-            data: l.data || ''
-          };
-        });
-        console.log('[AI] ✅ Financeiro carregado:', ctx.financeiro.length);
-      } else if (Array.isArray(window.lanc)) {
-        ctx.financeiro = window.lanc.map(l => ({
-          gerente: l.gerente || '',
-          valor: Number(l.valor || 0),
+        ctx.lancamentos = (lancamentos || []).map(l => ({
+          id: l.id,
+          gerenteId: l.gerente_id,
+          gerenteNome: ctx.gerentes.find(g => g.uid === l.gerente_id || g.id === l.gerente_id)?.nome || '',
+          valor: Number(l.valor) || 0,
+          tipo: l.tipo || '',
           status: l.status || '',
-          forma: l.forma || ''
+          forma: l.forma || '',
+          data: l.data,
+          createdAt: l.created_at
         }));
+        
+        // Filtra por período
+        if (periodo?.inicio && periodo?.fim) {
+          ctx.lancamentos = ctx.lancamentos.filter(l => {
+            const dataL = new Date(l.data || l.createdAt);
+            return dataL >= periodo.inicio && dataL <= periodo.fim;
+          });
+        }
+      } else if (Array.isArray(window.lanc)) {
+        ctx.lancamentos = window.lanc;
       }
-    } catch(e) { console.warn('[AI] Erro financeiro:', e); }
+    } catch(e) { console.warn('[AI] Erro lançamentos:', e); }
 
-    // ===== DESPESAS (da prestação atual ou do sistema) =====
-    try {
-      // Tenta pegar despesas da prestação atual na tela
-      if (window.prestacaoAtual?.despesas) {
-        ctx.despesas = window.prestacaoAtual.despesas.map(d => ({
-          gerente: d.gerenteNome || d.gerente || '',
-          ficha: d.ficha || '',
-          descricao: d.descricao || d.info || '',
-          valor: Number(d.valor || 0),
-          diff: Number(d.diff || 0)
-        }));
-      } else if (typeof window.getDespesas === 'function') {
-        const arr = window.getDespesas() || [];
-        ctx.despesas = arr.map(d => ({
-          gerente: d.gerenteNome || d.gerente || '',
-          ficha: d.ficha || '',
-          valor: Number(d.valor || 0),
-          diff: Number(d.diff || 0)
-        }));
-      }
-    } catch(e) { console.warn('[AI] Erro despesas:', e); }
-
-    // ===== VENDAS =====
-    try {
-      if (Array.isArray(window.vendas)) {
-        ctx.vendas = window.vendas.map(v => ({
-          ficha: v.ficha || '',
-          mes: v.ym || v.mes || '',
-          bruta: Number(v.bruta || 0),
-          liquida: Number(v.liquida || v.liquido || 0)
-        }));
-      }
-    } catch(e) { console.warn('[AI] Erro vendas:', e); }
-
-    // ===== PENDÊNCIAS DO SUPABASE =====
+    // Pendências
     try {
       if (window.PendenciasAPI?.getAll) {
         const pendencias = await window.PendenciasAPI.getAll();
-        ctx.pendencias = (pendencias || []).filter(p => p.status === 'PENDENTE').map(p => {
-          const gerente = ctx.gerentes.find(g => 
-            g.uid === p.gerente_id || g.id === p.gerente_id
-          );
-          return {
-            id: p.id,
-            gerente: gerente?.nome || p.gerente_nome || '',
-            valor: Number(p.valor || p.valorOriginal || 0),
-            tipo: p.tipoCaixa || p.tipo || '',
-            info: p.info || ''
-          };
-        });
-        console.log('[AI] ✅ Pendências carregadas:', ctx.pendencias?.length || 0);
+        ctx.pendencias = (pendencias || []).filter(p => p.status === 'PENDENTE').map(p => ({
+          id: p.id,
+          gerenteId: p.gerente_id || p.gerenteId,
+          gerenteNome: p.gerente_nome || ctx.gerentes.find(g => g.uid === p.gerente_id)?.nome || '',
+          valor: Number(p.valor || p.valorOriginal) || 0,
+          tipo: p.tipoCaixa || p.tipo || '',
+          data: p.data,
+          info: p.info || ''
+        }));
       }
     } catch(e) { console.warn('[AI] Erro pendências:', e); }
 
-    console.log('[AI] Contexto final:', {
+    // Despesas da prestação atual
+    try {
+      if (window.prestacaoAtual?.despesas) {
+        ctx.despesas = window.prestacaoAtual.despesas;
+      }
+    } catch(e) {}
+
+    console.log('[AI] Dados coletados:', {
       gerentes: ctx.gerentes.length,
       prestacoes: ctx.prestacoes.length,
-      financeiro: ctx.financeiro.length,
-      despesas: ctx.despesas.length,
-      pendencias: ctx.pendencias?.length || 0
+      lancamentos: ctx.lancamentos.length,
+      pendencias: ctx.pendencias.length
     });
 
     return ctx;
   }
 
-  // ===== CHAMADA PARA LLM (ASYNC COM SUPABASE) =====
-  async function askLLM(question) {
-    // Coleta contexto do Supabase (async)
-    const ctx = await collectContext();
+  // ===== PROCESSADORES DE RESPOSTA =====
+
+  // Caixa do período
+  function processCaixaPeriodo(ctx) {
+    const { lancamentos, periodo } = ctx;
     
-    // Processa com o sistema inteligente
-    const query = smartProcessQuestion(question);
+    if (!lancamentos.length) {
+      return `📊 <strong>Caixa - ${periodo?.label || 'Período'}</strong><br><br>` +
+        `Sem lançamentos encontrados para este período.`;
+    }
     
-    console.log('[AI] Query processada:', query);
-    console.log('[AI] Contexto disponível:', {
-      temDashboard: !!ctx.dashboard,
-      prestacoes: ctx.prestacoes.length,
-      gerentes: ctx.gerentes.length,
-      financeiro: ctx.financeiro.length
-    });
+    const recebimentos = lancamentos.filter(l => 
+      /RECEBIDO|ENTRADA|CREDITO/i.test(l.tipo) || /RECEBIDO/i.test(l.status)
+    );
+    const pagamentos = lancamentos.filter(l => 
+      /PAGO|SAIDA|DEBITO/i.test(l.tipo) || /PAGO/i.test(l.status)
+    );
     
-    // Gera resposta contextual
-    const answer = generateContextualResponse(query, ctx);
+    const totalRec = recebimentos.reduce((s, l) => s + l.valor, 0);
+    const totalPag = pagamentos.reduce((s, l) => s + l.valor, 0);
+    const saldo = totalRec - totalPag;
     
-    return answer;
+    const saldoClass = saldo >= 0 ? '✅' : '⚠️';
+    
+    return `📊 <strong>Caixa - ${periodo?.label || 'Período'}</strong><br><br>` +
+      `💰 <strong>Entradas:</strong> ${fmt(totalRec)} (${recebimentos.length} lançamentos)<br>` +
+      `💸 <strong>Saídas:</strong> ${fmt(totalPag)} (${pagamentos.length} lançamentos)<br>` +
+      `${saldoClass} <strong>Saldo:</strong> ${fmt(saldo)}<br><br>` +
+      (saldo < 0 ? `<em>⚠️ Atenção: Saldo negativo no período!</em>` : 
+       saldo > 0 ? `<em>✅ Período positivo!</em>` : '');
   }
 
-  // ===== UI (mantém original) =====
+  // Ranking de pagamento (quem paga melhor)
+  function processRankingPagamento(ctx) {
+    const { prestacoes, gerentes } = ctx;
+    
+    if (!prestacoes.length) {
+      return 'Sem prestações para analisar no período.';
+    }
+    
+    // Agrupa por gerente e calcula % pago
+    const stats = {};
+    prestacoes.forEach(p => {
+      const gid = p.gerenteId;
+      if (!stats[gid]) {
+        stats[gid] = {
+          nome: p.gerenteNome || 'Desconhecido',
+          numero: p.gerenteNumero || '',
+          totalAPagar: 0,
+          totalPago: 0,
+          qtdPrestacoes: 0,
+          qtdQuitadas: 0
+        };
+      }
+      stats[gid].totalAPagar += p.aPagar;
+      stats[gid].totalPago += p.pagos;
+      stats[gid].qtdPrestacoes++;
+      if (p.fechado || p.restam <= 0) stats[gid].qtdQuitadas++;
+    });
+    
+    // Calcula % e ordena
+    const ranking = Object.values(stats)
+      .map(g => ({
+        ...g,
+        percPago: g.totalAPagar > 0 ? (g.totalPago / g.totalAPagar) * 100 : 0,
+        percQuitadas: g.qtdPrestacoes > 0 ? (g.qtdQuitadas / g.qtdPrestacoes) * 100 : 0
+      }))
+      .sort((a, b) => b.percPago - a.percPago)
+      .slice(0, 10);
+    
+    if (!ranking.length) {
+      return 'Sem dados suficientes para ranking.';
+    }
+    
+    const lista = ranking.map((g, i) => {
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
+      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
+      return `${medal} <strong>${nome}</strong>: ${fmtPerc(g.percPago)} pago (${g.qtdQuitadas}/${g.qtdPrestacoes} quitadas)`;
+    }).join('<br>');
+    
+    return `🏆 <strong>Ranking - Quem Paga Melhor</strong><br><br>${lista}`;
+  }
+
+  // Ranking de inadimplentes
+  function processRankingInadimplente(ctx) {
+    const { prestacoes } = ctx;
+    
+    const abertas = prestacoes.filter(p => !p.fechado && p.restam > 0);
+    
+    if (!abertas.length) {
+      return '✅ Nenhuma prestação em aberto no momento!';
+    }
+    
+    // Agrupa por gerente
+    const stats = {};
+    abertas.forEach(p => {
+      const gid = p.gerenteId;
+      if (!stats[gid]) {
+        stats[gid] = {
+          nome: p.gerenteNome,
+          numero: p.gerenteNumero,
+          totalAberto: 0,
+          qtdAbertas: 0
+        };
+      }
+      stats[gid].totalAberto += p.restam;
+      stats[gid].qtdAbertas++;
+    });
+    
+    const ranking = Object.values(stats)
+      .sort((a, b) => b.totalAberto - a.totalAberto)
+      .slice(0, 10);
+    
+    const lista = ranking.map((g, i) => {
+      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
+      return `${i+1}. <strong>${nome}</strong>: ${fmt(g.totalAberto)} em aberto (${g.qtdAbertas} prestações)`;
+    }).join('<br>');
+    
+    const totalGeral = ranking.reduce((s, g) => s + g.totalAberto, 0);
+    
+    return `⚠️ <strong>Maiores Devedores</strong><br><br>${lista}<br><br>` +
+      `💰 <strong>Total em aberto:</strong> ${fmt(totalGeral)}`;
+  }
+
+  // Despesas acima do permitido
+  function processDespesasAcima(ctx) {
+    const { prestacoes, gerentes } = ctx;
+    
+    // Calcula despesas vs ideal por gerente
+    const stats = {};
+    prestacoes.forEach(p => {
+      const gid = p.gerenteId;
+      if (!stats[gid]) {
+        stats[gid] = {
+          nome: p.gerenteNome,
+          numero: p.gerenteNumero,
+          totalDespesas: 0,
+          totalColetas: 0,
+          qtdPrestacoes: 0
+        };
+      }
+      stats[gid].totalDespesas += p.despesas;
+      stats[gid].totalColetas += p.coletas;
+      stats[gid].qtdPrestacoes++;
+    });
+    
+    // Calcula % de despesa sobre coleta (20% como limite ideal)
+    const ranking = Object.values(stats)
+      .filter(g => g.totalColetas > 0)
+      .map(g => ({
+        ...g,
+        percDespesa: (g.totalDespesas / g.totalColetas) * 100,
+        excedente: g.totalDespesas - (g.totalColetas * 0.20)
+      }))
+      .filter(g => g.excedente > 0)
+      .sort((a, b) => b.excedente - a.excedente)
+      .slice(0, 10);
+    
+    if (!ranking.length) {
+      return '✅ <strong>Nenhum gerente com despesas acima do ideal!</strong><br><br>' +
+        'Todos estão dentro do limite de 20% das coletas.';
+    }
+    
+    const lista = ranking.map((g, i) => {
+      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
+      return `${i+1}. <strong>${nome}</strong>: ${fmtPerc(g.percDespesa)} das coletas<br>` +
+        `   &nbsp;&nbsp;&nbsp;Despesas: ${fmt(g.totalDespesas)} | Excedente: ${fmt(g.excedente)}`;
+    }).join('<br>');
+    
+    return `⚠️ <strong>Despesas Acima do Ideal (>20%)</strong><br><br>${lista}`;
+  }
+
+  // Ranking de despesas
+  function processRankingDespesas(ctx) {
+    const { prestacoes } = ctx;
+    
+    const stats = {};
+    prestacoes.forEach(p => {
+      const gid = p.gerenteId;
+      if (!stats[gid]) {
+        stats[gid] = { nome: p.gerenteNome, numero: p.gerenteNumero, total: 0, qtd: 0 };
+      }
+      stats[gid].total += p.despesas;
+      stats[gid].qtd++;
+    });
+    
+    const ranking = Object.values(stats)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10);
+    
+    const lista = ranking.map((g, i) => {
+      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
+      return `${i+1}. <strong>${nome}</strong>: ${fmt(g.total)} (${g.qtd} prestações)`;
+    }).join('<br>');
+    
+    return `💸 <strong>Ranking de Despesas</strong><br><br>${lista}`;
+  }
+
+  // Total de despesas
+  function processTotalDespesas(ctx) {
+    const { prestacoes, periodo } = ctx;
+    
+    const total = prestacoes.reduce((s, p) => s + p.despesas, 0);
+    const totalColetas = prestacoes.reduce((s, p) => s + p.coletas, 0);
+    const perc = totalColetas > 0 ? (total / totalColetas) * 100 : 0;
+    
+    return `💸 <strong>Total de Despesas - ${periodo?.label}</strong><br><br>` +
+      `• Total: ${fmt(total)}<br>` +
+      `• % sobre coletas: ${fmtPerc(perc)}<br>` +
+      `• Prestações analisadas: ${prestacoes.length}`;
+  }
+
+  // Prestações abertas
+  function processPrestacoesAbertas(ctx) {
+    const { prestacoes } = ctx;
+    
+    const abertas = prestacoes.filter(p => !p.fechado && p.restam > 0);
+    
+    if (!abertas.length) {
+      return '✅ Nenhuma prestação em aberto!';
+    }
+    
+    const totalAberto = abertas.reduce((s, p) => s + p.restam, 0);
+    
+    const lista = abertas
+      .sort((a, b) => b.restam - a.restam)
+      .slice(0, 10)
+      .map((p, i) => {
+        const nome = p.gerenteNumero ? `${p.gerenteNumero} ${p.gerenteNome}` : p.gerenteNome;
+        return `${i+1}. <strong>${nome}</strong>: ${fmt(p.restam)}`;
+      }).join('<br>');
+    
+    return `📋 <strong>Prestações em Aberto (${abertas.length})</strong><br><br>` +
+      `${lista}<br><br>` +
+      `💰 <strong>Total em aberto:</strong> ${fmt(totalAberto)}`;
+  }
+
+  // Listar gerentes
+  function processListarGerentes(ctx) {
+    const { gerentes } = ctx;
+    
+    if (!gerentes.length) {
+      return 'Nenhum gerente cadastrado.';
+    }
+    
+    const lista = gerentes.map((g, i) => 
+      `${i+1}. <strong>${g.numero || '---'}</strong> ${g.nome} (${g.comissao}%)`
+    ).join('<br>');
+    
+    return `👥 <strong>Gerentes Cadastrados (${gerentes.length})</strong><br><br>${lista}`;
+  }
+
+  // Alertas
+  function processAlertas(ctx) {
+    const { prestacoes, pendencias, lancamentos } = ctx;
+    const alertas = [];
+    
+    // Prestações com muito em aberto
+    const muitoAberto = prestacoes.filter(p => p.restam > 5000);
+    if (muitoAberto.length) {
+      alertas.push(`⚠️ <strong>${muitoAberto.length}</strong> prestações com mais de R$ 5.000 em aberto`);
+    }
+    
+    // Pendências acumuladas
+    if (pendencias.length > 10) {
+      alertas.push(`📋 <strong>${pendencias.length}</strong> pendências aguardando confirmação`);
+    }
+    
+    // Gerentes com despesas altas
+    const despesasAltas = prestacoes.filter(p => 
+      p.coletas > 0 && (p.despesas / p.coletas) > 0.25
+    );
+    if (despesasAltas.length) {
+      alertas.push(`💸 <strong>${despesasAltas.length}</strong> prestações com despesas acima de 25%`);
+    }
+    
+    // Saldo negativo
+    const recebido = lancamentos.filter(l => /RECEBIDO/i.test(l.status)).reduce((s,l) => s + l.valor, 0);
+    const pago = lancamentos.filter(l => /PAGO/i.test(l.status)).reduce((s,l) => s + l.valor, 0);
+    if (pago > recebido) {
+      alertas.push(`🔴 Saldo negativo no período: ${fmt(recebido - pago)}`);
+    }
+    
+    if (!alertas.length) {
+      return '✅ <strong>Nenhum alerta no momento!</strong><br><br>Tudo parece estar em ordem.';
+    }
+    
+    return `🚨 <strong>Alertas</strong><br><br>` + alertas.join('<br><br>');
+  }
+
+  // Resumo geral
+  function processResumoGeral(ctx) {
+    const { gerentes, prestacoes, lancamentos, pendencias, periodo } = ctx;
+    const parts = [];
+    
+    parts.push(`📅 <strong>Período:</strong> ${periodo?.label || 'Geral'}`);
+    
+    // Gerentes
+    parts.push(`👥 <strong>Gerentes:</strong> ${gerentes.length} cadastrados`);
+    
+    // Prestações
+    const abertas = prestacoes.filter(p => !p.fechado && p.restam > 0);
+    const totalAberto = abertas.reduce((s, p) => s + p.restam, 0);
+    parts.push(`📋 <strong>Prestações:</strong> ${prestacoes.length} no período (${abertas.length} em aberto: ${fmt(totalAberto)})`);
+    
+    // Caixa
+    const recebido = lancamentos.filter(l => /RECEBIDO|ENTRADA/i.test(l.tipo) || /RECEBIDO/i.test(l.status))
+      .reduce((s, l) => s + l.valor, 0);
+    const pago = lancamentos.filter(l => /PAGO|SAIDA/i.test(l.tipo) || /PAGO/i.test(l.status))
+      .reduce((s, l) => s + l.valor, 0);
+    const saldo = recebido - pago;
+    const saldoIcon = saldo >= 0 ? '✅' : '⚠️';
+    parts.push(`💰 <strong>Caixa:</strong> ${saldoIcon} ${fmt(saldo)} (Entradas: ${fmt(recebido)} | Saídas: ${fmt(pago)})`);
+    
+    // Pendências
+    if (pendencias.length) {
+      const totalPend = pendencias.reduce((s, p) => s + p.valor, 0);
+      parts.push(`⏳ <strong>Pendências:</strong> ${pendencias.length} (${fmt(totalPend)})`);
+    }
+    
+    return parts.join('<br><br>');
+  }
+
+  // Ajuda
+  function processAjuda() {
+    return `🤖 <strong>Assistente Financeiro Inteligente</strong><br><br>` +
+      `Posso ajudar com:<br><br>` +
+      `<strong>📊 Caixa e Financeiro:</strong><br>` +
+      `• "Como está o caixa de dezembro?"<br>` +
+      `• "Qual o saldo do mês passado?"<br><br>` +
+      `<strong>🏆 Rankings e Análises:</strong><br>` +
+      `• "Quem paga melhor as prestações?"<br>` +
+      `• "Qual gerente mais devedor?"<br>` +
+      `• "Quem tem despesas acima do ideal?"<br><br>` +
+      `<strong>📋 Prestações:</strong><br>` +
+      `• "Prestações em aberto"<br>` +
+      `• "Total de despesas deste mês"<br><br>` +
+      `<strong>🚨 Alertas:</strong><br>` +
+      `• "Tem algum alerta?"<br>` +
+      `• "Situação atual"<br><br>` +
+      `<em>Dica: Especifique o mês para análises mais precisas!</em>`;
+  }
+
+  // Fallback
+  function processFallback(ctx) {
+    const sugestoes = [
+      'Resumo geral',
+      'Como está o caixa deste mês?',
+      'Quem paga melhor?',
+      'Despesas acima do ideal'
+    ];
+    
+    return `🤔 Não entendi bem sua pergunta.<br><br>` +
+      `<strong>Tente perguntar:</strong><br>` +
+      sugestoes.map(s => `• "${s}"`).join('<br>') +
+      `<br><br>Ou digite "ajuda" para ver todas as opções.`;
+  }
+
+  // ===== PROCESSAMENTO PRINCIPAL =====
+  async function askLLM(question) {
+    const entities = extractEntities(question);
+    const intent = detectIntent(question);
+    
+    console.log('[AI] Intent:', intent);
+    console.log('[AI] Período:', entities.periodo?.label);
+    
+    // Atualiza contexto
+    conversationContext.lastPeriodo = entities.periodo;
+    conversationContext.lastTopic = intent.type;
+    
+    // Coleta dados
+    const ctx = await collectData(entities.periodo);
+    
+    // Processa baseado na intenção
+    switch (intent.type) {
+      case 'caixa_periodo':
+      case 'fluxo_caixa':
+        return processCaixaPeriodo(ctx);
+      
+      case 'ranking_pagamento':
+        return processRankingPagamento(ctx);
+      
+      case 'ranking_inadimplente':
+      case 'maior_devedor':
+        return processRankingInadimplente(ctx);
+      
+      case 'despesas_acima':
+        return processDespesasAcima(ctx);
+      
+      case 'ranking_despesas':
+        return processRankingDespesas(ctx);
+      
+      case 'total_despesas':
+        return processTotalDespesas(ctx);
+      
+      case 'prestacoes_abertas':
+        return processPrestacoesAbertas(ctx);
+      
+      case 'listar_gerentes':
+        return processListarGerentes(ctx);
+      
+      case 'alertas':
+        return processAlertas(ctx);
+      
+      case 'resumo_geral':
+        return processResumoGeral(ctx);
+      
+      case 'ajuda':
+        return processAjuda();
+      
+      default:
+        return processFallback(ctx);
+    }
+  }
+
+  // ===== UI =====
+  const now_ = () => new Date();
+  
   function openPanel() {
     el.panel.classList.remove('is-hidden');
     el.input?.focus();
     renderCompanyTag();
-    renderGreeting();
+    if (!state.history.length) {
+      renderGreeting();
+    } else {
+      renderHistory();
+    }
+    renderChips();
     const ui = loadUI();
     if (ui.pos) {
       el.panel.style.right = 'auto';
       el.panel.style.bottom = 'auto';
       el.panel.style.left = (ui.pos.x || 40) + 'px';
-      el.panel.style.top  = (ui.pos.y || 40) + 'px';
+      el.panel.style.top = (ui.pos.y || 40) + 'px';
       state.pos = ui.pos;
       state.pinned = !!ui.pinned;
       updatePin();
     }
     if (ui.size) {
-      el.panel.style.width  = (ui.size.w || 380) + 'px';
+      el.panel.style.width = (ui.size.w || 380) + 'px';
       el.panel.style.height = (ui.size.h || 520) + 'px';
       state.size = ui.size;
     }
@@ -915,13 +844,13 @@
     el.panel.classList.add('is-hidden');
   }
 
-  function renderCompanyTag(){
+  function renderCompanyTag() {
     const c = getCompany();
-    el.tag.textContent = `• ${c}`;
+    if (el.tag) el.tag.textContent = `• ${c}`;
   }
 
   function scrollBottom() {
-    el.msgs.scrollTop = el.msgs.scrollHeight;
+    if (el.msgs) el.msgs.scrollTop = el.msgs.scrollHeight;
   }
 
   function bubble({ who, text, ts }) {
@@ -930,29 +859,34 @@
     li.innerHTML = `
       <div class="bubble">
         ${text}
-        <span class="meta">${time(ts || now())}</span>
+        <span class="meta">${time(ts || now_())}</span>
       </div>
     `;
     return li;
   }
 
   function renderHistory() {
+    if (!el.msgs) return;
     el.msgs.innerHTML = '';
     state.history.forEach(m => el.msgs.appendChild(bubble(m)));
     scrollBottom();
   }
 
   function renderChips() {
+    if (!el.chips) return;
     const chips = [
-      'Quem tem maior valor em aberto?',
-      'Total de despesas acima do ideal',
       'Resumo geral',
-      'Ajuda'
+      'Caixa deste mês',
+      'Quem paga melhor?',
+      'Despesas acima do ideal',
+      'Alertas'
     ];
     el.chips.innerHTML = '';
     chips.forEach(t => {
       const b = document.createElement('button');
-      b.type='button'; b.className='ai__chip'; b.textContent=t;
+      b.type = 'button';
+      b.className = 'ai__chip';
+      b.textContent = t;
       b.onclick = () => sendText(t);
       el.chips.appendChild(b);
     });
@@ -960,128 +894,117 @@
 
   function renderGreeting() {
     const c = getCompany();
-    const nice = { BSX:'BSX', BETPLAY:'BetPlay', EMANUEL:'Emanuel' }[c] || c;
+    const nice = { BSX: 'BSX', BETPLAY: 'BetPlay', EMANUEL: 'Emanuel' }[c] || c;
+    if (!el.msgs) return;
     el.msgs.innerHTML = '';
     const row = document.createElement('div');
     row.className = 'ai__msg bot';
-    row.innerHTML = `<div class="bubble">Olá! Sou sua assistente inteligente da <strong>${nice}</strong>.<br><br>` +
-      `Faça perguntas naturais como:<br>` +
-      `• "Quem está devendo mais?"<br>` +
-      `• "Total de despesas do mês"<br>` +
-      `• "Resumo geral"<br><br>` +
-      `Ou use as sugestões abaixo!</div>`;
+    row.innerHTML = `<div class="bubble">Olá! 👋 Sou seu assistente financeiro da <strong>${nice}</strong>.<br><br>` +
+      `Posso te ajudar com:<br>` +
+      `• Análise de caixa por período<br>` +
+      `• Rankings de gerentes<br>` +
+      `• Despesas e alertas<br><br>` +
+      `Pergunte naturalmente ou use os botões abaixo!</div>`;
     el.msgs.appendChild(row);
-    renderChips();
-    setTimeout(() => el.input?.focus(), 40);
   }
 
-  function pushUser(text){
-    const msg = { who:'me', text: esc(text), ts: now() };
-    state.history.push(msg); saveHistory();
-    el.msgs.appendChild(bubble(msg));
+  function pushUser(text) {
+    const msg = { who: 'me', text: esc(text), ts: now_() };
+    state.history.push(msg);
+    saveHistory();
+    if (el.msgs) el.msgs.appendChild(bubble(msg));
     scrollBottom();
   }
 
-  function pushBot(text){
-    const msg = { who:'bot', text, ts: now() };
-    state.history.push(msg); saveHistory();
-    el.msgs.appendChild(bubble(msg));
+  function pushBot(text) {
+    const msg = { who: 'bot', text, ts: now_() };
+    state.history.push(msg);
+    saveHistory();
+    if (el.msgs) el.msgs.appendChild(bubble(msg));
     scrollBottom();
   }
 
   function esc(s) {
-    const map = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;',
-      '/': '&#x2F;',
-      '`': '&#x60;',
-      '=': '&#x3D;'
-    };
-    return String(s ?? '').replace(/[&<>"'`=\/]/g, m => map[m]);
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(s ?? '').replace(/[&<>"']/g, m => map[m]);
   }
 
-  function showTyping(on){
-    el.typing.classList.toggle('is-hidden', !on);
+  function showTyping(on) {
+    if (el.typing) el.typing.classList.toggle('is-hidden', !on);
     scrollBottom();
   }
 
-  async function streamBotText(fullText){
+  async function streamBotText(fullText) {
     const parts = fullText.split(' ');
     let acc = '';
-    const start = { who:'bot', text:'', ts: now() };
+    const start = { who: 'bot', text: '', ts: now_() };
     const node = bubble(start);
     const bubbleEl = node.querySelector('.bubble');
     const contentSpan = document.createElement('span');
     bubbleEl.insertBefore(contentSpan, bubbleEl.firstChild);
-    el.msgs.appendChild(node);
+    if (el.msgs) el.msgs.appendChild(node);
     scrollBottom();
 
-    for (let i=0;i<parts.length;i++){
-      acc += (i? ' ':'') + parts[i];
+    for (let i = 0; i < parts.length; i++) {
+      acc += (i ? ' ' : '') + parts[i];
       contentSpan.innerHTML = acc;
-      await wait(25 + Math.random()*25);
+      await wait(20 + Math.random() * 20);
       scrollBottom();
     }
-    state.history.push({ who:'bot', text: fullText, ts: now() }); saveHistory();
+    state.history.push({ who: 'bot', text: fullText, ts: now_() });
+    saveHistory();
   }
 
-  const wait = (ms)=> new Promise(r=>setTimeout(r,ms));
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
-  async function sendText(text){
-    const t = String(text||'').trim();
+  async function sendText(text) {
+    const t = String(text || '').trim();
     if (!t) return;
 
-    if (t === '/limpar'){ state.history = []; saveHistory(); renderHistory(); return; }
-    if (t === '/ajuda'){ 
-      pushBot(`🤖 <strong>Assistente Inteligente</strong><br><br>` +
-        `Faça perguntas naturais! Entendo:<br>` +
-        `• "Quem deve mais?"<br>` +
-        `• "Total de despesas"<br>` +
-        `• "Ficha 0301"<br>` +
-        `• "Resumo geral"<br><br>` +
-        `Comandos: <code>/limpar</code>`);
+    if (t === '/limpar') {
+      state.history = [];
+      saveHistory();
+      renderHistory();
+      renderGreeting();
       return;
     }
 
     pushUser(t);
     showTyping(true);
-    try{
+    try {
       const answer = await askLLM(t);
       showTyping(false);
       await streamBotText(answer);
-    }catch(e){
-      console.error(e);
+    } catch (e) {
+      console.error('[AI] Erro:', e);
       showTyping(false);
       pushBot('Ops, algo deu errado. Tente novamente.');
     }
   }
 
-  // ===== Drag & Resize (mantém original) =====
-  function clamp(val, min, max){ return Math.max(min, Math.min(max, val)); }
+  // ===== Drag & Resize =====
+  function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
 
-  (function dragger(){
-    let sx=0, sy=0, ox=0, oy=0, dragging=false;
-    el.handle.addEventListener('mousedown', (ev)=>{
+  if (el.handle) {
+    let sx = 0, sy = 0, ox = 0, oy = 0, dragging = false;
+    el.handle.addEventListener('mousedown', (ev) => {
       dragging = true;
       sx = ev.clientX; sy = ev.clientY;
       const rect = el.panel.getBoundingClientRect();
       ox = rect.left; oy = rect.top;
       ev.preventDefault();
     });
-    window.addEventListener('mousemove', (ev)=>{
+    window.addEventListener('mousemove', (ev) => {
       if (!dragging) return;
       const nx = ox + (ev.clientX - sx);
       const ny = oy + (ev.clientY - sy);
       const maxX = window.innerWidth - 120, maxY = window.innerHeight - 80;
       el.panel.style.left = clamp(nx, 8, maxX) + 'px';
-      el.panel.style.top  = clamp(ny, 8, maxY) + 'px';
+      el.panel.style.top = clamp(ny, 8, maxY) + 'px';
       el.panel.style.right = 'auto';
       el.panel.style.bottom = 'auto';
     });
-    window.addEventListener('mouseup', ()=>{
+    window.addEventListener('mouseup', () => {
       if (!dragging) return;
       dragging = false;
       const rect = el.panel.getBoundingClientRect();
@@ -1089,82 +1012,90 @@
       state.pinned = false;
       saveUI(); updatePin();
     });
-  })();
+  }
 
-  (function resizer(){
-    let sw=0, sh=0, sx=0, sy=0, resizing=false;
-    el.resize.addEventListener('mousedown', (ev)=>{
-      resizing=true;
+  if (el.resize) {
+    let sw = 0, sh = 0, sx = 0, sy = 0, resizing = false;
+    el.resize.addEventListener('mousedown', (ev) => {
+      resizing = true;
       const rect = el.panel.getBoundingClientRect();
       sw = rect.width; sh = rect.height; sx = ev.clientX; sy = ev.clientY;
       ev.preventDefault();
     });
-    window.addEventListener('mousemove', (ev)=>{
+    window.addEventListener('mousemove', (ev) => {
       if (!resizing) return;
       const w = clamp(sw + (ev.clientX - sx), 300, Math.min(700, window.innerWidth - 24));
       const h = clamp(sh + (ev.clientY - sy), 360, Math.min(900, window.innerHeight - 24));
       el.panel.style.width = w + 'px';
       el.panel.style.height = h + 'px';
     });
-    window.addEventListener('mouseup', ()=>{
+    window.addEventListener('mouseup', () => {
       if (!resizing) return;
-      resizing=false;
+      resizing = false;
       const rect = el.panel.getBoundingClientRect();
       state.size = { w: Math.round(rect.width), h: Math.round(rect.height) };
       saveUI();
     });
-  })();
+  }
 
-  function updatePin(){
-    el.btnPin.textContent = state.pinned ? '📌' : '📍';
+  function updatePin() {
+    if (el.btnPin) el.btnPin.textContent = state.pinned ? '📌' : '📍';
   }
 
   // ===== Eventos =====
   el.btnAI?.addEventListener('click', openPanel);
   el.btnClose?.addEventListener('click', closePanel);
-  el.btnClear?.addEventListener('click', ()=>{ state.history=[]; saveHistory(); renderHistory(); });
-  el.btnPin?.addEventListener('click', ()=>{
+  el.btnClear?.addEventListener('click', () => {
+    state.history = [];
+    saveHistory();
+    renderHistory();
+    renderGreeting();
+    renderChips();
+  });
+  el.btnPin?.addEventListener('click', () => {
     state.pinned = !state.pinned;
-    if (state.pinned){
-      el.panel.style.left=''; el.panel.style.top='';
-      el.panel.style.right='24px'; el.panel.style.bottom='24px';
+    if (state.pinned) {
+      el.panel.style.left = '';
+      el.panel.style.top = '';
+      el.panel.style.right = '24px';
+      el.panel.style.bottom = '24px';
       state.pos = null;
     }
-    saveUI(); updatePin();
-  });
-
-  el.form?.addEventListener('submit', (ev)=>{
-    ev.preventDefault();
-    sendText(el.input.value); el.input.value='';
-  });
-  el.input?.addEventListener('keydown', (ev)=>{
-    if (ev.key==='Enter' && !ev.shiftKey){ ev.preventDefault(); el.form.requestSubmit(); }
-    if (ev.key==='Escape'){ closePanel(); }
-  });
-
-  window.addEventListener('keydown', (ev)=>{
-    if (ev.ctrlKey && ev.key.toLowerCase()==='k'){ ev.preventDefault(); openPanel(); el.input.focus(); }
-  });
-
-  (function init(){
-    const ui = loadUI();
-    if (ui.pinned === false){ state.pinned = false; }
+    saveUI();
     updatePin();
-    if (!state.history.length){
-      state.history.push({
-        who:'bot',
-        text:`Olá! 👋 Sou sua assistente inteligente.<br><br>` +
-          `Faça perguntas naturais como:<br>` +
-          `• "Quem deve mais?"<br>` +
-          `• "Total de despesas"<br>` +
-          `• "Resumo geral"`,
-        ts: now()
-      });
-      saveHistory();
+  });
+
+  el.form?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    sendText(el.input.value);
+    el.input.value = '';
+  });
+  el.input?.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && !ev.shiftKey) {
+      ev.preventDefault();
+      el.form.requestSubmit();
     }
+    if (ev.key === 'Escape') closePanel();
+  });
+
+  window.addEventListener('keydown', (ev) => {
+    if (ev.ctrlKey && ev.key.toLowerCase() === 'k') {
+      ev.preventDefault();
+      openPanel();
+      el.input?.focus();
+    }
+  });
+
+  // ===== Init =====
+  (function init() {
+    const ui = loadUI();
+    if (ui.pinned === false) state.pinned = false;
+    updatePin();
     renderCompanyTag();
-    renderHistory();
+    if (state.history.length) {
+      renderHistory();
+    }
   })();
 
-  console.log('🤖 AI Contextual carregada com sucesso!');
+  console.log('🤖 Assistente Financeiro Inteligente carregado!');
 })();

@@ -2805,24 +2805,6 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
 
   arr.push(recPrest);
 
-  if (prestacaoAtual.saldoInfo?.usandoSaldoAcumulado) {
-    const empresaAtual = window.getCompany ? window.getCompany() : 'BSX';
-    const gerenteId = document.getElementById('pcGerente')?.value;
-    
-    if (gerenteId && window.SaldoAcumulado) {
-      try {
-        await window.SaldoAcumulado.setSaldo(
-          gerenteId, 
-          empresaAtual, 
-          prestacaoAtual.saldoInfo.saldoCarregarNovo
-        );
-        console.log('✅ Saldo acumulado atualizado no Supabase:', 
-                    prestacaoAtual.saldoInfo.saldoCarregarNovo);
-      } catch(e) {
-        console.error('❌ Erro ao salvar saldo acumulado:', e);
-      }
-    }
-  }
 
   // ✅ Salva no Supabase + localStorage
   if (typeof window.salvarPrestacaoGlobal === 'function') {

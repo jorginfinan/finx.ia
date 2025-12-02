@@ -2063,7 +2063,7 @@ async function criarPendenciaPagamento(prestacao) {
     
     for (const pag of pagamentosDivida) {
       const valorPagamento = Number(pag.valor) || 0;
-      if (valorPagamento <= 0) return;
+      if (valorPagamento <= 0) continue;  // ✅ era 'return'
       
       // UID único para este pagamento
       const uid = `DIVPAG:${prestacao.id}:${pag.id}:${valorPagamento}`;
@@ -2071,14 +2071,14 @@ async function criarPendenciaPagamento(prestacao) {
       // ✅ VERIFICA SE JÁ FOI CONFIRMADO
       if (confirmadosUIDs.has(uid)) {
         console.log('⚠️ Pagamento já confirmado, não recria:', uid);
-        return;
+        continue;  // ✅ era 'return'
       }
       
       // Verifica se já existe pendência
       const jaExiste = pendencias.some(p => p.uid === uid);
       if (jaExiste) {
         console.log('⚠️ Pendência já existe para este pagamento');
-        return;
+        continue;  // ✅ era 'return'
       }
       
       // Cria pendência

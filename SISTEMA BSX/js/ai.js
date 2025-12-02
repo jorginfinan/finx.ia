@@ -409,9 +409,42 @@
     const p = ctx.prestacoes || [];
     if (!p.length) return 'Sem prestações abertas no momento.';
     
+    // Debug: mostra o que tem nas prestações
+    console.log('[AI] Prestações para ranking:', p.map(x => ({
+      gerente: x.gerente,
+      restante: x.restante,
+      valor: x.valor,
+      recebido: x.recebido
+    })));
+    
+    // Ordena por restante (valor em aberto)
     const maiores = [...p]
       .sort((a,b) => (b.restante||0) - (a.restante||0))
       .slice(0, 5);
+    
+    // Se todos têm restante = 0, tenta ordenar por valor total
+    const todosZerados = maiores.every(x => (x.restante || 0) === 0);
+    
+    if (todosZerados) {
+      // Tenta mostrar por valor total (a pagar)
+      const porValor = [...p]
+        .sort((a,b) => (b.valor||0) - (a.valor||0))
+        .slice(0, 5);
+      
+      if (porValor.some(x => (x.valor || 0) > 0)) {
+        const resp = porValor.map((x,i) => 
+          `${i+1}. <strong>${x.gerente}</strong>: ${fmt(x.valor||0)} (a pagar)`
+        ).join('<br>');
+        
+        return `<strong>Prestações por valor (a pagar):</strong><br><br>${resp}<br><br>` +
+          `<em>ℹ️ Nenhum valor "em aberto" encontrado. Mostrando valores totais.</em>`;
+      }
+      
+      // Mostra informação de debug
+      return `<strong>Prestações encontradas:</strong> ${p.length}<br><br>` +
+        `Todos os valores em aberto estão zerados.<br><br>` +
+        `<em>💡 Verifique se as prestações têm o campo "restam" preenchido no sistema.</em>`;
+    }
     
     const resp = maiores.map((x,i) => 
       `${i+1}. <strong>${x.gerente}</strong>: ${fmt(x.restante||0)} em aberto`
@@ -652,11 +685,13 @@
     try {
       if (window.SupabaseAPI?.gerentes?.getAll) {
         const gerentes = await window.SupabaseAPI.gerentes.getAll();
+        console.log('[AI] Gerentes raw do Supabase:', gerentes?.slice(0, 2)); // Debug
+        
         ctx.gerentes = (gerentes || []).map(g => ({
           id: g.id,
           uid: g.uid || g.id,
-          nome: g.nome || g.apelido || '',
-          numero: g.numero || '',
+          nome: g.nome || g.apelido || g.name || '',
+          numero: g.numero || g.rota || '',
           comissao: Number(g.comissao) || 0
         }));
         console.log('[AI] ✅ Gerentes carregados:', ctx.gerentes.length);
@@ -675,23 +710,55 @@
     try {
       if (window.SupabaseAPI?.prestacoes?.getAll) {
         const prestacoes = await window.SupabaseAPI.prestacoes.getAll();
+        console.log('[AI] Prestações raw do Supabase:', prestacoes?.slice(0, 2)); // Debug
+        
         ctx.prestacoes = (prestacoes || []).filter(p => !p.fechado).map(p => {
           // Encontra o nome do gerente
           const gerente = ctx.gerentes.find(g => 
-            g.uid === p.gerente_id || g.id === p.gerente_id || g.uid === p.gerenteId
+            g.uid === p.gerente_id || g.id === p.gerente_id || 
+            g.uid === p.gerenteId || String(g.id) === String(p.gerente_id)
           );
+          
+          // ✅ Parse do resumo se vier como string JSON
+          let resumo = p.resumo;
+          if (typeof resumo === 'string') {
+            try { resumo = JSON.parse(resumo); } catch(e) { resumo = {}; }
+          }
+          resumo = resumo || {};
+          
+          // ✅ Tenta múltiplos caminhos para os valores
+          const aPagar = Number(resumo.aPagar) || Number(resumo.a_pagar) || 
+                         Number(p.a_pagar) || Number(p.aPagar) || 0;
+          const restam = Number(resumo.restam) || Number(resumo.restante) || 
+                         Number(p.restam) || Number(p.restante) || 0;
+          const pagos = Number(resumo.pagos) || Number(resumo.recebido) || 
+                        Number(p.pagos) || Number(p.recebido) || 0;
+          const coletas = Number(resumo.coletas) || Number(p.coletas) || 0;
+          const despesas = Number(resumo.despesas) || Number(p.despesas) || 0;
+          
+          // Número do gerente para exibição
+          const gerenteNum = gerente?.numero || p.gerente_numero || '';
+          const gerenteNome = gerente?.nome || p.gerente_nome || p.gerenteNome || 'Desconhecido';
+          
           return {
             id: p.id,
-            gerente: gerente?.nome || p.gerente_nome || p.gerenteNome || 'Desconhecido',
+            gerente: gerenteNum ? `${gerenteNum} ${gerenteNome}` : gerenteNome,
             gerenteId: p.gerente_id || p.gerenteId,
             periodo: `${p.ini || ''} a ${p.fim || ''}`,
-            valor: Number(p.resumo?.aPagar || p.a_pagar || 0),
-            restante: Number(p.resumo?.restam || p.restam || 0),
-            recebido: Number(p.resumo?.pagos || p.pagos || 0),
-            coletas: Number(p.resumo?.coletas || 0),
-            despesas: Number(p.resumo?.despesas || 0)
+            valor: aPagar,
+            restante: restam,
+            recebido: pagos,
+            coletas: coletas,
+            despesas: despesas,
+            // Debug
+            _raw: { aPagar, restam, pagos, resumo }
           };
         });
+        
+        // Log de debug
+        if (ctx.prestacoes.length) {
+          console.log('[AI] Exemplo prestação mapeada:', ctx.prestacoes[0]);
+        }
         console.log('[AI] ✅ Prestações carregadas:', ctx.prestacoes.length);
       } else if (typeof window.getPrestacoes === 'function') {
         const arr = window.getPrestacoes() || [];

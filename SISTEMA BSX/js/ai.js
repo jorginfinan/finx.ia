@@ -302,6 +302,16 @@
     if (s.includes('acima') || s.includes('estour') || s.includes('alert')) {
       return { type: 'despesas_acima', confidence: 0.85 };
     }
+    
+    // Lista de gerentes
+    if ((s.includes('lista') || s.includes('quais') || s.includes('todos')) && 
+        (s.includes('gerente') || s.includes('gerentes'))) {
+      return { type: 'listar_gerentes', confidence: 0.9 };
+    }
+    if (s.includes('quantos gerente')) {
+      return { type: 'listar_gerentes', confidence: 0.9 };
+    }
+    
     if (entities.gerentes.length > 0) {
       if (entities.topicos.includes('prestacoes')) {
         return { type: 'prestacao_gerente', confidence: 0.9 };
@@ -314,7 +324,7 @@
     if (entities.fichas.length > 0) {
       return { type: 'info_ficha', confidence: 0.85 };
     }
-    if (s.includes('resumo') || s.includes('visao geral')) {
+    if (s.includes('resumo') || s.includes('visao geral') || s.includes('status')) {
       return { type: 'resumo_geral', confidence: 0.8 };
     }
 
@@ -346,6 +356,9 @@
     switch (intent.type) {
       case 'maior_devedor':
         return processMaiorDevedor(ctx);
+      
+      case 'listar_gerentes':
+        return processListarGerentes(ctx);
       
       case 'total_prestacoes':
         if (entities.gerentes.length > 0) {
@@ -380,6 +393,17 @@
   }
 
   // ===== PROCESSADORES ESPECÍFICOS =====
+  
+  function processListarGerentes(ctx) {
+    const g = ctx.gerentes || [];
+    if (!g.length) return 'Nenhum gerente cadastrado no momento.';
+    
+    const lista = g.map((x, i) => 
+      `${i+1}. <strong>${x.numero || '---'}</strong> ${x.nome} (${x.comissao}%)`
+    ).join('<br>');
+    
+    return `<strong>👥 Gerentes cadastrados (${g.length}):</strong><br><br>${lista}`;
+  }
   
   function processMaiorDevedor(ctx) {
     const p = ctx.prestacoes || [];
@@ -480,36 +504,85 @@
   function processResumoGeral(ctx) {
     const parts = [];
     
+    // Gerentes
+    if (ctx.gerentes && ctx.gerentes.length) {
+      parts.push(`<strong>👥 Gerentes:</strong> ${ctx.gerentes.length} cadastrados`);
+    }
+    
+    // Prestações
+    if (ctx.prestacoes && ctx.prestacoes.length) {
+      const totalAberto = ctx.prestacoes.reduce((a,b) => a + (b.restante||0), 0);
+      const totalRecebido = ctx.prestacoes.reduce((a,b) => a + (b.recebido||0), 0);
+      parts.push(`<strong>📋 Prestações em aberto:</strong> ${ctx.prestacoes.length}<br>` +
+        `• A receber: ${fmt(totalAberto)}<br>` +
+        `• Já recebido: ${fmt(totalRecebido)}`);
+    }
+    
+    // Dashboard (se disponível na tela)
     if (ctx.dashboard) {
-      parts.push(`<strong>Painel:</strong><br>` +
-        `• A receber: ${fmt(ctx.dashboard.totalValor||0)}<br>` +
+      parts.push(`<strong>📊 Painel:</strong><br>` +
+        `• Total valor: ${fmt(ctx.dashboard.totalValor||0)}<br>` +
         `• Recebido: ${fmt(ctx.dashboard.totalRec||0)}<br>` +
         `• Em aberto: ${fmt(ctx.dashboard.totalAberto||0)}`);
     }
     
+    // Financeiro
     if (ctx.financeiro && ctx.financeiro.length) {
-      const rec = ctx.financeiro.filter(x => /RECEBIDO/i.test(x.status));
+      const rec = ctx.financeiro.filter(x => /RECEBIDO|CONFIRMADO/i.test(x.status));
       const pag = ctx.financeiro.filter(x => /PAGO/i.test(x.status));
-      parts.push(`<strong>Financeiro:</strong><br>` +
-        `• Recebido: ${fmt(rec.reduce((a,b) => a + (Number(b.valor)||0), 0))}<br>` +
-        `• Pago: ${fmt(pag.reduce((a,b) => a + (Number(b.valor)||0), 0))}`);
+      const totalRec = rec.reduce((a,b) => a + (Number(b.valor)||0), 0);
+      const totalPag = pag.reduce((a,b) => a + (Number(b.valor)||0), 0);
+      parts.push(`<strong>💰 Financeiro:</strong><br>` +
+        `• Total recebido: ${fmt(totalRec)}<br>` +
+        `• Total pago: ${fmt(totalPag)}<br>` +
+        `• Saldo: ${fmt(totalRec - totalPag)}`);
     }
     
-    return parts.length ? parts.join('<br><br>') : 'Sem dados para resumo geral.';
+    // Pendências
+    if (ctx.pendencias && ctx.pendencias.length) {
+      const aReceber = ctx.pendencias.filter(p => p.tipo === 'RECEBIDO' || p.tipo === 'RECEBER');
+      const aPagar = ctx.pendencias.filter(p => p.tipo === 'PAGO' || p.tipo === 'PAGAR');
+      parts.push(`<strong>⏳ Pendências:</strong><br>` +
+        `• A receber: ${aReceber.length} (${fmt(aReceber.reduce((a,b) => a + b.valor, 0))})<br>` +
+        `• A pagar: ${aPagar.length} (${fmt(aPagar.reduce((a,b) => a + b.valor, 0))})`);
+    }
+    
+    if (!parts.length) {
+      return 'Sem dados disponíveis no momento.<br><br>' +
+        'Verifique se você está conectado e se há dados cadastrados no sistema.';
+    }
+    
+    return parts.join('<br><br>');
   }
 
   function gerarPedidoEsclarecimento(query, ctx) {
     const sugestoes = [];
     
+    // Mostra o que está disponível
+    const disponivel = [];
+    if (ctx.gerentes && ctx.gerentes.length) disponivel.push(`${ctx.gerentes.length} gerentes`);
+    if (ctx.prestacoes && ctx.prestacoes.length) disponivel.push(`${ctx.prestacoes.length} prestações`);
+    if (ctx.financeiro && ctx.financeiro.length) disponivel.push(`${ctx.financeiro.length} lançamentos`);
+    
+    if (disponivel.length) {
+      sugestoes.push(`<em>📊 Dados disponíveis: ${disponivel.join(', ')}</em>`);
+    }
+    
     if (ctx.prestacoes && ctx.prestacoes.length) {
-      sugestoes.push('• Maiores valores em aberto');
-      sugestoes.push('• Total por gerente');
+      sugestoes.push('• "Quem tem maior valor em aberto?"');
+      sugestoes.push('• "Total de prestações"');
     }
     
     if (ctx.despesas && ctx.despesas.length) {
-      sugestoes.push('• Despesas acima do ideal');
-      sugestoes.push('• Total de despesas');
+      sugestoes.push('• "Despesas acima do ideal"');
+      sugestoes.push('• "Total de despesas"');
     }
+    
+    if (ctx.gerentes && ctx.gerentes.length) {
+      sugestoes.push('• "Lista de gerentes"');
+    }
+    
+    sugestoes.push('• "Resumo geral"');
     
     return `Hmm, não entendi bem...<br><br>` +
       `Você pode tentar:<br>` +
@@ -537,22 +610,31 @@
       .replace(/,(\d{2})$/, ',$1');
   }
 
-  // ===== COLETA DE CONTEXTO (mantém original) =====
-  function collectContext() {
-    const ctx = { dashboard: null, prestacoes: [], despesas: [], financeiro: [], vendas: [], saldo: null };
+  // ===== COLETA DE CONTEXTO DO SUPABASE (ASYNC) =====
+  async function collectContext() {
+    const ctx = { 
+      dashboard: null, 
+      prestacoes: [], 
+      despesas: [], 
+      financeiro: [], 
+      vendas: [], 
+      gerentes: [],
+      saldo: null 
+    };
 
     // Função auxiliar para extrair número de texto formatado
     function parseValor(texto) {
       if (!texto) return 0;
-      // Remove tudo exceto números, vírgula e ponto
-      // Exemplo: "R$ 9.057,97 (75,82%)" -> "9.057,97"
       const match = texto.match(/[\d.,]+/);
       if (!match) return 0;
-      // Converte: remove pontos de milhar, troca vírgula por ponto
       return parseFloat(match[0].replace(/\./g, '').replace(',', '.')) || 0;
     }
 
-    // Dashboard
+    // Empresa atual
+    const empresaAtual = getCompany();
+    console.log('[AI] Coletando contexto para empresa:', empresaAtual);
+
+    // Dashboard (da tela)
     try {
       const totValor = document.getElementById('dashResTotValor')?.innerText || '';
       const totRec = document.getElementById('dashResTotRec')?.innerText || '';
@@ -564,11 +646,54 @@
           totalAberto: parseValor(totAber)
         };
       }
-    } catch {}
+    } catch(e) { console.warn('[AI] Erro dashboard:', e); }
 
-    // Prestações
+    // ===== GERENTES DO SUPABASE =====
     try {
-      if (typeof window.getPrestacoes === 'function') {
+      if (window.SupabaseAPI?.gerentes?.getAll) {
+        const gerentes = await window.SupabaseAPI.gerentes.getAll();
+        ctx.gerentes = (gerentes || []).map(g => ({
+          id: g.id,
+          uid: g.uid || g.id,
+          nome: g.nome || g.apelido || '',
+          numero: g.numero || '',
+          comissao: Number(g.comissao) || 0
+        }));
+        console.log('[AI] ✅ Gerentes carregados:', ctx.gerentes.length);
+      } else if (Array.isArray(window.gerentes)) {
+        ctx.gerentes = window.gerentes.map(g => ({
+          id: g.id,
+          uid: g.uid || g.id,
+          nome: g.nome || '',
+          numero: g.numero || '',
+          comissao: Number(g.comissao) || 0
+        }));
+      }
+    } catch(e) { console.warn('[AI] Erro gerentes:', e); }
+
+    // ===== PRESTAÇÕES DO SUPABASE =====
+    try {
+      if (window.SupabaseAPI?.prestacoes?.getAll) {
+        const prestacoes = await window.SupabaseAPI.prestacoes.getAll();
+        ctx.prestacoes = (prestacoes || []).filter(p => !p.fechado).map(p => {
+          // Encontra o nome do gerente
+          const gerente = ctx.gerentes.find(g => 
+            g.uid === p.gerente_id || g.id === p.gerente_id || g.uid === p.gerenteId
+          );
+          return {
+            id: p.id,
+            gerente: gerente?.nome || p.gerente_nome || p.gerenteNome || 'Desconhecido',
+            gerenteId: p.gerente_id || p.gerenteId,
+            periodo: `${p.ini || ''} a ${p.fim || ''}`,
+            valor: Number(p.resumo?.aPagar || p.a_pagar || 0),
+            restante: Number(p.resumo?.restam || p.restam || 0),
+            recebido: Number(p.resumo?.pagos || p.pagos || 0),
+            coletas: Number(p.resumo?.coletas || 0),
+            despesas: Number(p.resumo?.despesas || 0)
+          };
+        });
+        console.log('[AI] ✅ Prestações carregadas:', ctx.prestacoes.length);
+      } else if (typeof window.getPrestacoes === 'function') {
         const arr = window.getPrestacoes() || [];
         ctx.prestacoes = arr.filter(p => !p.fechado).map(p => ({
           id: p.id,
@@ -578,11 +703,49 @@
           recebido: Number(p?.resumo?.pagos || 0)
         }));
       }
-    } catch {}
+    } catch(e) { console.warn('[AI] Erro prestações:', e); }
 
-    // Despesas
+    // ===== LANÇAMENTOS/FINANCEIRO DO SUPABASE =====
     try {
-      if (typeof window.getDespesas === 'function') {
+      if (window.SupabaseAPI?.lancamentos?.getAll) {
+        const lancamentos = await window.SupabaseAPI.lancamentos.getAll();
+        ctx.financeiro = (lancamentos || []).map(l => {
+          const gerente = ctx.gerentes.find(g => 
+            g.uid === l.gerente_id || g.id === l.gerente_id
+          );
+          return {
+            id: l.id,
+            gerente: gerente?.nome || l.gerente_nome || '',
+            valor: Number(l.valor || 0),
+            status: l.status || '',
+            forma: l.forma || '',
+            tipo: l.tipo || '',
+            data: l.data || ''
+          };
+        });
+        console.log('[AI] ✅ Financeiro carregado:', ctx.financeiro.length);
+      } else if (Array.isArray(window.lanc)) {
+        ctx.financeiro = window.lanc.map(l => ({
+          gerente: l.gerente || '',
+          valor: Number(l.valor || 0),
+          status: l.status || '',
+          forma: l.forma || ''
+        }));
+      }
+    } catch(e) { console.warn('[AI] Erro financeiro:', e); }
+
+    // ===== DESPESAS (da prestação atual ou do sistema) =====
+    try {
+      // Tenta pegar despesas da prestação atual na tela
+      if (window.prestacaoAtual?.despesas) {
+        ctx.despesas = window.prestacaoAtual.despesas.map(d => ({
+          gerente: d.gerenteNome || d.gerente || '',
+          ficha: d.ficha || '',
+          descricao: d.descricao || d.info || '',
+          valor: Number(d.valor || 0),
+          diff: Number(d.diff || 0)
+        }));
+      } else if (typeof window.getDespesas === 'function') {
         const arr = window.getDespesas() || [];
         ctx.despesas = arr.map(d => ({
           gerente: d.gerenteNome || d.gerente || '',
@@ -591,21 +754,9 @@
           diff: Number(d.diff || 0)
         }));
       }
-    } catch {}
+    } catch(e) { console.warn('[AI] Erro despesas:', e); }
 
-    // Financeiro
-    try {
-      if (Array.isArray(window.lanc)) {
-        ctx.financeiro = window.lanc.map(l => ({
-          gerente: l.gerente || '',
-          valor: Number(l.valor || 0),
-          status: l.status || '',
-          forma: l.forma || ''
-        }));
-      }
-    } catch {}
-
-    // Vendas
+    // ===== VENDAS =====
     try {
       if (Array.isArray(window.vendas)) {
         ctx.vendas = window.vendas.map(v => ({
@@ -615,17 +766,54 @@
           liquida: Number(v.liquida || v.liquido || 0)
         }));
       }
-    } catch {}
+    } catch(e) { console.warn('[AI] Erro vendas:', e); }
+
+    // ===== PENDÊNCIAS DO SUPABASE =====
+    try {
+      if (window.PendenciasAPI?.getAll) {
+        const pendencias = await window.PendenciasAPI.getAll();
+        ctx.pendencias = (pendencias || []).filter(p => p.status === 'PENDENTE').map(p => {
+          const gerente = ctx.gerentes.find(g => 
+            g.uid === p.gerente_id || g.id === p.gerente_id
+          );
+          return {
+            id: p.id,
+            gerente: gerente?.nome || p.gerente_nome || '',
+            valor: Number(p.valor || p.valorOriginal || 0),
+            tipo: p.tipoCaixa || p.tipo || '',
+            info: p.info || ''
+          };
+        });
+        console.log('[AI] ✅ Pendências carregadas:', ctx.pendencias?.length || 0);
+      }
+    } catch(e) { console.warn('[AI] Erro pendências:', e); }
+
+    console.log('[AI] Contexto final:', {
+      gerentes: ctx.gerentes.length,
+      prestacoes: ctx.prestacoes.length,
+      financeiro: ctx.financeiro.length,
+      despesas: ctx.despesas.length,
+      pendencias: ctx.pendencias?.length || 0
+    });
 
     return ctx;
   }
 
-  // ===== CHAMADA PARA LLM (mantém original com fallback melhorado) =====
+  // ===== CHAMADA PARA LLM (ASYNC COM SUPABASE) =====
   async function askLLM(question) {
-    const ctx = collectContext();
+    // Coleta contexto do Supabase (async)
+    const ctx = await collectContext();
     
     // Processa com o sistema inteligente
     const query = smartProcessQuestion(question);
+    
+    console.log('[AI] Query processada:', query);
+    console.log('[AI] Contexto disponível:', {
+      temDashboard: !!ctx.dashboard,
+      prestacoes: ctx.prestacoes.length,
+      gerentes: ctx.gerentes.length,
+      financeiro: ctx.financeiro.length
+    });
     
     // Gera resposta contextual
     const answer = generateContextualResponse(query, ctx);

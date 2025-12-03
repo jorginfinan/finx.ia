@@ -2061,25 +2061,25 @@ async function criarPendenciaPagamento(prestacao) {
     const pendencias = __getPendencias();
     let criadas = 0;
     
-    for (const pag of pagamentosDivida) {
-      const valorPagamento = Number(pag.valor) || 0;
-      if (valorPagamento <= 0) continue;  // ✅ era 'return'
-      
-      // UID único para este pagamento
-      const uid = `DIVPAG:${prestacao.id}:${pag.id}:${valorPagamento}`;
-      
-      // ✅ VERIFICA SE JÁ FOI CONFIRMADO
-      if (confirmadosUIDs.has(uid)) {
-        console.log('⚠️ Pagamento já confirmado, não recria:', uid);
-        continue;  // ✅ era 'return'
-      }
-      
-      // Verifica se já existe pendência
-      const jaExiste = pendencias.some(p => p.uid === uid);
-      if (jaExiste) {
-        console.log('⚠️ Pendência já existe para este pagamento');
-        continue;  // ✅ era 'return'
-      }
+for (const pag of pagamentosDivida) {
+  const valorPagamento = Number(pag.valor) || 0;
+  if (valorPagamento <= 0) continue;  // ✅ era 'return'
+  
+  // UID único para este pagamento
+  const uid = `DIVPAG:${prestacao.id}:${pag.id}:${valorPagamento}`;
+  
+  // ✅ VERIFICA SE JÁ FOI CONFIRMADO
+  if (confirmadosUIDs.has(uid)) {
+    console.log('⚠️ Pagamento já confirmado, não recria:', uid);
+    continue;  // ✅ era 'return'
+  }
+  
+  // Verifica se já existe pendência
+  const jaExiste = pendencias.some(p => p.uid === uid);
+  if (jaExiste) {
+    console.log('⚠️ Pendência já existe para este pagamento');
+    continue;  // ✅ era 'return'
+  }
       
       // Cria pendência
 const novaPendencia = {
@@ -3197,11 +3197,22 @@ window.prestToDataURL = function(rec) {
   try {
     console.log('[prestToDataURL] Gerando PNG para prestação:', rec.id);
     
+    // ✅ Calcula altura necessária baseada no número de despesas
+    const qtdDespesas = (rec.despesas || []).length;
+    const rowHeight = 28;
+    const headerHeight = 100;
+    const footerHeight = 60;
+    const minTableHeight = 700;
+    const tableHeightNeeded = Math.max(minTableHeight, qtdDespesas * rowHeight + 100);
+    const canvasHeight = Math.max(900, headerHeight + tableHeightNeeded + footerHeight);
+    
     // Canvas base (offscreen)
     const cvs = document.createElement('canvas');
     cvs.width = 1200;
-    cvs.height = 900;
+    cvs.height = canvasHeight; // ✅ Altura dinâmica
     const ctx = cvs.getContext('2d');
+    
+    console.log('[prestToDataURL] Canvas:', cvs.width, 'x', cvs.height, '| Despesas:', qtdDespesas);
     
     if (!ctx) {
       console.error('[prestToDataURL] Erro ao criar contexto 2D');
@@ -3280,12 +3291,18 @@ window.prestToDataURL = function(rec) {
     const qtdLin = Math.max(itens.length, 1);
 
     let rowH, fz;
-    if (qtdLin <= 27) {
+    if (qtdLin <= 20) {
       rowH = 32;
       fz   = 16;
+    } else if (qtdLin <= 35) {
+      rowH = 26;
+      fz   = 14;
+    } else if (qtdLin <= 50) {
+      rowH = 22;
+      fz   = 12;
     } else {
-      rowH = Math.floor(bodyH / qtdLin);
-      fz   = Math.max(10, Math.floor(rowH * 0.60)); // fonte mínima 10
+      rowH = Math.max(18, Math.floor(bodyH / qtdLin));
+      fz   = Math.max(10, Math.floor(rowH * 0.55));
     }
 
     let y = leftY + headerH;

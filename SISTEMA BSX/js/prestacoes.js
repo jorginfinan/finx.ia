@@ -491,7 +491,7 @@ function renderValesPrestacao(){
   tb.innerHTML = rows.map(v=>`
     <tr>
       <td>${esc(v.cod||'-')}</td>
-      <td>${fmtBRL(v.valor||0)}</td>
+    <td>${fmtBRL(v.saldo || v.valor || 0)}</td>
       <td style="text-align:left">
         ${esc(v.obs||'')}
         ${v.periodo?` <small style="color:#6b7280">(${esc(v.periodo)})</small>`:''}
@@ -544,7 +544,7 @@ tb.querySelectorAll('[data-vale-quitar]').forEach(b=>{
     const v = (vales||[]).find(x=>x.id===id); 
     if(!v) return;
 
-    const saldoAntes = Number(v.valor)||0;
+    const saldoAntes = Number(v.saldo ?? v.valor) || 0;  // ✅ Usa saldo atual
     if (!confirm(`Quitar este vale? Isso zera o saldo de ${fmtBRL(saldoAntes)} e marca como quitado.`)) return;
 
     v.valor   = 0;
@@ -2941,7 +2941,8 @@ async function __applyValesOnSave(prevRec, recPrest){
       const delta = +(cur - prev);
       if (Math.abs(delta) < 1e-6) return;
 
-      const saldoAntes = Number(v.valor)||0;
+      // ✅ Usa saldo atual, não valor original
+      const saldoAntes = Number(v.saldo ?? v.valor) || 0;
       let saldoDepois  = +(saldoAntes - delta);
       if (saldoDepois < EPS) saldoDepois = 0;
 
@@ -2971,10 +2972,14 @@ async function __applyValesOnSave(prevRec, recPrest){
     });
 
     if (eventos.length){
-      // Atualiza no Supabase
       if (window.SupabaseAPI?.vales) {
         for (const upd of valesParaAtualizar) {
-          await window.SupabaseAPI.vales.update(upd.id, { saldo: upd.saldo, quitado: upd.quitado });
+          // ✅ Atualiza saldo E valor para manter sincronizado
+          await window.SupabaseAPI.vales.update(upd.id, { 
+            saldo: upd.saldo, 
+            valor: upd.saldo,  // ✅ Atualiza valor também
+            quitado: upd.quitado 
+          });
         }
       }
       // Log

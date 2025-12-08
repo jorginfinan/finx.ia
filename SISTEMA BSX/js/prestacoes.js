@@ -2757,9 +2757,8 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
     prestacaoAtual.valeParcAplicado =
       __backfillValeParcFromPagamentos(prestacaoAtual.pagamentos, gerenteId);
   }
-
-  __applyValesOnSave(prevRec, recPrest);
-  __valesReload();  
+  await __applyValesOnSave(prevRec, recPrest);
+  // vales já são recarregados dentro da função
 
   console.log('🔍 DEBUG SALDO - Verificando condições para salvar:', {
     temSaldoAcumulado: !!window.SaldoAcumulado,
@@ -2930,6 +2929,13 @@ console.log('✅ Todas as despesas processadas');
 async function __applyValesOnSave(prevRec, recPrest){
   try{
     const EPS = 0.005;
+    
+    // ✅ RECARREGA VALES DO SUPABASE para ter saldos atualizados
+    if (window.__valesReloadAsync) {
+      await window.__valesReloadAsync();
+      console.log('[Vales] ✅ Vales recarregados do Supabase antes de aplicar descontos');
+    }
+    
     const prevMap = new Map((prevRec?.valeParcAplicado || []).map(x => [x.id, Number(x.aplicado)||0]));
     const curMap  = new Map((prestacaoAtual?.valeParcAplicado || []).map(x => [x.id, Number(x.aplicado)||0]));
     const eventos = [];
@@ -2941,8 +2947,8 @@ async function __applyValesOnSave(prevRec, recPrest){
       const delta = +(cur - prev);
       if (Math.abs(delta) < 1e-6) return;
 
-      // ✅ Usa saldo atual, não valor original
-      const saldoAntes = Number(v.saldo ?? v.valor) || 0;
+// ✅ Usa saldo atual do Supabase
+const saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
       let saldoDepois  = +(saldoAntes - delta);
       if (saldoDepois < EPS) saldoDepois = 0;
 
@@ -3736,7 +3742,7 @@ async function deletePrest(id){
       logs.forEach(ev=>{
         const v = (window.vales||[]).find(x => x.id === ev.valeId);
         if (!v) return;
-        const saldoAntes = Number(v.valor)||0;
+        const saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
         v.valor   = Number((saldoAntes + Number(ev.delta||0)).toFixed(2));
         if (v.valor > 0) v.quitado = false;
 
@@ -4550,7 +4556,7 @@ function vlsRenderTabela(){
       const id = b.getAttribute('data-vls-quitar');
       const v  = (__valesReload()||[]).find(x=>x.id===id);
       if (!v || v.quitado) return;
-      const saldoAntes = Number(v.valor)||0;
+      const saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
       if (!confirm(`Quitar este vale? Isso zera o saldo de ${fmtBRL(saldoAntes)}.`)) return;
 
       v.valor = 0;

@@ -1481,7 +1481,9 @@ if (typeof window.saveLanc === 'function') {
     if (btnD) {
       e.preventDefault();
       e.stopPropagation();
-
+      
+      // ✅ Executa como async
+      (async () => {
       // Só ADMIN pode descartar
       if (!(window.canDeleteLanc && window.canDeleteLanc())) {
         alert('Apenas ADMIN pode descartar pendências.');
@@ -1498,8 +1500,13 @@ if (typeof window.saveLanc === 'function') {
       const pendencias = __getPendencias();
       const pendenciaDescartada = pendencias.find(function(x) { return x.id == id; });
       
-      const pend = pendencias.filter(function(x) { return x.id != id; });
-      __setPendencias(pend);
+      // ✅ DELETA DO SUPABASE (não apenas do cache local)
+      if (pendenciaDescartada) {
+        // Usa o uid ou id para deletar
+        const uidToDelete = pendenciaDescartada.uid || pendenciaDescartada.id;
+        await window.__removePendencia(uidToDelete);
+        console.log('[Pendencias] ✅ Descartada do Supabase:', uidToDelete);
+      }
       
       // ✅ AUDITORIA - Registra descarte
       if (pendenciaDescartada && typeof window.AuditLog !== 'undefined' && typeof window.AuditLog.log === 'function') {
@@ -1516,6 +1523,7 @@ if (typeof window.saveLanc === 'function') {
         renderFinPendencias();
       }
       
+      })(); // ✅ Fecha a função async
       return;
     }
   }, true);

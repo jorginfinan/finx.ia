@@ -31,24 +31,6 @@
     }
   }
   
-  async function getEmpresaId() {
-    try {
-      const empresa = getCompany();
-      // Busca o ID da empresa no Supabase
-      if (window.supabase) {
-        const { data } = await window.supabase
-          .from('empresas')
-          .select('id')
-          .eq('codigo', empresa)
-          .single();
-        return data?.id || null;
-      }
-    } catch(e) {
-      console.warn('[Audit] Erro ao buscar empresa_id:', e);
-    }
-    return null;
-  }
-  
   // ===== REGISTRAR AÇÃO NO SUPABASE =====
   async function log(action, details = {}) {
     try {
@@ -64,33 +46,29 @@
           user_role: user.role,
           empresa_codigo: empresa
         },
-        ip_address: null, // Será preenchido pelo backend se disponível
-        user_agent: navigator.userAgent?.substring(0, 500) || '',
-        empresa_id: await getEmpresaId()
+        user_agent: (navigator.userAgent || '').substring(0, 500)
       };
       
       console.log('[Audit]', action, details);
       
-      // Salva no Supabase
-      if (window.supabase) {
-        const { data, error } = await window.supabase
+      // ✅ USA SupabaseAPI.client
+      if (window.SupabaseAPI?.client) {
+        const { data, error } = await window.SupabaseAPI.client
           .from('auditoria')
           .insert([entry])
           .select()
           .single();
         
         if (error) {
-          console.error('[Audit] Erro ao salvar no Supabase:', error);
-          // Fallback: salva no localStorage
+          console.error('[Audit] Erro ao salvar no Supabase:', error.message);
           saveToLocalStorage(entry);
         } else {
           console.log('[Audit] ✅ Salvo no Supabase:', data?.id);
-          // Invalida cache
           cacheTimestamp = 0;
           return data;
         }
       } else {
-        console.warn('[Audit] Supabase não disponível, salvando local');
+        console.warn('[Audit] SupabaseAPI não disponível, salvando local');
         saveToLocalStorage(entry);
       }
       
@@ -111,7 +89,6 @@
         _localId: 'local_' + Date.now(),
         _createdAt: new Date().toISOString()
       });
-      // Mantém no máximo 100 pendentes
       if (pending.length > 100) pending.splice(0, pending.length - 100);
       localStorage.setItem(key, JSON.stringify(pending));
     } catch(e) {
@@ -121,7 +98,8 @@
   
   // Sincroniza pendentes do localStorage para Supabase
   async function syncPendingLogs() {
-    if (!window.supabase) return;
+    // ✅ USA SupabaseAPI.client
+    if (!window.SupabaseAPI?.client) return;
     
     try {
       const key = 'APP_AUDIT_PENDING';
@@ -135,13 +113,12 @@
         usuario_nome: p.usuario_nome,
         acao: p.acao,
         detalhes: p.detalhes,
-        ip_address: p.ip_address,
         user_agent: p.user_agent,
-        empresa_id: p.empresa_id,
         created_at: p._createdAt
       }));
       
-      const { error } = await window.supabase
+      // ✅ USA SupabaseAPI.client
+      const { error } = await window.SupabaseAPI.client
         .from('auditoria')
         .insert(toInsert);
       
@@ -162,12 +139,14 @@
         return logsCache;
       }
       
-      if (!window.supabase) {
-        console.warn('[Audit] Supabase não disponível');
+      // ✅ USA SupabaseAPI.client
+      if (!window.SupabaseAPI?.client) {
+        console.warn('[Audit] SupabaseAPI não disponível');
         return [];
       }
       
-      let query = window.supabase
+      // ✅ USA SupabaseAPI.client
+      let query = window.SupabaseAPI.client
         .from('auditoria')
         .select('*')
         .order('created_at', { ascending: false })
@@ -287,8 +266,9 @@
   // ===== LIMPAR LOGS ANTIGOS =====
   async function clearOldLogs(days = 90) {
     try {
-      if (!window.supabase) {
-        alert('Supabase não disponível');
+      // ✅ USA SupabaseAPI.client
+      if (!window.SupabaseAPI?.client) {
+        alert('SupabaseAPI não disponível');
         return 0;
       }
       
@@ -297,7 +277,7 @@
       const cutoffISO = cutoffDate.toISOString();
       
       // Conta quantos serão removidos
-      const { count } = await window.supabase
+      const { count } = await window.SupabaseAPI.client
         .from('auditoria')
         .select('*', { count: 'exact', head: true })
         .lt('created_at', cutoffISO);
@@ -306,8 +286,8 @@
         return 0;
       }
       
-      // Remove
-      const { error } = await window.supabase
+      // ✅ USA SupabaseAPI.client
+      const { error } = await window.SupabaseAPI.client
         .from('auditoria')
         .delete()
         .lt('created_at', cutoffISO);
@@ -318,8 +298,6 @@
       }
       
       log('auditoria_limpeza', { dias: days, removidos: count });
-      
-      // Invalida cache
       cacheTimestamp = 0;
       
       return count;
@@ -353,7 +331,6 @@
       // Formatar detalhes
       let detailsStr = '';
       const detailsToShow = { ...l.details };
-      // Remove campos internos
       delete detailsToShow.user_id;
       delete detailsToShow.user_role;
       delete detailsToShow.empresa_codigo;
@@ -420,7 +397,8 @@
       'count': 'Quantidade',
       'periodo': 'Período',
       'ini': 'Início',
-      'fim': 'Fim'
+      'fim': 'Fim',
+      'info': 'Info'
     };
     
     return labels[key] || key;
@@ -430,7 +408,6 @@
   function formatDetailValue(key, value) {
     if (value === null || value === undefined) return '—';
     
-    // Valores monetários
     if (key === 'total' || key === 'valor') {
       const num = parseFloat(value);
       if (!isNaN(num)) {
@@ -603,7 +580,7 @@
     
     if (btnRefresh) {
       btnRefresh.addEventListener('click', async function() {
-        cacheTimestamp = 0; // Força refresh
+        cacheTimestamp = 0;
         await renderTable();
         await populateFilters();
       });
@@ -612,13 +589,10 @@
   
   // ===== INICIALIZAÇÃO =====
   async function init() {
-    // Só inicializa se estiver na página de histórico
     const page = document.getElementById('pageHistorico');
     if (!page) return;
     
-    // Sincroniza logs pendentes
     await syncPendingLogs();
-    
     await populateFilters();
     await renderTable();
     initUI();
@@ -639,12 +613,10 @@
     init
   });
   
-  // Auto-inicializar quando a página de histórico for mostrada
+  // Auto-inicializar
   document.addEventListener('DOMContentLoaded', function() {
-    // Sincroniza pendentes ao carregar
     setTimeout(syncPendingLogs, 2000);
     
-    // Observa quando a página é mostrada
     const observer = new MutationObserver(function() {
       const page = document.getElementById('pageHistorico');
       if (page && !page.classList.contains('hidden') && !page.__auditInit) {
@@ -659,7 +631,6 @@
     }
   });
   
-  // Também inicializa ao navegar
   window.addEventListener('hashchange', function() {
     const hash = (location.hash || '').replace('#', '');
     if (hash === 'historico' || hash === 'audit') {

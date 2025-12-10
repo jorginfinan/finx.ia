@@ -2,14 +2,15 @@
 (function() {
   'use strict';
   
-  // Aguarda o AuditLog e Supabase estarem disponíveis
+  // Aguarda o AuditLog e SupabaseAPI estarem disponíveis
   function waitForDependencies(callback, maxAttempts = 50) {
     let attempts = 0;
     
     const check = () => {
       attempts++;
       
-      if (typeof window.AuditLog !== 'undefined' && window.supabase) {
+      // ✅ USA SupabaseAPI.client ao invés de window.supabase
+      if (typeof window.AuditLog !== 'undefined' && window.SupabaseAPI?.client) {
         callback();
         return;
       }
@@ -235,49 +236,49 @@
     }
     
     // ===== INTERCEPTAR VALES =====
-    if (window.ValesAPI) {
-      interceptFunction(window.ValesAPI, 'create', {
+    if (window.SupabaseAPI?.vales) {
+      interceptFunction(window.SupabaseAPI.vales, 'create', {
         action: 'vale_criado',
         getDetails: ([data], result) => ({
-          id: result?.id,
-          gerenteId: data.gerente_id,
+          id: result?.id || data.id,
+          gerenteId: data.gerenteId,
           valor: data.valor
         })
       });
       
-      interceptFunction(window.ValesAPI, 'update', {
+      interceptFunction(window.SupabaseAPI.vales, 'update', {
         action: 'vale_editado',
         getDetails: ([id, data]) => ({ id, changes: Object.keys(data).join(', ') })
       });
       
-      interceptFunction(window.ValesAPI, 'delete', {
+      interceptFunction(window.SupabaseAPI.vales, 'delete', {
         before: ([id]) => window.AuditLog.log('vale_excluido', { id })
       });
       
-      console.log('[Audit-Auto] ✅ ValesAPI interceptado');
+      console.log('[Audit-Auto] ✅ SupabaseAPI.vales interceptado');
     }
     
     // ===== INTERCEPTAR DESPESAS =====
-    if (window.DespesasAPI) {
-      interceptFunction(window.DespesasAPI, 'create', {
+    if (window.SupabaseAPI?.despesas) {
+      interceptFunction(window.SupabaseAPI.despesas, 'create', {
         action: 'despesa_criada',
         getDetails: ([data], result) => ({
-          id: result?.id,
+          id: result?.id || data.id,
           descricao: data.info || data.descricao,
           valor: data.valor
         })
       });
       
-      interceptFunction(window.DespesasAPI, 'update', {
+      interceptFunction(window.SupabaseAPI.despesas, 'update', {
         action: 'despesa_editada',
         getDetails: ([id, data]) => ({ id, changes: Object.keys(data).join(', ') })
       });
       
-      interceptFunction(window.DespesasAPI, 'delete', {
+      interceptFunction(window.SupabaseAPI.despesas, 'delete', {
         before: ([id]) => window.AuditLog.log('despesa_excluida', { id })
       });
       
-      console.log('[Audit-Auto] ✅ DespesasAPI interceptado');
+      console.log('[Audit-Auto] ✅ SupabaseAPI.despesas interceptado');
     }
     
     // ===== INTERCEPTAR SALDO ACUMULADO =====

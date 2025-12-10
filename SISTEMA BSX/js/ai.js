@@ -257,6 +257,11 @@
   function detectIntent(text) {
     const s = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     
+    // Comando de debug especial
+    if (s.includes('/debug') || s.includes('debug caixa')) {
+      return { type: 'debug_caixa', confidence: 1.0 };
+    }
+    
     // Mapeamento de padrões para intenções
     const intents = [
       // ===== NOVAS INTENÇÕES SEMANAIS =====
@@ -393,48 +398,45 @@
       }
     } catch(e) { console.warn('[AI] Erro prestações:', e); }
 
-    // Lançamentos (Financeiro) - SEMPRE FILTRADO POR PERÍODO
+    // Lançamentos (Financeiro) - USA MESMA FONTE DO PAINEL: window.lanc
     try {
-      if (window.SupabaseAPI?.lancamentos?.getAll) {
+      let lancamentosRaw = [];
+      
+      // ✅ PRIORIDADE 1: window.lanc (mesma fonte do painel financeiro)
+      if (Array.isArray(window.lanc) && window.lanc.length > 0) {
+        lancamentosRaw = window.lanc;
+        console.log('[AI] Usando window.lanc (mesma fonte do painel):', lancamentosRaw.length, 'lançamentos');
+      } 
+      // FALLBACK: Supabase se window.lanc não disponível
+      else if (window.SupabaseAPI?.lancamentos?.getAll) {
         const lancamentos = await window.SupabaseAPI.lancamentos.getAll();
-        const mapped = (lancamentos || []).map(l => ({
-          id: l.id,
-          uid: l.uid,
-          gerente: l.gerente || '',
-          gerenteId: l.gerente_id,
-          gerenteNome: ctx.gerentes.find(g => g.uid === l.gerente_id || g.id === l.gerente_id)?.nome || l.gerente || '',
-          valor: Number(l.valor) || 0,
-          tipo: l.tipo || '',
-          status: l.status || '',
-          forma: l.forma || '',
-          data: l.data,
-          createdAt: l.created_at
-        }));
-        
-        // ✅ SEMPRE filtra por período para mostrar dados corretos
-        if (periodo?.inicio && periodo?.fim) {
-          ctx.lancamentos = mapped.filter(l => {
-            const dataL = new Date(l.data || l.createdAt);
-            return dataL >= periodo.inicio && dataL <= periodo.fim;
-          });
-        } else {
-          ctx.lancamentos = mapped;
-        }
-      } else if (Array.isArray(window.lanc)) {
-        // Fallback para localStorage - também filtrado
-        const mapped = window.lanc.map(l => ({
-          ...l,
-          gerenteNome: l.gerente || ''
-        }));
-        
-        if (periodo?.inicio && periodo?.fim) {
-          ctx.lancamentos = mapped.filter(l => {
-            const dataL = new Date(l.data);
-            return dataL >= periodo.inicio && dataL <= periodo.fim;
-          });
-        } else {
-          ctx.lancamentos = mapped;
-        }
+        lancamentosRaw = lancamentos || [];
+        console.log('[AI] Usando Supabase (fallback):', lancamentosRaw.length, 'lançamentos');
+      }
+      
+      const mapped = lancamentosRaw.map(l => ({
+        id: l.id,
+        uid: l.uid,
+        gerente: l.gerente || '',
+        gerenteId: l.gerente_id || l.gerenteId,
+        gerenteNome: ctx.gerentes.find(g => g.uid === l.gerente_id || g.id === l.gerente_id)?.nome || l.gerente || '',
+        valor: Number(l.valor) || 0,
+        tipo: l.tipo || '',
+        status: l.status || '',
+        forma: l.forma || '',
+        data: l.data,
+        createdAt: l.created_at || l.createdAt
+      }));
+      
+      // ✅ FILTRA POR PERÍODO (igual ao painel quando tem filtro de mês/ano)
+      if (periodo?.inicio && periodo?.fim) {
+        ctx.lancamentos = mapped.filter(l => {
+          const dataL = new Date(l.data || l.createdAt);
+          return dataL >= periodo.inicio && dataL <= periodo.fim;
+        });
+        console.log('[AI] Após filtro de período:', ctx.lancamentos.length, 'lançamentos');
+      } else {
+        ctx.lancamentos = mapped;
       }
     } catch(e) { console.warn('[AI] Erro lançamentos:', e); }
 
@@ -603,8 +605,9 @@
         `Nenhum lançamento encontrado neste período.`;
     }
     
-    const recebimentos = lancamentos.filter(l => /RECEBIDO/i.test(l.status));
-    const pagamentos = lancamentos.filter(l => /PAGO/i.test(l.status));
+    // ✅ IGUAL AO FINANCEIRO: usa APENAS status === 'RECEBIDO' ou 'PAGO'
+    const recebimentos = lancamentos.filter(l => l.status === 'RECEBIDO');
+    const pagamentos = lancamentos.filter(l => l.status === 'PAGO');
     
     const totalRec = recebimentos.reduce((s, l) => s + l.valor, 0);
     const totalPag = pagamentos.reduce((s, l) => s + l.valor, 0);
@@ -647,9 +650,9 @@
     const prestacoesAbertas = prestacoes.filter(p => !p.fechado || p.restam > 0);
     const totalAberto = prestacoesAbertas.reduce((s, p) => s + p.restam, 0);
     
-    // Caixa
-    const recebimentos = lancamentos.filter(l => /RECEBIDO/i.test(l.status));
-    const pagamentos = lancamentos.filter(l => /PAGO/i.test(l.status));
+    // Caixa - ✅ IGUAL AO FINANCEIRO
+    const recebimentos = lancamentos.filter(l => l.status === 'RECEBIDO');
+    const pagamentos = lancamentos.filter(l => l.status === 'PAGO');
     const totalRec = recebimentos.reduce((s, l) => s + l.valor, 0);
     const totalPag = pagamentos.reduce((s, l) => s + l.valor, 0);
     const saldo = totalRec - totalPag;
@@ -695,7 +698,7 @@
 
   // ===== PROCESSADORES EXISTENTES (MELHORADOS) =====
 
-  // Caixa do período
+  // Caixa do período - USA MESMA LÓGICA DO PAINEL FINANCEIRO
   function processCaixaPeriodo(ctx) {
     const { lancamentos, periodo } = ctx;
     
@@ -704,12 +707,9 @@
         `Sem lançamentos encontrados para este período.`;
     }
     
-    const recebimentos = lancamentos.filter(l => 
-      /RECEBIDO|ENTRADA|CREDITO/i.test(l.tipo) || /RECEBIDO/i.test(l.status)
-    );
-    const pagamentos = lancamentos.filter(l => 
-      /PAGO|SAIDA|DEBITO/i.test(l.tipo) || /PAGO/i.test(l.status)
-    );
+    // ✅ IGUAL AO FINANCEIRO: usa APENAS status === 'RECEBIDO' ou 'PAGO'
+    const recebimentos = lancamentos.filter(l => l.status === 'RECEBIDO');
+    const pagamentos = lancamentos.filter(l => l.status === 'PAGO');
     
     const totalRec = recebimentos.reduce((s, l) => s + l.valor, 0);
     const totalPag = pagamentos.reduce((s, l) => s + l.valor, 0);
@@ -969,8 +969,9 @@
       alertas.push(`💸 <strong>${despesasAltas.length}</strong> prestações com despesas acima de 25%`);
     }
     
-    const recebido = lancamentos.filter(l => /RECEBIDO/i.test(l.status)).reduce((s,l) => s + l.valor, 0);
-    const pago = lancamentos.filter(l => /PAGO/i.test(l.status)).reduce((s,l) => s + l.valor, 0);
+    // ✅ IGUAL AO FINANCEIRO
+    const recebido = lancamentos.filter(l => l.status === 'RECEBIDO').reduce((s,l) => s + l.valor, 0);
+    const pago = lancamentos.filter(l => l.status === 'PAGO').reduce((s,l) => s + l.valor, 0);
     if (pago > recebido) {
       alertas.push(`🔴 Saldo negativo no período: ${fmt(recebido - pago)}`);
     }
@@ -995,9 +996,10 @@
     const totalAberto = abertas.reduce((s, p) => s + p.restam, 0);
     parts.push(`📋 <strong>Prestações:</strong> ${prestacoes.length} no período (${abertas.length} em aberto: ${fmt(totalAberto)})`);
     
-    const recebido = lancamentos.filter(l => /RECEBIDO|ENTRADA/i.test(l.tipo) || /RECEBIDO/i.test(l.status))
+    // ✅ IGUAL AO FINANCEIRO
+    const recebido = lancamentos.filter(l => l.status === 'RECEBIDO')
       .reduce((s, l) => s + l.valor, 0);
-    const pago = lancamentos.filter(l => /PAGO|SAIDA/i.test(l.tipo) || /PAGO/i.test(l.status))
+    const pago = lancamentos.filter(l => l.status === 'PAGO')
       .reduce((s, l) => s + l.valor, 0);
     const saldo = recebido - pago;
     const saldoIcon = saldo >= 0 ? '✅' : '⚠️';
@@ -1033,7 +1035,63 @@
       `<strong>🚨 Alertas:</strong><br>` +
       `• "Tem algum alerta?"<br>` +
       `• "Situação atual"<br><br>` +
+      `<strong>🔧 Debug:</strong><br>` +
+      `• "/debug" - Mostra detalhes do cálculo do caixa<br><br>` +
       `<em>💡 Dica: Especifique o período para análises mais precisas!</em>`;
+  }
+
+  // 🔧 DEBUG - Mostra detalhes do cálculo para comparação
+  function processDebugCaixa(ctx) {
+    const { lancamentos, periodo } = ctx;
+    
+    const fonte = Array.isArray(window.lanc) && window.lanc.length > 0 ? 'window.lanc' : 'Supabase';
+    const totalLanc = lancamentos.length;
+    
+    // Filtra igual ao financeiro
+    const recebimentos = lancamentos.filter(l => l.status === 'RECEBIDO');
+    const pagamentos = lancamentos.filter(l => l.status === 'PAGO');
+    const outros = lancamentos.filter(l => l.status !== 'RECEBIDO' && l.status !== 'PAGO');
+    
+    const totalRec = recebimentos.reduce((s, l) => s + l.valor, 0);
+    const totalPag = pagamentos.reduce((s, l) => s + l.valor, 0);
+    const saldo = totalRec - totalPag;
+    
+    // Amostra dos últimos 5 lançamentos
+    const amostra = lancamentos.slice(-5).map(l => 
+      `${l.data?.split('-').reverse().join('/') || 'N/A'} | ${l.gerente || 'N/A'} | ${l.status} | ${fmt(l.valor)}`
+    ).join('<br>');
+    
+    let resp = `🔧 <strong>DEBUG - Cálculo do Caixa</strong><br><br>`;
+    
+    resp += `<strong>Fonte de dados:</strong> ${fonte}<br>`;
+    resp += `<strong>Período:</strong> ${periodo?.label || 'Todos'}<br>`;
+    if (periodo?.inicio && periodo?.fim) {
+      resp += `<strong>Intervalo:</strong> ${fmtData(periodo.inicio)} a ${fmtData(periodo.fim)}<br>`;
+    }
+    resp += `<br>`;
+    
+    resp += `<strong>Total de lançamentos:</strong> ${totalLanc}<br>`;
+    resp += `<strong>Recebimentos (status=RECEBIDO):</strong> ${recebimentos.length}<br>`;
+    resp += `<strong>Pagamentos (status=PAGO):</strong> ${pagamentos.length}<br>`;
+    resp += `<strong>Outros status:</strong> ${outros.length}<br>`;
+    resp += `<br>`;
+    
+    resp += `💰 <strong>Total Recebimentos:</strong> ${fmt(totalRec)}<br>`;
+    resp += `💸 <strong>Total Pagamentos:</strong> ${fmt(totalPag)}<br>`;
+    resp += `📊 <strong>Saldo:</strong> ${fmt(saldo)}<br>`;
+    resp += `<br>`;
+    
+    if (outros.length > 0) {
+      resp += `⚠️ <strong>Status diferentes encontrados:</strong><br>`;
+      const statusUnicos = [...new Set(outros.map(l => l.status || 'VAZIO'))];
+      resp += statusUnicos.map(s => `• "${s}": ${outros.filter(l => (l.status || 'VAZIO') === s).length}`).join('<br>');
+      resp += `<br><br>`;
+    }
+    
+    resp += `<strong>Últimos 5 lançamentos:</strong><br>`;
+    resp += amostra || 'Nenhum';
+    
+    return resp;
   }
 
   // Fallback
@@ -1118,6 +1176,9 @@
       
       case 'ajuda':
         return processAjuda();
+      
+      case 'debug_caixa':
+        return processDebugCaixa(ctx);
       
       default:
         return processFallback(ctx);

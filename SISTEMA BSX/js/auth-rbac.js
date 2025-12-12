@@ -462,15 +462,15 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
     const existing = await window.SupabaseAPI.users.getByUsername(username);
     if (existing) return {ok:false, msg:'Usuário já existe'};
     
-    // Cria no Supabase
+    // Cria no Supabase (usando nomes corretos das colunas)
     const permObj = (role==='admin') ? permsAllTrue() : toPermObject(perms);
     
     try {
       await window.SupabaseAPI.users.create({
         username,
-        pass: await sha(password),
+        password: await sha(password),  // ✅ Coluna é 'password', não 'pass'
         role,
-        perms: permObj,
+        permissoes: permObj,             // ✅ Coluna é 'permissoes', não 'perms'
         companies: Array.isArray(companies) ? companies : []
       });
       
@@ -480,12 +480,21 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
     }
   }
   
-  // ✅ updateUser - versão Supabase (CORRIGIDA - sem duplicação)
+  // ✅ updateUser - versão Supabase (CORRIGIDA - mapeia campos)
   async function updateUser(id, patch) {
     try {
       const p = Object.assign({}, patch||{});
-      if (p.perms) p.perms = toPermObject(p.perms);
-      if (p.role === 'admin') p.perms = permsAllTrue();
+      
+      // Mapeia perms -> permissoes (nome da coluna no Supabase)
+      if (p.perms) {
+        p.permissoes = toPermObject(p.perms);
+        delete p.perms;
+      }
+      if (p.role === 'admin') {
+        p.permissoes = permsAllTrue();
+      }
+      
+      // Remove password do patch (usa changePassword separadamente)
       if (typeof p.password === 'string') delete p.password;
       
       await window.SupabaseAPI.users.update(id, p);
@@ -508,11 +517,12 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
   // ✅ login - versão Supabase
   async function login(username, password) {
     const u = await window.SupabaseAPI.users.getByUsername(username);
-    if (!u || u.active===false) return {ok:false, msg:'Usuário inexistente ou inativo'};
-    if (!(await passOk(u.pass, password))) return {ok:false, msg:'Senha inválida'};
+    if (!u || u.ativo===false) return {ok:false, msg:'Usuário inexistente ou inativo'};  // ✅ 'ativo', não 'active'
+    if (!(await passOk(u.password, password))) return {ok:false, msg:'Senha inválida'};  // ✅ 'password', não 'pass'
     
+    // ✅ Mapeia 'permissoes' -> 'perms' para uso interno
     const perms = (u.role==='admin') ? permsAllTrue()
-               : (Array.isArray(u.perms) ? toPermObject(u.perms) : (u.perms||{}));
+               : (Array.isArray(u.permissoes) ? toPermObject(u.permissoes) : (u.permissoes||{}));
     
     setSession({
       id: u.id,
@@ -546,7 +556,7 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
     if (!newPassword) return {ok:false, msg:'Senha vazia'};
     
     try {
-      await window.SupabaseAPI.users.update(id, { pass: await sha(newPassword) });
+      await window.SupabaseAPI.users.update(id, { password: await sha(newPassword) });  // ✅ 'password', não 'pass'
       return {ok:true};
     } catch (error) {
       return {ok:false, msg: error.message};

@@ -993,12 +993,32 @@ const __pcDebounced = function() {
       const map = new Map();
       (prestacaoAtual.pagamentos || []).forEach(p=>{
         if (String(p.forma||'').toUpperCase() === 'VALE'){
-          const ref = String(p.obs||'').trim();            // código do vale
-          const v = (vales||[]).find(x =>
-            x.gerenteId === gid && !x.quitado && String(x.cod||'').trim() === ref
-          );
-          if (v){
-            map.set(v.id, (map.get(v.id)||0) + (Number(p.valor)||0));
+          let valeId = null;
+          let valeCod = '';
+          
+          // ✅ CORREÇÃO: Usa valeId diretamente se disponível
+          if (p.valeId) {
+            const v = (vales||[]).find(x => x.id === p.valeId);
+            if (v) {
+              valeId = v.id;
+              valeCod = v.cod || '';
+            }
+          }
+          
+          // Fallback: busca pelo código se não encontrou por valeId
+          if (!valeId) {
+            const ref = String(p.obs||'').trim();
+            const v = (vales||[]).find(x =>
+              x.gerenteId === gid && !x.quitado && String(x.cod||'').trim() === ref
+            );
+            if (v){
+              valeId = v.id;
+              valeCod = v.cod || '';
+            }
+          }
+          
+          if (valeId) {
+            map.set(valeId, (map.get(valeId)||0) + (Number(p.valor)||0));
           }
         }
       });
@@ -1250,14 +1270,15 @@ function descontarValeAgoraPorId(id, valor){
     return;
   }
 
-  // Lança pagamento provisório na prestação
-  (prestacaoAtual.pagamentos ||= []).push({
-    id: uid(),
-    data: new Date().toISOString().slice(0,10),
-    valor: pago,
-    forma: 'VALE',
-    obs: ref
-  });
+// Lança pagamento provisório na prestação
+(prestacaoAtual.pagamentos ||= []).push({
+  id: uid(),
+  valeId: id,      // ✅ CORREÇÃO: Salva o ID do vale para identificação correta
+  data: new Date().toISOString().slice(0,10),
+  valor: pago,
+  forma: 'VALE',
+  obs: ref
+});
   __recalcValeParcFromPagamentos();
 
   pcSchedule();
@@ -2664,7 +2685,6 @@ if (restamTexto) {
 function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
   const out = [];
   try {
-    // 🔐 blindagem: só iteramos se for array
     const list = Array.isArray(arrPag)
       ? arrPag
       : (Array.isArray(arrPag?.lista) ? arrPag.lista : []);
@@ -2673,13 +2693,35 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
       const forma = String(p.forma || '').toUpperCase();
       if (forma !== 'VALE') return;
 
-      // aceitamos p.valeId/p.cod/p.codigo/p.ref
-      const id   = p.valeId || p.id || p.ref || null;
-      const cod  = p.cod || p.codigo || p.ref || '';
-      const apl  = Number(p.valor) || 0;
+      // ✅ CORREÇÃO: Primeiro tenta valeId, depois busca pelo código
+      let valeId = p.valeId || null;
+      let cod = p.cod || p.codigo || p.obs || '';
+      
+      // Se não tem valeId mas tem código, busca o vale correto
+      if (!valeId && cod) {
+        const ref = String(cod).trim();
+        const valeEncontrado = (window.vales || []).find(v =>
+          v.gerenteId === gerenteId && 
+          !v.quitado && 
+          String(v.cod || '').trim() === ref
+        );
+        if (valeEncontrado) {
+          valeId = valeEncontrado.id;
+          cod = valeEncontrado.cod || cod;
+        }
+      }
+      
+      const apl = Number(p.valor) || 0;
 
-      if (!id || !apl) return;
-      out.push({ id, cod, aplicado: apl, gerenteId: gerenteId || '' });
+      if (!valeId || !apl) return;
+      
+      // ✅ Evita duplicatas
+      const existente = out.find(x => x.id === valeId);
+      if (existente) {
+        existente.aplicado += apl;
+      } else {
+        out.push({ id: valeId, cod, aplicado: apl, gerenteId: gerenteId || '' });
+      }
     });
   } catch (e) {
     console.warn('__backfillValeParcFromPagamentos: falha ao migrar', e);

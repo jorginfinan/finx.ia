@@ -1780,8 +1780,13 @@ const valePg = valesAplicados.reduce((sum, v) => {
   let valorComissao1 = 0;
   let valorComissao2 = 0;
   let resultado = 0;
-        // SALDO ACUMULADO
-        const usaSaldoAcumulado = window.SaldoAcumulado && g && perc1 > 0 && perc1 < 50 && 
+// SALDO ACUMULADO
+        // ✅ Empresa EMANUEL não usa saldo acumulado (acordo comercial)
+        const empresaAtualCheck = window.getCompany ? window.getCompany() : 'BSX';
+        const empresaSemSaldoAcumulado = empresaAtualCheck === 'EMANUEL';
+        
+        const usaSaldoAcumulado = !empresaSemSaldoAcumulado && 
+    window.SaldoAcumulado && g && perc1 > 0 && perc1 < 50 && 
     (baseCalculo !== 'COLETAS' || g.temSaldoAcumulado || g.temSegundaComissao);
 
   if (usaSaldoAcumulado) {

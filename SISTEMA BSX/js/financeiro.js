@@ -365,7 +365,7 @@ window.__fin_saveFromForm = async function(){
         ...reg,
         uid: row?.uid || row?.id || row?.key || editing,
         editedAt: new Date().toISOString(),
-        editedBy: (window.UserAuth?.currentUser()?.username || 'Usuário')
+        editedBy: (window.currentUser?.nome || window.UserAuth?.currentUser()?.username || 'Usuário')
       };
       
       // ✅ AUDITORIA - Lançamento editado
@@ -1414,7 +1414,7 @@ function renderFinPendencias(){
         // Se o valor foi editado, marca como editado
         if (p.edited) {
           novoLanc.editedAt = new Date().toISOString();
-          novoLanc.editedBy = (window.UserAuth?.currentUser()?.username || 'Usuário');
+          novoLanc.editedBy = (window.currentUser?.nome || window.UserAuth?.currentUser()?.username || 'Usuário');
         }
     
 // Adiciona ao array de lançamentos
@@ -2135,7 +2135,7 @@ console.log('[Financeiro] Módulo carregado e pronto');
       },
 
       async update(uid, dados) {
-        const dbRow = { edited_at: new Date().toISOString(), edited_by: window.UserAuth?.currentUser()?.username || '' };
+        const dbRow = { edited_at: new Date().toISOString(), edited_by: window.currentUser?.nome || window.UserAuth?.currentUser()?.username || '' };
         if (dados.gerente !== undefined) dbRow.gerente = dados.gerente;
         if (dados.valor !== undefined) dbRow.valor = Number(dados.valor);
         if (dados.status !== undefined) dbRow.status = dados.status;

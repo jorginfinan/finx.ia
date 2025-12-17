@@ -397,47 +397,53 @@ try {
       }
     } catch(e) { console.warn('[AI] Erro prestações:', e); }
 
-// Lançamentos (Financeiro) - SEMPRE RECARREGA DO SUPABASE
+// Lançamentos (Financeiro) - SEMPRE DO SUPABASE
 try {
   let lancamentosRaw = [];
   
-  // ✅ CORREÇÃO: Sempre busca do Supabase para ter dados atualizados
+  // ✅ SEMPRE busca do Supabase com empresa explícita
   if (window.SupabaseAPI?.lancamentos?.getAll) {
-    const lancamentos = await window.SupabaseAPI.lancamentos.getAll();
+    const lancamentos = await window.SupabaseAPI.lancamentos.getAll(empresaAtual);
     lancamentosRaw = lancamentos || [];
-    console.log('[AI] ✅ Carregado do Supabase:', lancamentosRaw.length, 'lançamentos');
-  } 
-  // FALLBACK: window.lanc se Supabase não disponível
-  else if (Array.isArray(window.lanc) && window.lanc.length > 0) {
-    lancamentosRaw = window.lanc;
-    console.log('[AI] ⚠️ Usando window.lanc (cache local):', lancamentosRaw.length, 'lançamentos');
+    console.log('[AI] ✅ Lançamentos do Supabase para', empresaAtual + ':', lancamentosRaw.length);
   }
+  
+  const mapped = lancamentosRaw.map(l => ({
+    id: l.id,
+    uid: l.uid,
+    gerente: l.gerente || '',
+    gerenteId: l.gerente_id || l.gerenteId,
+    gerenteNome: ctx.gerentes.find(g => g.uid === l.gerente_id || g.id === l.gerente_id)?.nome || l.gerente || '',
+    valor: Number(l.valor) || 0,
+    tipo: l.tipo || '',
+    status: l.status || '',
+    forma: l.forma || '',
+    data: l.data,
+    createdAt: l.created_at || l.createdAt
+  }));
+  
+  // ✅ FILTRA POR PERÍODO - com parsing de data robusto
+  if (periodo?.inicio && periodo?.fim) {
+    ctx.lancamentos = mapped.filter(l => {
+      // Converte a data do lançamento para Date
+      const dataStr = l.data || l.createdAt || '';
+      if (!dataStr) return false;
       
-      const mapped = lancamentosRaw.map(l => ({
-        id: l.id,
-        uid: l.uid,
-        gerente: l.gerente || '',
-        gerenteId: l.gerente_id || l.gerenteId,
-        gerenteNome: ctx.gerentes.find(g => g.uid === l.gerente_id || g.id === l.gerente_id)?.nome || l.gerente || '',
-        valor: Number(l.valor) || 0,
-        tipo: l.tipo || '',
-        status: l.status || '',
-        forma: l.forma || '',
-        data: l.data,
-        createdAt: l.created_at || l.createdAt
-      }));
+      // Trata formato YYYY-MM-DD
+      const parts = dataStr.split('-');
+      const dataL = parts.length === 3 
+        ? new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0)
+        : new Date(dataStr);
       
-      // ✅ FILTRA POR PERÍODO (igual ao painel quando tem filtro de mês/ano)
-      if (periodo?.inicio && periodo?.fim) {
-        ctx.lancamentos = mapped.filter(l => {
-          const dataL = new Date(l.data || l.createdAt);
-          return dataL >= periodo.inicio && dataL <= periodo.fim;
-        });
-        console.log('[AI] Após filtro de período:', ctx.lancamentos.length, 'lançamentos');
-      } else {
-        ctx.lancamentos = mapped;
-      }
-    } catch(e) { console.warn('[AI] Erro lançamentos:', e); }
+      if (isNaN(dataL.getTime())) return false;
+      
+      return dataL >= periodo.inicio && dataL <= periodo.fim;
+    });
+    console.log('[AI] Após filtro de período:', ctx.lancamentos.length, 'de', mapped.length, 'lançamentos');
+  } else {
+    ctx.lancamentos = mapped;
+  }
+} catch(e) { console.warn('[AI] Erro lançamentos:', e); }
 
     // Pendências
     try {

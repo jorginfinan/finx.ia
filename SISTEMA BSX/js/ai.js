@@ -244,12 +244,26 @@
   }
 
   function extrairNomesGerentes(s) {
-    const pattern = /\b(\d{3})\s+([a-záéíóúãõ]+)\b/gi;
     const matches = [];
+    
+    // Padrão 1: número + nome (ex: "016 Bruno")
+    const pattern1 = /\b(\d{3})\s+([a-záéíóúãõ]+)\b/gi;
     let match;
-    while ((match = pattern.exec(s)) !== null) {
+    while ((match = pattern1.exec(s)) !== null) {
       matches.push({ numero: match[1], nome: match[2] });
     }
+    
+    // Padrão 2: "do/da/de [Nome]" (ex: "do Luís", "da Maria", "de Bruno")
+    const pattern2 = /\b(do|da|de)\s+([a-záéíóúãõ]+)\b/gi;
+    while ((match = pattern2.exec(s)) !== null) {
+      const nome = match[2];
+      // Ignora palavras comuns que não são nomes
+      const ignorar = ['mês', 'mes', 'ano', 'semana', 'dia', 'período', 'periodo', 'caixa', 'sistema', 'valor', 'total'];
+      if (!ignorar.includes(nome.toLowerCase())) {
+        matches.push({ numero: '', nome: nome });
+      }
+    }
+    
     return matches;
   }
 
@@ -297,9 +311,12 @@
       { pattern: /prestac.*(fechad|quitad|pag)/, type: 'prestacoes_fechadas', confidence: 0.9 },
       { pattern: /total.*prestac/, type: 'total_prestacoes', confidence: 0.85 },
       
-      // Gerentes específicos
-      { pattern: /gerente.*(lista|todos|quais|quantos)/, type: 'listar_gerentes', confidence: 0.9 },
-      { pattern: /\d{3}\s+[a-z]/, type: 'info_gerente', confidence: 0.8 },
+// Gerentes específicos
+{ pattern: /gerente.*(lista|todos|quais|quantos)/, type: 'listar_gerentes', confidence: 0.9 },
+{ pattern: /(valor|quanto|saldo|divida|aberto|deve).*(do|da|de)\s+\w+/, type: 'info_gerente_detalhe', confidence: 0.95 },
+{ pattern: /(historico|pagamentos|prestacoes).*(do|da|de)\s+\w+/, type: 'info_gerente_detalhe', confidence: 0.95 },
+{ pattern: /(como|situacao|status).*(do|da|de)\s+\w+/, type: 'info_gerente_detalhe', confidence: 0.9 },
+{ pattern: /\d{3}\s+[a-z]/, type: 'info_gerente_detalhe', confidence: 0.85 },
       
       // Análises e Insights
       { pattern: /resum|visao\s*geral|status|como\s*(esta|vai|anda)|situacao/, type: 'resumo_geral', confidence: 0.85 },
@@ -945,6 +962,184 @@ try {
     
     return `👥 <strong>Gerentes Cadastrados (${gerentes.length})</strong><br><br>${lista}`;
   }
+// ===== INFO DETALHADA DO GERENTE =====
+function processInfoGerenteDetalhe(ctx, nomesBuscados) {
+  const { prestacoes, prestacoesSemFiltro, lancamentos, gerentes } = ctx;
+  
+  if (!nomesBuscados || !nomesBuscados.length) {
+    return `❓ <strong>Qual gerente você quer consultar?</strong><br><br>` +
+      `Exemplos:<br>` +
+      `• "Qual o valor em aberto do Luís?"<br>` +
+      `• "Histórico do 016 Bruno"<br>` +
+      `• "Situação do 003 Luís"`;
+  }
+  
+  // Busca o gerente pelo nome ou número
+  const busca = nomesBuscados[0];
+  const buscaNome = busca.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const buscaNumero = busca.numero || '';
+  
+  const gerente = gerentes.find(g => {
+    const nomeG = (g.nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const numeroG = g.numero || '';
+    
+    // Match por número exato
+    if (buscaNumero && numeroG === buscaNumero) return true;
+    
+    // Match por nome (parcial)
+    if (buscaNome && nomeG.includes(buscaNome)) return true;
+    
+    return false;
+  });
+  
+  if (!gerente) {
+    // Tenta busca mais flexível
+    const possiveis = gerentes.filter(g => {
+      const nomeG = (g.nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return nomeG.includes(buscaNome) || buscaNome.includes(nomeG.split(' ')[0]);
+    });
+    
+    if (possiveis.length === 0) {
+      return `❌ <strong>Gerente "${busca.numero ? busca.numero + ' ' : ''}${busca.nome}" não encontrado.</strong><br><br>` +
+        `Verifique se o nome está correto ou use o número da rota.`;
+    } else if (possiveis.length > 1) {
+      const lista = possiveis.slice(0, 5).map(g => `• ${g.numero || '---'} ${g.nome}`).join('<br>');
+      return `🔍 <strong>Encontrei ${possiveis.length} gerentes com nome similar:</strong><br><br>${lista}<br><br>` +
+        `Por favor, especifique o número da rota.`;
+    } else {
+      // Usa o único encontrado
+      return processInfoGerenteDetalhe(ctx, [{ numero: possiveis[0].numero, nome: possiveis[0].nome }]);
+    }
+  }
+  
+  const nomeCompleto = `${gerente.numero || '---'} ${gerente.nome}`;
+  const gerenteId = gerente.uid || gerente.id;
+  
+  // Busca TODAS as prestações do gerente (sem filtro de período)
+  const todasPrestacoes = prestacoesSemFiltro.filter(p => 
+    p.gerenteId === gerenteId || 
+    String(p.gerenteId) === String(gerenteId)
+  ).sort((a, b) => new Date(b.fim || b.ini) - new Date(a.fim || a.ini));
+  
+  // Busca lançamentos do gerente
+  const lancamentosGerente = lancamentos.filter(l => {
+    const nomeL = (l.gerente || l.gerenteNome || '').toLowerCase();
+    const nomeG = gerente.nome.toLowerCase();
+    return nomeL.includes(nomeG) || nomeG.includes(nomeL.split(' ')[0]);
+  });
+  
+  if (!todasPrestacoes.length && !lancamentosGerente.length) {
+    return `📋 <strong>${nomeCompleto}</strong><br><br>` +
+      `Nenhuma prestação ou lançamento encontrado para este gerente.`;
+  }
+  
+  let resp = `📋 <strong>Relatório - ${nomeCompleto}</strong><br><br>`;
+  
+  // ===== RESUMO ATUAL =====
+  const prestAbertas = todasPrestacoes.filter(p => p.restam > 0);
+  const totalAberto = prestAbertas.reduce((s, p) => s + p.restam, 0);
+  
+  resp += `💰 <strong>SITUAÇÃO ATUAL:</strong><br>`;
+  if (totalAberto > 0) {
+    resp += `⚠️ Valor em aberto: <strong>${fmt(totalAberto)}</strong><br>`;
+    resp += `📋 Prestações pendentes: ${prestAbertas.length}<br>`;
+  } else {
+    resp += `✅ <strong>Sem valores em aberto!</strong><br>`;
+  }
+  resp += `<br>`;
+  
+  // ===== PRESTAÇÕES COM SALDO CARREGADO =====
+  const prestComSaldoCarregado = todasPrestacoes.filter(p => {
+    // Verifica se tem saldo que foi carregado (veio de prestação anterior)
+    const saldoAnterior = p.saldoCarregarAnterior || 0;
+    // Ou se fechou com saldo (carregou para próxima)
+    const fechouComSaldo = p.fechado && p.restam > 0;
+    return saldoAnterior > 0 || fechouComSaldo;
+  });
+  
+  if (prestComSaldoCarregado.length > 0) {
+    resp += `🔄 <strong>HISTÓRICO DE SALDOS CARREGADOS:</strong><br>`;
+    
+    const ultimas = prestComSaldoCarregado.slice(0, 5);
+    ultimas.forEach(p => {
+      const periodo = `${fmtData(p.ini)} a ${fmtData(p.fim)}`;
+      const status = p.fechado ? (p.restam > 0 ? '⚠️ Fechada COM saldo' : '✅ Quitada') : '🔓 Aberta';
+      
+      resp += `<br>• <strong>${periodo}</strong> - ${status}<br>`;
+      
+      if (p.saldoCarregarAnterior > 0) {
+        resp += `&nbsp;&nbsp;↪️ Recebeu: ${fmt(p.saldoCarregarAnterior)} (saldo anterior)<br>`;
+      }
+      if (p.fechado && p.restam > 0) {
+        resp += `&nbsp;&nbsp;↩️ Passou: ${fmt(p.restam)} (para próxima)<br>`;
+      }
+      resp += `&nbsp;&nbsp;A pagar: ${fmt(p.aPagar)} | Pago: ${fmt(p.pagos)}<br>`;
+    });
+    
+    if (prestComSaldoCarregado.length > 5) {
+      resp += `<br><em>... e mais ${prestComSaldoCarregado.length - 5} prestações</em><br>`;
+    }
+    resp += `<br>`;
+  }
+  
+  // ===== ÚLTIMAS PRESTAÇÕES =====
+  resp += `📊 <strong>ÚLTIMAS PRESTAÇÕES:</strong><br>`;
+  const ultimas = todasPrestacoes.slice(0, 5);
+  
+  ultimas.forEach(p => {
+    const periodo = `${fmtData(p.ini)} a ${fmtData(p.fim)}`;
+    const statusIcon = p.fechado ? (p.restam > 0 ? '⚠️' : '✅') : '🔓';
+    const statusText = p.fechado ? (p.restam > 0 ? 'Fechada c/ saldo' : 'Quitada') : 'Aberta';
+    
+    resp += `<br>${statusIcon} <strong>${periodo}</strong> - ${statusText}<br>`;
+    resp += `&nbsp;&nbsp;A pagar: ${fmt(p.aPagar)} | Pago: ${fmt(p.pagos)} | Resta: ${fmt(p.restam)}<br>`;
+  });
+  
+  if (todasPrestacoes.length > 5) {
+    resp += `<br><em>... e mais ${todasPrestacoes.length - 5} prestações anteriores</em><br>`;
+  }
+  resp += `<br>`;
+  
+  // ===== ÚLTIMOS PAGAMENTOS =====
+  if (lancamentosGerente.length > 0) {
+    const recebimentos = lancamentosGerente.filter(l => l.status === 'RECEBIDO');
+    const pagamentos = lancamentosGerente.filter(l => l.status === 'PAGO');
+    
+    resp += `💸 <strong>MOVIMENTAÇÃO NO PERÍODO:</strong><br>`;
+    resp += `• Recebido: ${fmt(recebimentos.reduce((s, l) => s + l.valor, 0))} (${recebimentos.length} lançamentos)<br>`;
+    resp += `• Pago: ${fmt(pagamentos.reduce((s, l) => s + l.valor, 0))} (${pagamentos.length} lançamentos)<br>`;
+    
+    // Últimos 5 lançamentos
+    const ultimosLanc = lancamentosGerente
+      .sort((a, b) => new Date(b.data) - new Date(a.data))
+      .slice(0, 5);
+    
+    if (ultimosLanc.length) {
+      resp += `<br><em>Últimos lançamentos:</em><br>`;
+      ultimosLanc.forEach(l => {
+        const icon = l.status === 'RECEBIDO' ? '💰' : '💸';
+        resp += `${icon} ${fmtData(l.data)}: ${fmt(l.valor)} (${l.forma || 'N/A'})<br>`;
+      });
+    }
+  }
+  
+  // ===== RESUMO ESTATÍSTICO =====
+  if (todasPrestacoes.length >= 3) {
+    const totalAPagar = todasPrestacoes.reduce((s, p) => s + p.aPagar, 0);
+    const totalPago = todasPrestacoes.reduce((s, p) => s + p.pagos, 0);
+    const percPago = totalAPagar > 0 ? (totalPago / totalAPagar) * 100 : 0;
+    const quitadas = todasPrestacoes.filter(p => p.fechado && p.restam <= 0).length;
+    const fechadasComSaldo = todasPrestacoes.filter(p => p.fechado && p.restam > 0).length;
+    
+    resp += `<br>📈 <strong>ESTATÍSTICAS GERAIS:</strong><br>`;
+    resp += `• Total de prestações: ${todasPrestacoes.length}<br>`;
+    resp += `• Quitadas: ${quitadas} ✅<br>`;
+    resp += `• Fechadas com saldo: ${fechadasComSaldo} ⚠️<br>`;
+    resp += `• % médio de pagamento: ${fmtPerc(percPago)}<br>`;
+  }
+  
+  return resp;
+}
 
   // Alertas
   function processAlertas(ctx) {
@@ -1173,6 +1368,9 @@ try {
       case 'listar_gerentes':
         return processListarGerentes(ctx);
       
+        case 'info_gerente_detalhe':
+        return processInfoGerenteDetalhe(ctx, entities.gerentes);
+        
       case 'alertas':
         return processAlertas(ctx);
       

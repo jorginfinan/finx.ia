@@ -335,21 +335,20 @@
     const empresaAtual = getCompany();
     console.log('[AI] Coletando dados para:', empresaAtual, periodo?.label);
 
-    // Gerentes
-    try {
-      if (window.SupabaseAPI?.gerentes?.getAll) {
-        const gerentes = await window.SupabaseAPI.gerentes.getAll();
-        ctx.gerentes = (gerentes || []).map(g => ({
-          id: g.id,
-          uid: g.uid || g.id,
-          nome: g.nome || g.apelido || '',
-          numero: g.numero || g.rota || '',
-          comissao: Number(g.comissao) || 0
-        }));
-      } else if (Array.isArray(window.gerentes)) {
-        ctx.gerentes = window.gerentes;
-      }
-    } catch(e) { console.warn('[AI] Erro gerentes:', e); }
+// Gerentes - SEMPRE do Supabase
+try {
+  if (window.SupabaseAPI?.gerentes?.getAll) {
+    const gerentes = await window.SupabaseAPI.gerentes.getAll();
+    ctx.gerentes = (gerentes || []).map(g => ({
+      id: g.id,
+      uid: g.uid || g.id,
+      nome: g.nome || g.apelido || '',
+      numero: g.numero || g.rota || '',
+      comissao: Number(g.comissao) || 0
+    }));
+    console.log('[AI] ✅ Gerentes carregados do Supabase:', ctx.gerentes.length);
+  }
+} catch(e) { console.warn('[AI] Erro gerentes:', e); }
 
     // Prestações
     try {
@@ -398,21 +397,21 @@
       }
     } catch(e) { console.warn('[AI] Erro prestações:', e); }
 
-    // Lançamentos (Financeiro) - USA MESMA FONTE DO PAINEL: window.lanc
-    try {
-      let lancamentosRaw = [];
-      
-      // ✅ PRIORIDADE 1: window.lanc (mesma fonte do painel financeiro)
-      if (Array.isArray(window.lanc) && window.lanc.length > 0) {
-        lancamentosRaw = window.lanc;
-        console.log('[AI] Usando window.lanc (mesma fonte do painel):', lancamentosRaw.length, 'lançamentos');
-      } 
-      // FALLBACK: Supabase se window.lanc não disponível
-      else if (window.SupabaseAPI?.lancamentos?.getAll) {
-        const lancamentos = await window.SupabaseAPI.lancamentos.getAll();
-        lancamentosRaw = lancamentos || [];
-        console.log('[AI] Usando Supabase (fallback):', lancamentosRaw.length, 'lançamentos');
-      }
+// Lançamentos (Financeiro) - SEMPRE RECARREGA DO SUPABASE
+try {
+  let lancamentosRaw = [];
+  
+  // ✅ CORREÇÃO: Sempre busca do Supabase para ter dados atualizados
+  if (window.SupabaseAPI?.lancamentos?.getAll) {
+    const lancamentos = await window.SupabaseAPI.lancamentos.getAll();
+    lancamentosRaw = lancamentos || [];
+    console.log('[AI] ✅ Carregado do Supabase:', lancamentosRaw.length, 'lançamentos');
+  } 
+  // FALLBACK: window.lanc se Supabase não disponível
+  else if (Array.isArray(window.lanc) && window.lanc.length > 0) {
+    lancamentosRaw = window.lanc;
+    console.log('[AI] ⚠️ Usando window.lanc (cache local):', lancamentosRaw.length, 'lançamentos');
+  }
       
       const mapped = lancamentosRaw.map(l => ({
         id: l.id,

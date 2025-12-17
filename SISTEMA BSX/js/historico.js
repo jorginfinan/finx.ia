@@ -183,6 +183,11 @@
         return [];
       }
       
+      if (!Array.isArray(data)) {
+        console.warn('[Audit] Dados inválidos retornados:', data);
+        return [];
+      }
+      
       // Transforma para formato compatível com a UI
       const logs = (data || []).map(row => ({
         id: row.id,
@@ -236,7 +241,7 @@
   async function exportLogs(filters = {}) {
     const logs = await getLogs(filters);
     
-    if (logs.length === 0) {
+    if (!Array.isArray(logs) || logs.length === 0) {
       alert('Nenhum registro para exportar.');
       return;
     }
@@ -324,7 +329,13 @@
     }
     
     tbody.innerHTML = logs.map(l => {
-      const date = new Date(l.timestamp);
+      let timestamp = l.timestamp || '';
+      if (timestamp && !timestamp.endsWith('Z') && timestamp.includes('T')) {
+        timestamp = timestamp + 'Z';
+      }
+      const date = new Date(timestamp);
+      
+      // Formata para horário local de Brasília
       const dateStr = date.toLocaleDateString('pt-BR');
       const timeStr = date.toLocaleTimeString('pt-BR');
       

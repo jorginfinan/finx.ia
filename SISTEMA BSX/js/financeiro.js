@@ -1049,11 +1049,17 @@ window.__setLanc = function(novo) {
   // ===== SINCRONIZAÇÃO =====
   window.syncPendenciasFromPrest = async function() {
     try {
-      const DB_PREST_KEY = window.DB_PREST || 'bsx_prestacoes_v1';
+      // ✅ CORREÇÃO: Carrega prestações do Supabase (fonte principal)
       let prests = [];
       try {
-        const raw = localStorage.getItem(DB_PREST_KEY);
-        prests = raw ? JSON.parse(raw) : [];
+        if (window.carregarPrestacoesGlobal) {
+          prests = await window.carregarPrestacoesGlobal();
+        } else {
+          // Fallback para localStorage
+          const DB_PREST_KEY = window.DB_PREST || 'bsx_prestacoes_v1';
+          const raw = localStorage.getItem(DB_PREST_KEY);
+          prests = raw ? JSON.parse(raw) : [];
+        }
         if (!Array.isArray(prests)) prests = [];
       } catch { return 0; }
 
@@ -1090,6 +1096,15 @@ window.__setLanc = function(novo) {
           if (pendUIDs.has(uids.stable) || pendUIDs.has(uids.legacy) ||
               pendAlt.has(uids.stable) || pendAlt.has(uids.legacy) ||
               confirmadosFromUID.has(uids.stable) || confirmadosFromUID.has(uids.legacy)) {
+            continue;
+          }
+
+          // ✅ CORREÇÃO: Verificação extra no Supabase antes de criar
+          const jaConfirmado = await PendenciasAPI.isConfirmed(uids.stable) || 
+                               await PendenciasAPI.isConfirmed(uids.legacy);
+          if (jaConfirmado) {
+            console.log('⚠️ Pendência já confirmada no Supabase, ignorando:', uids.stable);
+            confirmadosFromUID.add(uids.stable);
             continue;
           }
 
@@ -1499,14 +1514,24 @@ if (typeof window.saveLanc === 'function') {
       const pendencias = __getPendencias();
       const pendenciaDescartada = pendencias.find(function(x) { return x.id == id; });
       
-      // ✅ DELETA DO SUPABASE (não apenas do cache local)
-      if (pendenciaDescartada) {
-        // Usa o uid ou id para deletar
-        const uidToDelete = pendenciaDescartada.uid || pendenciaDescartada.id;
-        await window.__removePendencia(uidToDelete);
-        console.log('[Pendencias] ✅ Descartada do Supabase:', uidToDelete);
-      }
-      
+// ✅ DELETA DO SUPABASE (não apenas do cache local)
+if (pendenciaDescartada) {
+  // Usa o uid ou id para deletar
+  const uidToDelete = pendenciaDescartada.uid || pendenciaDescartada.id;
+  await window.__removePendencia(uidToDelete);
+  
+  // ✅ CORREÇÃO: Marca como "processada" para não recriar
+  // Adiciona em pendencias_confirmadas para evitar que seja recriada
+  if (window.PendenciasAPI?.confirm) {
+    await window.PendenciasAPI.confirm(uidToDelete);
+  }
+  // Se tiver altUID, marca também
+  if (pendenciaDescartada.altUID) {
+    await window.PendenciasAPI?.confirm(pendenciaDescartada.altUID);
+  }
+  
+  console.log('[Pendencias] ✅ Descartada e marcada como processada:', uidToDelete);
+}
       // ✅ AUDITORIA - Registra descarte
       if (pendenciaDescartada && typeof window.AuditLog !== 'undefined' && typeof window.AuditLog.log === 'function') {
         const ehSaida = (pendenciaDescartada.tipoCaixa === 'PAGO') || (pendenciaDescartada.tipo === 'PAGAR');

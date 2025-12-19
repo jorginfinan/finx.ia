@@ -38,8 +38,13 @@ if (typeof window.fmtBRL !== 'function') {
 if (typeof window.fmtData !== 'function') {
   window.fmtData = function(iso) {
     if (!iso) return '';
-    const [a,m,d] = String(iso).split('-');
-    return d && m && a ? `${d}/${m}/${a}` : iso;
+    let str = String(iso);
+    // ✅ Se tem 'T', pega só a parte da data
+    if (str.includes('T')) {
+      str = str.split('T')[0];
+    }
+    const [a, m, d] = str.split('-');
+    return d && m && a ? `${d.substring(0,2)}/${m}/${a}` : iso;
   };
 }
 // const fmtData = window.fmtData; // REMOVIDO
@@ -50,7 +55,11 @@ if (typeof window.fmtHora !== 'function') {
     const x = (d instanceof Date) ? d : new Date(d);
     if (!isFinite(+x)) return '';
     try {
-      return x.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+      return x.toLocaleTimeString('pt-BR', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        timeZone: 'America/Sao_Paulo'
+      });
     } catch {
       const hh = String(x.getHours()).padStart(2,'0');
       const mm = String(x.getMinutes()).padStart(2,'0');
@@ -253,7 +262,11 @@ window.fmtHora = window.fmtHora || function fmtHora(d){
   const x = (d instanceof Date) ? d : new Date(d);
   if (!isFinite(+x)) return '';
   try {
-    return x.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+    return x.toLocaleTimeString('pt-BR', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      timeZone: 'America/Sao_Paulo'
+    });
   } catch {
     const hh = String(x.getHours()).padStart(2,'0');
     const mm = String(x.getMinutes()).padStart(2,'0');
@@ -2988,14 +3001,45 @@ async function __applyValesOnSave(prevRec, recPrest){
     const eventos = [];
     const valesParaAtualizar = [];
 
-    (window.vales || []).forEach(v => {
+    // ✅ Função para verificar se já existe log para este vale+prestação
+async function verificarLogDuplicado(valeId, prestacaoId) {
+  if (!window.SupabaseAPI?.client || !prestacaoId) return false;
+  try {
+    const { data } = await window.SupabaseAPI.client
+      .from('vales_log')
+      .select('id')
+      .eq('vale_id', valeId)
+      .eq('prestacao_id', prestacaoId)
+      .limit(1);
+    return data && data.length > 0;
+  } catch (e) {
+    console.warn('[Vales] Erro ao verificar duplicidade:', e);
+    return false;
+  }
+}    
+
+    for (const v of (window.vales || [])) {
       const prev  = prevMap.get(v.id) || 0;
       const cur   = curMap.get(v.id)  || 0;
       const delta = +(cur - prev);
-      if (Math.abs(delta) < 1e-6) return;
+      if (Math.abs(delta) < 1e-6) continue;
 
-// ✅ Usa saldo atual do Supabase
-const saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
+// ✅ Busca saldo ATUAL do Supabase para garantir valor correto
+let saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
+if (window.SupabaseAPI?.client) {
+  try {
+    const { data: valeAtual } = await window.SupabaseAPI.client
+      .from('vales')
+      .select('saldo, valor')
+      .eq('uid', v.id)
+      .single();
+    if (valeAtual) {
+      saldoAntes = Number(valeAtual.saldo) || Number(valeAtual.valor) || 0;
+    }
+  } catch (e) {
+    console.warn('[Vales] Erro ao buscar saldo atual:', e);
+  }
+}
       let saldoDepois  = +(saldoAntes - delta);
       if (saldoDepois < EPS) saldoDepois = 0;
 
@@ -3022,7 +3066,9 @@ const saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
         periodoIni: recPrest.ini, periodoFim: recPrest.fim,
         createdAt: new Date().toISOString()
       });
-    });
+    }
+
+
 
     if (eventos.length){
       if (window.SupabaseAPI?.vales) {
@@ -3035,8 +3081,21 @@ const saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
           });
         }
       }
-      // Log
-      window.valesLog?.bulkAdd?.(eventos);
+      
+      // ✅ CORREÇÃO: Verifica duplicidade antes de gravar log
+      const eventosNaoDuplicados = [];
+      for (const ev of eventos) {
+        const jaTem = await verificarLogDuplicado(ev.valeId, recPrest.id);
+        if (!jaTem) {
+          eventosNaoDuplicados.push(ev);
+        } else {
+          console.log('[Vales] ⚠️ Log duplicado ignorado para vale:', ev.valeId, 'período:', ev.periodoIni, '-', ev.periodoFim);
+        }
+      }
+      
+      if (eventosNaoDuplicados.length) {
+        window.valesLog?.bulkAdd?.(eventosNaoDuplicados);
+      }
     }
     try { renderValesPrestacao?.(); } catch {}
     try { window.dispatchEvent(new Event('vales:updated')); } catch {}

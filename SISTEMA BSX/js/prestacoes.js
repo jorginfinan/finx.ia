@@ -1799,8 +1799,9 @@ const valePg = valesAplicados.reduce((sum, v) => {
         const empresaSemSaldoAcumulado = empresaAtualCheck === 'EMANUEL';
         
         const usaSaldoAcumulado = !empresaSemSaldoAcumulado && 
-    window.SaldoAcumulado && g && perc1 > 0 && perc1 < 50 && 
-    (baseCalculo !== 'COLETAS' || g.temSaldoAcumulado || g.temSegundaComissao);
+        window.SaldoAcumulado && g && perc1 > 0 && perc1 < 50 && 
+        !temSegundaComissao &&  // ✅ Gerentes com 2ª comissão NÃO usam saldo acumulado
+        (baseCalculo !== 'COLETAS' || g.temSaldoAcumulado);
 
   if (usaSaldoAcumulado) {
     console.log('📊 [SaldoAcumulado] Condições atendidas! Calculando...');

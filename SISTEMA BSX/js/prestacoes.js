@@ -1933,12 +1933,18 @@ const valePg = valesAplicados.reduce((sum, v) => {
     // MODELO 3: Padrão ou Comissão 50%
     
     if (baseCalculo === 'COLETAS') {
-      // ✅ Comissão SEMPRE sobre COLETAS (mesmo com resultado negativo)
-      // Se é modalidade "somente coletas", a comissão é calculada sobre as coletas
-      // independentemente de o resultado final ser positivo ou negativo
-      baseComissao = coletas;
-      valorComissao1 = (baseComissao * perc1) / 100;
-      resultado = coletas - valorComissao1 - despesasTot;
+      // ✅ Comissão sobre COLETAS
+      // Só calcula se coletas for POSITIVO
+      if (coletas > 0) {
+        baseComissao = coletas;
+        valorComissao1 = (baseComissao * perc1) / 100;
+        resultado = coletas - valorComissao1 - despesasTot;
+      } else {
+        // Coletas negativas ou zero - NÃO calcula comissão
+        baseComissao = 0;
+        valorComissao1 = 0;
+        resultado = coletas - despesasTot;
+      }
       
     } else {
       // ✅ Comissão sobre (COLETAS - DESPESAS)

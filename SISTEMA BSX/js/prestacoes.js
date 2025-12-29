@@ -1896,31 +1896,28 @@ const valePg = valesAplicados.reduce((sum, v) => {
 
   } else if (temSegundaComissao) {
     // MODELO 1: Dupla comissão (CAÇULA)
+    // Comissão 1 = sobre coletas
+    // Comissão 2 = sobre (coletas - comissão 1)
+    // Resultado = (coletas - comissão 1 - comissão 2) - despesas
     
-    // ✅ Primeiro calcula o resultado SEM nenhuma comissão
-    const resultadoSemComissao = coletas - despesasTot;
-    
-    // ✅ Só calcula comissões se resultado for POSITIVO
-    if (resultadoSemComissao > 0) {
+    if (coletas > 0) {
+      // ✅ Comissão 1 sobre coletas
       baseComissao = coletas;
       valorComissao1 = (baseComissao * perc1) / 100;
       
-      const resultadoApos1aComissao = coletas - valorComissao1 - despesasTot;
+      // ✅ Comissão 2 sobre (coletas - comissão 1) - SEMPRE calcula
+      const baseComissao2 = coletas - valorComissao1;
+      valorComissao2 = (baseComissao2 * perc2) / 100;
       
-      if (resultadoApos1aComissao > 0) {
-        valorComissao2 = (resultadoApos1aComissao * perc2) / 100;
-      } else {
-        valorComissao2 = 0;
-      }
-      
+      // ✅ Resultado = (coletas - comissões) - despesas
       resultado = coletas - valorComissao1 - valorComissao2 - despesasTot;
       
     } else {
-      // ✅ Resultado negativo - ZERA todas as comissões
+      // Coletas negativas ou zero - não calcula comissão
       baseComissao = 0;
       valorComissao1 = 0;
       valorComissao2 = 0;
-      resultado = resultadoSemComissao;
+      resultado = coletas - despesasTot;
     }
     
   } else if (comissaoPorRotaPositiva) {

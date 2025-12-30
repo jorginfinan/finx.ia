@@ -1625,58 +1625,103 @@ if (pendenciaDescartada) {
 // impressão A4
 function imprimirFinanceiroA4(){
   const rows = sortRows(applyFilters(window.lanc));
-  const totR = rows.filter(r=>r.status==='RECEBIDO').reduce((a,b)=>a+numSafe(b.valor),0);
-  const totP = rows.filter(r=>r.status==='PAGO').reduce((a,b)=>a+numSafe(b.valor),0);
-  const saldo= totR - totP;
-
+  const empresa = window.getCompany?.() || 'BSX';
+  const dataAtual = new Date().toLocaleDateString('pt-BR');
+  
   const linhas = rows.map(r => `
     <tr>
       <td>${esc(r.gerente||'')}</td>
-      <td style="text-align:right">${fmtBRL(numSafe(r.valor))}</td>
-      <td>${esc(r.status||'')}</td>
+      <td class="valor">${fmtBRL(numSafe(r.valor))}</td>
+      <td class="status ${r.status==='RECEBIDO'?'recebido':'pago'}">${esc(r.status||'')}</td>
       <td>${esc(r.forma||'')}</td>
       <td>${esc(r.categoria||'')}</td>
-      <td>${(r.data||'').split('-').reverse().join('/')}</td>
+      <td class="data">${(r.data||'').split('-').reverse().join('/')}</td>
     </tr>`).join('');
 
   const html = `
 <!doctype html><html>
 <head>
 <meta charset="utf-8">
-<title>Financeiro - Impressão</title>
+<title>Financeiro - ${empresa}</title>
 <style>
-  @page{size:A4 portrait;margin:10mm}
-  body{font-family:Arial;color:#111}
-  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
-  .card{padding:10px;border-radius:8px;color:#fff;font-weight:700}
-  .r{background:#0b3d0b}.p{background:#212121}.s{background:#4caf50}
-  .title{font-size:12px;opacity:.9}.big{font-size:18px;margin-top:6px}
-  table{width:100%;border-collapse:collapse;font-size:11px}
-  th,td{padding:6px 8px;border-bottom:1px solid #e5e7eb}
-  thead th{background:#222;color:#fff}
-  td:nth-child(2){white-space:nowrap}
+  @page {
+    size: A4 portrait;
+    margin: 3mm 8mm;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Arial, sans-serif;
+    color: #111;
+    margin: 0;
+    padding: 0;
+    font-size: 9px;
+    line-height: 1.2;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    border-bottom: 2px solid #222;
+    margin-bottom: 4px;
+    page-break-after: avoid;
+  }
+  .header-left { font-weight: bold; font-size: 12px; }
+  .header-right { font-size: 8px; color: #666; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  th, td {
+    padding: 3px 4px;
+    border-bottom: 1px solid #ddd;
+    text-align: left;
+  }
+  thead th {
+    background: #222;
+    color: #fff;
+    font-size: 8px;
+    font-weight: bold;
+  }
+  thead { display: table-header-group; }
+  tbody tr { page-break-inside: avoid; }
+  tbody tr:nth-child(even) { background: #f9f9f9; }
+  .valor { text-align: right; white-space: nowrap; font-family: monospace; }
+  .data { white-space: nowrap; text-align: center; }
+  .status { text-align: center; font-weight: bold; font-size: 7px; }
+  .status.recebido { color: #0b6b0b; }
+  .status.pago { color: #b00; }
+  .total-rows {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid #222;
+    font-size: 8px;
+    text-align: right;
+    color: #666;
+  }
 </style>
 </head>
 <body>
-  <div class="grid">
-    <div class="card r"><div class="title">TOTAL RECEBIMENTOS</div><div class="big">${fmtBRL(totR)}</div></div>
-    <div class="card p"><div class="title">TOTAL PAGAMENTOS</div><div class="big">${fmtBRL(totP)}</div></div>
-    <div class="card s"><div class="title">SALDO</div><div class="big">${fmtBRL(saldo)}</div></div>
+  <div class="header">
+    <div class="header-left">FINANCEIRO - ${esc(empresa)}</div>
+    <div class="header-right">Impresso em ${dataAtual} | ${rows.length} registros</div>
   </div>
   <table>
     <thead>
       <tr>
-        <th>GERENTE/ROTA</th>
-        <th style="min-width:90px">VALOR</th>
-        <th>RECEBIDO/PAGO</th>
-        <th>FORMA</th>
-        <th>CATEGORIA</th>
-        <th style="min-width:80px">DATA</th>
+        <th style="width:25%">GERENTE/ROTA</th>
+        <th style="width:12%">VALOR</th>
+        <th style="width:12%">STATUS</th>
+        <th style="width:12%">FORMA</th>
+        <th style="width:25%">CATEGORIA</th>
+        <th style="width:14%">DATA</th>
       </tr>
     </thead>
-    <tbody>${linhas || '<tr><td colspan="6">Sem lançamentos.</td></tr>'}</tbody>
+    <tbody>${linhas || '<tr><td colspan="6" style="text-align:center">Sem lançamentos.</td></tr>'}</tbody>
   </table>
-  <script>window.print(); setTimeout(()=>window.close(), 300);<\/script>
+  <div class="total-rows">Total: ${rows.length} lançamentos</div>
+  <script>window.print(); setTimeout(()=>window.close(), 500);<\/script>
 </body></html>`.trim();
 
   let w = null;

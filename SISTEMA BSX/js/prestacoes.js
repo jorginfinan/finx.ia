@@ -1869,9 +1869,15 @@ const valePg = valesAplicados.reduce((sum, v) => {
     resultado = Number(calculoSaldo.resultadoFinal) || calculoSaldo.resultado;
     
     // Atualiza o snapshot com informações do saldo
-    prestacaoAtual.saldoInfo = {
-      saldoCarregarAnterior: calculoSaldo.saldoCarregarAnterior,
-      saldoCarregarNovo: calculoSaldo.saldoCarregarNovo,
+// ✅ Verifica se tem saldo manual ativo
+const saldoNovoFinal = window.getSaldoParaUsar 
+? window.getSaldoParaUsar(calculoSaldo.saldoCarregarNovo)
+: calculoSaldo.saldoCarregarNovo;
+
+prestacaoAtual.saldoInfo = {
+saldoCarregarAnterior: calculoSaldo.saldoCarregarAnterior,
+saldoCarregarNovo: saldoNovoFinal,
+saldoManualUsado: window.__saldoManualAtivo || false,
       // ✅ NOVO: Guarda apenas a contribuição DESTA prestação
       contribuicaoDestaPrestacao: calculoSaldo.resultado < 0 ? Math.abs(calculoSaldo.resultado) : 0,
       baseCalculoSaldo: calculoSaldo.baseCalculo,
@@ -1882,8 +1888,8 @@ const valePg = valesAplicados.reduce((sum, v) => {
     
     prestacaoAtual.resumo = {
       ...(prestacaoAtual.resumo || {}),
-      // Apenas atualiza o saldo a carregar, NÃO sobrescreve negAnterior
-      saldoNegAcarreado: Number(calculoSaldo.saldoCarregarNovo) || 0
+      // ✅ Usa saldo manual se ativo, senão usa o calculado
+      saldoNegAcarreado: Number(saldoNovoFinal) || 0
     };
 
     console.log('💰 Saldo Acumulado aplicado:', {
@@ -2752,241 +2758,252 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
   if (!btn || btn.__pcWired) return;
   btn.__pcWired = true;
   
-  addPcListener(btn, 'click', async function() {  
-    await pcCalcular();  // ✅ AGUARDA o recálculo terminar
-  const ini = document.getElementById('pcIni').value;
-  const fim = document.getElementById('pcFim').value || new Date().toISOString().slice(0,10);
-  const gerenteId = document.getElementById('pcGerente').value;
-  const g = (window.gerentes || []).find(x=>String(x.uid||x.id)===String(gerenteId)) || {};
-  
-  if(!gerenteId || !ini || !fim){ 
-    alert('Selecione Gerente e informe o período.'); 
-    return; 
-  }
-
-  const arr = await window.carregarPrestacoesGlobal();
-
-  let reusedId = null;
-  let prevRec  = null;
-  let idx      = -1;
-
-  if (window.__prestBeingEdited?.id) {
-    idx = arr.findIndex(p => p.id === window.__prestBeingEdited.id);
-  }
-
-  if (idx === -1) {
-    idx = arr.findIndex(p => p.gerenteId===gerenteId && p.ini===ini && p.fim===fim);
-  }
-
-  if (idx > -1) {
-    reusedId = arr[idx].id;
-    prevRec  = arr[idx];
-    arr.splice(idx, 1);
-  }
-
-  __recalcValeParcFromPagamentos();
-
-  const migVale = (
-    !prestacaoAtual.valeParcAplicado || prestacaoAtual.valeParcAplicado.length === 0
-  )
-    ? __backfillValeParcFromPagamentos(prestacaoAtual.pagamentos, gerenteId)
-    : prestacaoAtual.valeParcAplicado.slice();
-  
-  prestacaoAtual.valeParcAplicado = migVale;
-  
-  const recPrest = {
-    id: reusedId || uid(),
-    gerenteId,
-    gerenteNome: (g?.nome || '(excluído)'),
-    ini, fim,
-    despesas:  (prestacaoAtual.despesas  || []).map(d => ({...d})),
-    pagamentos:(prestacaoAtual.pagamentos|| []).map(p => ({...p})),
-    coletas:   (prestacaoAtual.coletas   || []).map(c => ({...c})),
-    vales:     (prestacaoAtual.vales     || []).map(v => ({...v})),
-    valesSel:  (prestacaoAtual.valeSelec || []).map(v => ({...v})),
-    resumo:    {...(prestacaoAtual.resumo || {})},
-    saldoInfo: prestacaoAtual.saldoInfo ? {...prestacaoAtual.saldoInfo} : null, // ✅ SALVA O SALDO INFO
-    valeParcAplicado: migVale.map(x => ({...x})),
-  };
-
-  if (!prestacaoAtual.valeParcAplicado || prestacaoAtual.valeParcAplicado.length === 0){
-    prestacaoAtual.valeParcAplicado =
-      __backfillValeParcFromPagamentos(prestacaoAtual.pagamentos, gerenteId);
-  }
-  await __applyValesOnSave(prevRec, recPrest);
-  // vales já são recarregados dentro da função
-
-  console.log('🔍 DEBUG SALDO - Verificando condições para salvar:', {
-    temSaldoAcumulado: !!window.SaldoAcumulado,
-    saldoInfo: prestacaoAtual.saldoInfo,
-    usandoSaldoAcumulado: prestacaoAtual.saldoInfo?.usandoSaldoAcumulado,
-    prestacaoAtualCompleta: prestacaoAtual
-  });
-  if (window.SaldoAcumulado && prestacaoAtual.saldoInfo?.usandoSaldoAcumulado) {
-  
-    // ✅ VERIFICA SE É EDIÇÃO
-    const empresaId = recPrest.empresaId || (window.getCompany ? window.getCompany() : 'BSX');
+  addPcListener(btn, 'click', async function() {
+    // ✅ PROTEÇÃO CONTRA DUPLO CLIQUE
+    if (window.__isSavingPrestacao) {
+      console.warn('⚠️ Prestação já está sendo salva, ignorando clique duplicado');
+      return;
+    }
+    window.__isSavingPrestacao = true;
+    btn.disabled = true;
+    btn.textContent = 'Salvando...';
     
-// Se está editando uma prestação existente (idx > -1)
-if (idx > -1 && prevRec && prevRec.saldoInfo) {
-  const resultadoAnterior = Number(prevRec.saldoInfo?.resultadoSemana || 0);
-  const resultadoAtual    = Number(prestacaoAtual.saldoInfo?.resultadoSemana || 0);
-
-  // Considera mudança só se a diferença for maior que 1 centavo
-  const mudouResultado = Math.abs(resultadoAtual - resultadoAnterior) > 0.009;
-
-  if (!mudouResultado) {
-    // ✅ Coletas - despesas não mudou: mantém o saldo acumulado como está
-    console.log('ℹ️ Edição não alterou (coletas - despesas). Mantendo saldo acumulado no Supabase.');
-  } else {
-    // ✅ Aqui é igual ao seu código anterior: estorna o saldo antigo e aplica o novo
-    const saldoAtual = await window.SaldoAcumulado.getSaldo(recPrest.gerenteId, empresaId);
-    const saldoAnteriorPrestacao = prevRec.saldoInfo.saldoCarregarNovo || 0;
-    
-    // Remove o saldo antigo antes de adicionar o novo
-    const saldoCorrigido = Math.max(0, saldoAtual - saldoAnteriorPrestacao);
-    
-    // Agora adiciona o novo saldo
-    const novoSaldoFinal = saldoCorrigido + (prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0);
-    
-    await window.SaldoAcumulado.setSaldo(recPrest.gerenteId, empresaId, novoSaldoFinal);
-    
-    console.log('🔄 Editando prestação - Saldo ajustado:', {
-      saldoAtual,
-      saldoAnteriorPrestacao,
-      saldoCorrigido,
-      novoSaldoAdicionado: prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0,
-      novoSaldoFinal
-    });
-  }
-} else {
-  // É uma prestação nova - apenas salva (mantém igual ao que já está hoje)
-  const saldoNovo = prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0;
-  
-  console.log('💾 Salvando saldo para nova prestação:', {
-    gerenteId: recPrest.gerenteId,
-    empresaId,
-    saldoNovo,
-    saldoInfo: prestacaoAtual.saldoInfo
-  });
-  
-  await window.SaldoAcumulado.setSaldo(
-    recPrest.gerenteId,
-    empresaId,
-    saldoNovo
-  );
-  
-  console.log('✅ Nova prestação - Saldo salvo:', saldoNovo);
-}
-  }
-
-  arr.push(recPrest);
-
-
-  // ✅ Salva no Supabase + localStorage
-  if (typeof window.salvarPrestacaoGlobal === 'function') {
     try {
-      await window.salvarPrestacaoGlobal(recPrest);
-      console.log('✅ Prestação salva no Supabase:', recPrest.id);
-    } catch(e) {
-      console.error('❌ Erro ao salvar no Supabase:', e);
+      await pcCalcular();  // ✅ AGUARDA o recálculo terminar
+      
+      const ini = document.getElementById('pcIni').value;
+      const fim = document.getElementById('pcFim').value || new Date().toISOString().slice(0,10);
+      const gerenteId = document.getElementById('pcGerente').value;
+      const g = (window.gerentes || []).find(x=>String(x.uid||x.id)===String(gerenteId)) || {};
+      
+      if(!gerenteId || !ini || !fim){ 
+        alert('Selecione Gerente e informe o período.'); 
+        return; 
+      }
 
-    }
-  } 
+      const arr = await window.carregarPrestacoesGlobal();
 
-  
-  
-  try { window.__syncAbertasMirror(); } catch {}
+      // ✅ PROTEÇÃO CONTRA PRESTAÇÃO DUPLICADA
+      if (!window.__prestBeingEdited?.id) {
+        const jaExiste = arr.find(p => 
+          p.gerenteId === gerenteId && 
+          p.ini === ini && 
+          p.fim === fim
+        );
+        
+        if (jaExiste) {
+          alert('⚠️ Já existe uma prestação para este gerente neste período!\n\nUse o botão "Editar" para modificar a prestação existente.');
+          return;
+        }
+      }
 
-// Saldo negativo agora é gerenciado apenas pelo SaldoAcumulado (Supabase)
-console.log('✅ Saldo gerenciado via SaldoAcumulado (Supabase)');
+      let reusedId = null;
+      let prevRec  = null;
+      let idx      = -1;
 
-// ✅ CRIA PENDÊNCIA APENAS DOS PAGAMENTOS DE DÍVIDA
-const qtdPendencias = criarPendenciaPagamento(recPrest);
+      if (window.__prestBeingEdited?.id) {
+        idx = arr.findIndex(p => p.id === window.__prestBeingEdited.id);
+      }
 
-if (qtdPendencias && qtdPendencias > 0) {
-  alert('Prestação salva!\n\n' + qtdPendencias + ' pagamento(s) de dívida enviado(s) ao Financeiro para confirmação.');
-} else {
-  alert('Prestação salva com sucesso!');
-}
+      if (idx === -1) {
+        idx = arr.findIndex(p => p.gerenteId===gerenteId && p.ini===ini && p.fim===fim);
+      }
 
-// Salvar despesas no Supabase
-console.log('💰 Iniciando salvamento de despesas no Supabase...');
-const despesasValidas = (prestacaoAtual.despesas || []).filter(d => {
-  // Pula despesas vazias (sem descrição E sem valor)
-  const temValor = Number(d.valor) > 0;
-  const temDescricao = (d.info || '').trim().length > 0;
-  return temValor || temDescricao;
-});
-console.log('💰 Despesas válidas a salvar:', despesasValidas.length, 'de', (prestacaoAtual.despesas || []).length);
+      if (idx > -1) {
+        reusedId = arr[idx].id;
+        prevRec  = arr[idx];
+        arr.splice(idx, 1);
+      }
 
-for (const d of despesasValidas) {
-  const dataLanc = (d.data || fim || ini || new Date().toISOString().slice(0,10)).slice(0,10);
-  const despesaUid = d.id || uid();
-  
-  console.log('💰 Processando despesa:', { uid: despesaUid, info: d.info, valor: d.valor });
-  
-  try {
-    // ✅ Usa upsert em vez de create para evitar duplicatas
-    if (window.SupabaseAPI?.despesas?.upsert) {
-      await window.SupabaseAPI.despesas.upsert({
-        uid: despesaUid,
-        gerente_nome: g?.nome || '',
-        ficha: d.ficha || '',
-        descricao: d.info || '',
-        valor: Number(d.valor) || 0,
-        data: dataLanc,
-        periodo_ini: ini,
-        periodo_fim: fim,
-        oculta: false,
-        rota: '',
-        categoria: '',
-        editada: false
+      __recalcValeParcFromPagamentos();
+
+      const migVale = (
+        !prestacaoAtual.valeParcAplicado || prestacaoAtual.valeParcAplicado.length === 0
+      )
+        ? __backfillValeParcFromPagamentos(prestacaoAtual.pagamentos, gerenteId)
+        : prestacaoAtual.valeParcAplicado.slice();
+      
+      prestacaoAtual.valeParcAplicado = migVale;
+      
+      const recPrest = {
+        id: reusedId || uid(),
+        gerenteId,
+        gerenteNome: (g?.nome || '(excluído)'),
+        ini, fim,
+        despesas:  (prestacaoAtual.despesas  || []).map(d => ({...d})),
+        pagamentos:(prestacaoAtual.pagamentos|| []).map(p => ({...p})),
+        coletas:   (prestacaoAtual.coletas   || []).map(c => ({...c})),
+        vales:     (prestacaoAtual.vales     || []).map(v => ({...v})),
+        valesSel:  (prestacaoAtual.valeSelec || []).map(v => ({...v})),
+        resumo:    {...(prestacaoAtual.resumo || {})},
+        saldoInfo: prestacaoAtual.saldoInfo ? {...prestacaoAtual.saldoInfo} : null,
+        valeParcAplicado: migVale.map(x => ({...x})),
+      };
+
+      if (!prestacaoAtual.valeParcAplicado || prestacaoAtual.valeParcAplicado.length === 0){
+        prestacaoAtual.valeParcAplicado =
+          __backfillValeParcFromPagamentos(prestacaoAtual.pagamentos, gerenteId);
+      }
+      await __applyValesOnSave(prevRec, recPrest);
+
+      console.log('🔍 DEBUG SALDO - Verificando condições para salvar:', {
+        temSaldoAcumulado: !!window.SaldoAcumulado,
+        saldoInfo: prestacaoAtual.saldoInfo,
+        usandoSaldoAcumulado: prestacaoAtual.saldoInfo?.usandoSaldoAcumulado,
+        prestacaoAtualCompleta: prestacaoAtual
       });
-      console.log('✅ Despesa salva via upsert:', despesaUid);
-    } else {
-      // Fallback para create se upsert não existir
-      await window.SupabaseAPI.despesas.create({
-        uid: despesaUid,
-        gerente_nome: g?.nome || '',
-        ficha: d.ficha || '',
-        descricao: d.info || '',
-        valor: Number(d.valor) || 0,
-        data: dataLanc,
-        periodo_ini: ini,
-        periodo_fim: fim,
-        oculta: false,
-        rota: '',
-        categoria: '',
-        editada: false
+      
+      if (window.SaldoAcumulado && prestacaoAtual.saldoInfo?.usandoSaldoAcumulado) {
+        const empresaId = recPrest.empresaId || (window.getCompany ? window.getCompany() : 'BSX');
+        
+        if (idx > -1 && prevRec && prevRec.saldoInfo) {
+          const resultadoAnterior = Number(prevRec.saldoInfo?.resultadoSemana || 0);
+          const resultadoAtual    = Number(prestacaoAtual.saldoInfo?.resultadoSemana || 0);
+          const mudouResultado = Math.abs(resultadoAtual - resultadoAnterior) > 0.009;
+
+          if (!mudouResultado) {
+            console.log('ℹ️ Edição não alterou (coletas - despesas). Mantendo saldo acumulado no Supabase.');
+          } else {
+            const saldoAtual = await window.SaldoAcumulado.getSaldo(recPrest.gerenteId, empresaId);
+            const saldoAnteriorPrestacao = prevRec.saldoInfo.saldoCarregarNovo || 0;
+            const saldoCorrigido = Math.max(0, saldoAtual - saldoAnteriorPrestacao);
+            const novoSaldoFinal = saldoCorrigido + (prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0);
+            
+            await window.SaldoAcumulado.setSaldo(recPrest.gerenteId, empresaId, novoSaldoFinal);
+            
+            console.log('🔄 Editando prestação - Saldo ajustado:', {
+              saldoAtual,
+              saldoAnteriorPrestacao,
+              saldoCorrigido,
+              novoSaldoAdicionado: prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0,
+              novoSaldoFinal
+            });
+          }
+        } else {
+          const saldoNovo = prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0;
+          
+          console.log('💾 Salvando saldo para nova prestação:', {
+            gerenteId: recPrest.gerenteId,
+            empresaId,
+            saldoNovo,
+            saldoInfo: prestacaoAtual.saldoInfo
+          });
+          
+          await window.SaldoAcumulado.setSaldo(recPrest.gerenteId, empresaId, saldoNovo);
+          console.log('✅ Nova prestação - Saldo salvo:', saldoNovo);
+        }
+      }
+
+      arr.push(recPrest);
+
+      // ✅ Salva no Supabase + localStorage
+      if (typeof window.salvarPrestacaoGlobal === 'function') {
+        try {
+          await window.salvarPrestacaoGlobal(recPrest);
+          console.log('✅ Prestação salva no Supabase:', recPrest.id);
+        } catch(e) {
+          console.error('❌ Erro ao salvar no Supabase:', e);
+        }
+      } 
+
+      try { window.__syncAbertasMirror(); } catch {}
+
+      console.log('✅ Saldo gerenciado via SaldoAcumulado (Supabase)');
+
+      // ✅ CRIA PENDÊNCIA APENAS DOS PAGAMENTOS DE DÍVIDA
+      const qtdPendencias = criarPendenciaPagamento(recPrest);
+
+      // Salvar despesas no Supabase
+      console.log('💰 Iniciando salvamento de despesas no Supabase...');
+      const despesasValidas = (prestacaoAtual.despesas || []).filter(d => {
+        const temValor = Number(d.valor) > 0;
+        const temDescricao = (d.info || '').trim().length > 0;
+        return temValor || temDescricao;
       });
-      console.log('✅ Despesa salva via create:', despesaUid);
+      console.log('💰 Despesas válidas a salvar:', despesasValidas.length, 'de', (prestacaoAtual.despesas || []).length);
+
+      for (const d of despesasValidas) {
+        const dataLanc = (d.data || fim || ini || new Date().toISOString().slice(0,10)).slice(0,10);
+        const despesaUid = d.id || uid();
+        
+        console.log('💰 Processando despesa:', { uid: despesaUid, info: d.info, valor: d.valor });
+        
+        try {
+          if (window.SupabaseAPI?.despesas?.upsert) {
+            await window.SupabaseAPI.despesas.upsert({
+              uid: despesaUid,
+              gerente_nome: g?.nome || '',
+              ficha: d.ficha || '',
+              descricao: d.info || '',
+              valor: Number(d.valor) || 0,
+              data: dataLanc,
+              periodo_ini: ini,
+              periodo_fim: fim,
+              oculta: false,
+              rota: '',
+              categoria: '',
+              editada: false
+            });
+            console.log('✅ Despesa salva via upsert:', despesaUid);
+          } else {
+            await window.SupabaseAPI.despesas.create({
+              uid: despesaUid,
+              gerente_nome: g?.nome || '',
+              ficha: d.ficha || '',
+              descricao: d.info || '',
+              valor: Number(d.valor) || 0,
+              data: dataLanc,
+              periodo_ini: ini,
+              periodo_fim: fim,
+              oculta: false,
+              rota: '',
+              categoria: '',
+              editada: false
+            });
+            console.log('✅ Despesa salva via create:', despesaUid);
+          }
+        } catch(e) {
+          console.error('❌ Erro ao salvar despesa:', despesaUid, e);
+        }
+      }
+
+      console.log('✅ Todas as despesas processadas');
+        
+      window.__prestBeingEdited = null;
+      pcResetForm();
+      
+      try { renderRelatorios(); } catch(e){};
+      
+      // ✅ NOTIFICA SINCRONIZAÇÃO
+      if (typeof window.SyncManager !== 'undefined') {
+        window.SyncManager.notify('prestacoes', { id: recPrest.id });
+        window.SyncManager.notify('financeiro', { pendenciaPagamento: true });
+      }
+
+      // ✅ ALERTA DE SUCESSO (no final de tudo)
+      if (qtdPendencias && qtdPendencias > 0) {
+        alert('Prestação salva!\n\n' + qtdPendencias + ' pagamento(s) de dívida enviado(s) ao Financeiro para confirmação.');
+      } else {
+        alert('Prestação salva com sucesso!');
+      }
+
+    } catch (error) {
+      console.error('❌ Erro ao salvar prestação:', error);
+      alert('Erro ao salvar prestação. Tente novamente.');
+    } finally {
+      // ✅ SEMPRE reseta o botão, mesmo em caso de erro
+      window.__isSavingPrestacao = false;
+      btn.disabled = false;
+      btn.textContent = 'Salvar';
     }
-  } catch(e) {
-    console.error('❌ Erro ao salvar despesa:', despesaUid, e);
-  }
-}
+  });
+})();
 
-console.log('✅ Todas as despesas processadas');
-  
-  window.__prestBeingEdited = null;
-  pcResetForm();
-  
-  try { renderRelatorios(); } catch(e){};
-  
-  // ✅ NOTIFICA SINCRONIZAÇÃO
-  if (typeof window.SyncManager !== 'undefined') {
-    window.SyncManager.notify('prestacoes', { id: recPrest.id });
-    window.SyncManager.notify('financeiro', { pendenciaPagamento: true });
-  }
-
-
-// ====== FUNÇÃO: aplicar/estornar parcelas de VALE ao SALVAR ======
+// ====== FUNÇÃO: aplicar/estornar parcelas de VALE ao SALVAR (FORA do handler) ======
 async function __applyValesOnSave(prevRec, recPrest){
   try{
     const EPS = 0.005;
     
-    // ✅ RECARREGA VALES DO SUPABASE para ter saldos atualizados
     if (window.__valesReloadAsync) {
       await window.__valesReloadAsync();
       console.log('[Vales] ✅ Vales recarregados do Supabase antes de aplicar descontos');
@@ -2997,22 +3014,21 @@ async function __applyValesOnSave(prevRec, recPrest){
     const eventos = [];
     const valesParaAtualizar = [];
 
-    // ✅ Função para verificar se já existe log para este vale+prestação
-async function verificarLogDuplicado(valeId, prestacaoId) {
-  if (!window.SupabaseAPI?.client || !prestacaoId) return false;
-  try {
-    const { data } = await window.SupabaseAPI.client
-      .from('vales_log')
-      .select('id')
-      .eq('vale_id', valeId)
-      .eq('prestacao_id', prestacaoId)
-      .limit(1);
-    return data && data.length > 0;
-  } catch (e) {
-    console.warn('[Vales] Erro ao verificar duplicidade:', e);
-    return false;
-  }
-}    
+    async function verificarLogDuplicado(valeId, prestacaoId) {
+      if (!window.SupabaseAPI?.client || !prestacaoId) return false;
+      try {
+        const { data } = await window.SupabaseAPI.client
+          .from('vales_log')
+          .select('id')
+          .eq('vale_id', valeId)
+          .eq('prestacao_id', prestacaoId)
+          .limit(1);
+        return data && data.length > 0;
+      } catch (e) {
+        console.warn('[Vales] Erro ao verificar duplicidade:', e);
+        return false;
+      }
+    }    
 
     for (const v of (window.vales || [])) {
       const prev  = prevMap.get(v.id) || 0;
@@ -3020,22 +3036,22 @@ async function verificarLogDuplicado(valeId, prestacaoId) {
       const delta = +(cur - prev);
       if (Math.abs(delta) < 1e-6) continue;
 
-// ✅ Busca saldo ATUAL do Supabase para garantir valor correto
-let saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
-if (window.SupabaseAPI?.client) {
-  try {
-    const { data: valeAtual } = await window.SupabaseAPI.client
-      .from('vales')
-      .select('saldo, valor')
-      .eq('uid', v.id)
-      .single();
-    if (valeAtual) {
-      saldoAntes = Number(valeAtual.saldo) || Number(valeAtual.valor) || 0;
-    }
-  } catch (e) {
-    console.warn('[Vales] Erro ao buscar saldo atual:', e);
-  }
-}
+      let saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
+      if (window.SupabaseAPI?.client) {
+        try {
+          const { data: valeAtual } = await window.SupabaseAPI.client
+            .from('vales')
+            .select('saldo, valor')
+            .eq('uid', v.id)
+            .single();
+          if (valeAtual) {
+            saldoAntes = Number(valeAtual.saldo) || Number(valeAtual.valor) || 0;
+          }
+        } catch (e) {
+          console.warn('[Vales] Erro ao buscar saldo atual:', e);
+        }
+      }
+      
       let saldoDepois  = +(saldoAntes - delta);
       if (saldoDepois < EPS) saldoDepois = 0;
 
@@ -3050,7 +3066,6 @@ if (window.SupabaseAPI?.client) {
         delete v.quitadoEm;
       }
 
-      // Marca para atualizar no Supabase
       valesParaAtualizar.push({ id: v.id, saldo: v.valor, quitado: v.quitado });
 
       eventos.push({
@@ -3064,21 +3079,17 @@ if (window.SupabaseAPI?.client) {
       });
     }
 
-
-
     if (eventos.length){
       if (window.SupabaseAPI?.vales) {
         for (const upd of valesParaAtualizar) {
-          // ✅ Atualiza saldo E valor para manter sincronizado
           await window.SupabaseAPI.vales.update(upd.id, { 
             saldo: upd.saldo, 
-            valor: upd.saldo,  // ✅ Atualiza valor também
+            valor: upd.saldo,
             quitado: upd.quitado 
           });
         }
       }
       
-      // ✅ CORREÇÃO: Verifica duplicidade antes de gravar log
       const eventosNaoDuplicados = [];
       for (const ev of eventos) {
         const jaTem = await verificarLogDuplicado(ev.valeId, recPrest.id);
@@ -3100,9 +3111,6 @@ if (window.SupabaseAPI?.client) {
     console.warn('__applyValesOnSave error:', e);
   }
 }
-
-});
-})();
 
 /* ========== VALES LOG - SUPABASE ========== */
 (function VALES_LOG_SUPABASE(){
@@ -3965,7 +3973,18 @@ function pcResetForm(){
 
   const selGer = document.getElementById('pcGerente'); if (selGer) selGer.value = '';
   ['pcIni','pcFim'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
-  ['pcValorExtra','pcAdiant','pcDeveAnterior','pcDivida','pcCredito'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=0; });
+  ['pcValorExtra','pcAdiant','pcDeveAnterior','pcDivida','pcCredito','pcSaldoManual'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=0; });
+  // Reset do saldo manual
+  const chkSaldoManual = document.getElementById('pcUsarSaldoManual');
+  if (chkSaldoManual) {
+    chkSaldoManual.checked = false;
+    const inputSaldoManual = document.getElementById('pcSaldoManual');
+    const helpSaldoManual = document.getElementById('pcSaldoManualHelp');
+    if (inputSaldoManual) inputSaldoManual.style.display = 'none';
+    if (helpSaldoManual) helpSaldoManual.style.display = 'none';
+  }
+  window.__saldoManualAtivo = false;
+  window.__saldoManualValor = undefined;
   ['pcResultado','pcPerc','pcPagar','pcRestam'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
 
    // (opcional) limpa campos rápidos de coleta (se existirem no DOM)
@@ -5111,6 +5130,91 @@ document.addEventListener('DOMContentLoaded', function() {
     dataDivida.value = hoje;
   }
 });
+
+// ====== CAMPO EDITÁVEL PARA SALDO A CARREGAR (EXCEÇÕES) ======
+(function() {
+  // Aguarda o DOM estar pronto
+  function initSaldoManual() {
+    // Procura o container onde adicionar o campo
+    const creditoInput = document.getElementById('pcCredito');
+    if (!creditoInput) {
+      setTimeout(initSaldoManual, 500);
+      return;
+    }
+    
+    // Verifica se já foi criado
+    if (document.getElementById('pcSaldoManual')) return;
+    
+    // Cria o container do campo
+    const container = document.createElement('div');
+    container.className = 'form-group';
+    container.style.marginTop = '10px';
+    container.innerHTML = `
+      <label style="display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" id="pcUsarSaldoManual" style="width:auto;margin:0;">
+        <span>Usar Saldo Manual (exceção)</span>
+      </label>
+      <input type="number" 
+             id="pcSaldoManual" 
+             placeholder="0,00" 
+             step="0.01" 
+             min="0"
+             style="margin-top:5px;display:none;"
+             title="Digite o valor do saldo a carregar manualmente">
+      <small style="color:#888;font-size:11px;display:none;" id="pcSaldoManualHelp">
+        ⚠️ Este valor substituirá o saldo calculado automaticamente
+      </small>
+    `;
+    
+    // Insere após o campo de crédito
+    const parentContainer = creditoInput.closest('.form-group') || creditoInput.parentElement;
+    if (parentContainer && parentContainer.parentElement) {
+      parentContainer.parentElement.insertBefore(container, parentContainer.nextSibling);
+    }
+    
+    // Eventos
+    const checkbox = document.getElementById('pcUsarSaldoManual');
+    const input = document.getElementById('pcSaldoManual');
+    const help = document.getElementById('pcSaldoManualHelp');
+    
+    checkbox.addEventListener('change', function() {
+      input.style.display = this.checked ? 'block' : 'none';
+      help.style.display = this.checked ? 'block' : 'none';
+      if (!this.checked) {
+        input.value = '';
+        window.__saldoManualAtivo = false;
+      } else {
+        window.__saldoManualAtivo = true;
+      }
+      // Recalcula
+      if (typeof pcCalcular === 'function') pcCalcular();
+    });
+    
+    input.addEventListener('input', function() {
+      window.__saldoManualValor = parseFloat(this.value) || 0;
+      // Recalcula
+      if (typeof pcCalcular === 'function') pcCalcular();
+    });
+    
+    console.log('✅ Campo de Saldo Manual inicializado');
+  }
+  
+  // Inicia
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initSaldoManual);
+  } else {
+    setTimeout(initSaldoManual, 1000);
+  }
+})();
+
+// Função auxiliar para obter o saldo (manual ou calculado)
+window.getSaldoParaUsar = function(saldoCalculado) {
+  if (window.__saldoManualAtivo && window.__saldoManualValor !== undefined) {
+    console.log('📝 Usando saldo MANUAL:', window.__saldoManualValor, '(calculado seria:', saldoCalculado, ')');
+    return window.__saldoManualValor;
+  }
+  return saldoCalculado;
+};
 
 
 });

@@ -2574,13 +2574,13 @@ ctx.fillRect(rightX + 1, ry - Math.ceil(groupPad / 2), rightW - 2, 2000);
 
 // Lista os itens individuais
 ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Adiantamento', fmtBRL(r.adiant), 
-             { size: R_LINE });
+             { valueColor:'#b91c1c', size: 12, spacing: 5 });
 
 ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Deve Anterior', fmtBRL(deveAnt2),
-             { bold: true, size: R_LINE });
+             { valueColor:'#b91c1c', size: 12, spacing: 5 });
 
 ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Valor Extra', fmtBRL(r.valorExtra), 
-             { size: R_LINE });
+             { valueColor:'#b91c1c', size: 12, spacing: 5 });
 
 // VALES
 const iniPNG = rec.ini || '';
@@ -2618,10 +2618,10 @@ itensVale.forEach(function(p) {
     ? saldoDepoisPorVale.get(p.id)
     : Math.max((Number(v?.valor)||0) - aplicado, 0);
 
-  const rotulo = 'VALE ' + codTxt + ': ' + fmtBRL(saldoLabel);
-  ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, rotulo, fmtBRL(Math.abs(aplicado)),
-               { valueColor:'#b91c1c', size: R_LINE });
-});
+    const rotulo = 'VALE ' + codTxt + ': ' + fmtBRL(saldoLabel);
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, rotulo, fmtBRL(Math.abs(aplicado)),
+                 { valueColor:'#b91c1c', size: 11, lineHeight: 14 });  // ✅ Fonte menor para vales
+  });
 
 // ✅ TOTAL ACRÉSCIMOS (Deve Anterior + Adiantamento + Valor Extra + Vales)
 const totalAcrescimos = (Number(r.adiant)||0) + deveAnt2 + (Number(r.valorExtra)||0) + totalVales;
@@ -2666,14 +2666,14 @@ ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'À Pagar', fmtBRL(aPagarCalc),
 adiantamentos.forEach(function(p) {
   const rot = fmtData(p.data||'') + ' — ADIANTAMENTO';
   ry = drawKV2(ctx, rightX+26, ry, rightW-52, rot, fmtBRL(Number(p.valor)||0),
-               { color:'#16a34a', valueColor:'#16a34a', size: R_SUB });
+               { color:'#16a34a', valueColor:'#16a34a', size: 11, spacing: 4 });
 });
 
 pagamentosNormais.forEach(function(p) {
   const forma = (p.forma || '').toString().toUpperCase() || 'PAGTO';
   const rot = fmtData(p.data||'') + ' — ' + forma;
   ry = drawKV2(ctx, rightX+12, ry, rightW-24, rot, fmtBRL(Number(p.valor)||0),
-               { color:'#16a34a', valueColor:'#16a34a', size: R_SUB });
+               { color:'#16a34a', valueColor:'#16a34a', size: 11, spacing: 4 });
 });
 
 

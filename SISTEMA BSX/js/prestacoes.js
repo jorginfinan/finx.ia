@@ -2453,12 +2453,40 @@ if (!dataURL) {
   const c2 = Number(r.comis2) || 0;
   const temSegundaComissao = c2 > 0;
   
-  // Constantes de tamanho
+// ============================================
+  // CÁLCULO DINÂMICO DE TAMANHOS
+  // ============================================
+  
+  // Contar itens em cada seção (variáveis temporárias para contagem)
+  const _pagtsCount = Array.isArray(rec.pagamentos) ? rec.pagamentos : [];
+  const _parcelasCount = Array.isArray(rec.valeParcAplicado) ? rec.valeParcAplicado : [];
+  const _coletasCount = Array.isArray(rec.coletas) ? rec.coletas : [];
+  
+  const numColetas = _coletasCount.length + 8; // coletas + totais + comissão + resultado
+  const numVales = _parcelasCount.length || (window.vales||[]).filter(v => v.gerenteId === rec.gerenteId && !v.quitado).length;
+  const numAcrescimos = 3 + numVales + 1; // Adiant + Deve + Extra + Vales + Total
+  const numPagamentos = _pagtsCount.filter(p => String(p.forma||'').toUpperCase() !== 'VALE').length;
+  const numResultado = 2 + numPagamentos + 2; // Crédito + À Pagar + Pagtos + RESTAM
+  
+  const totalItens = numColetas + numAcrescimos + numResultado;
+  const alturaDisponivel = rightH - 120; // Espaço disponível (descontando headers)
+  
+  // Calcular tamanho ideal baseado na quantidade de itens
+  const espacoPorItem = alturaDisponivel / Math.max(totalItens, 15);
+  
+  // Limites mínimo e máximo para os tamanhos
   const R_GROUP = 18;
-  const R_BOLD = 16;
-  const R_LINE = 14;
-  const R_SUB = 12;
-  const groupPad = 8;
+  const R_BOLD = Math.max(12, Math.min(16, espacoPorItem * 0.7));
+  const R_LINE = Math.max(10, Math.min(14, espacoPorItem * 0.6));
+  const R_SUB = Math.max(9, Math.min(12, espacoPorItem * 0.5));
+  const groupPad = Math.max(4, Math.min(8, espacoPorItem * 0.3));
+  
+  // Espaçamento para itens de lista (vales, pagamentos)
+  const SPACING_ITEM = Math.max(2, Math.min(6, espacoPorItem * 0.25));
+  const SIZE_ITEM = Math.max(9, Math.min(12, espacoPorItem * 0.5));
+  const R_REST = Math.max(18, Math.min(24, espacoPorItem * 1.0));
+  
+  console.log('📐 Layout dinâmico:', { totalItens, espacoPorItem: espacoPorItem.toFixed(1), R_LINE, SIZE_ITEM, SPACING_ITEM });
 
   // Inicializa posição Y da coluna direita
   let ry = rightY + 10;
@@ -2574,19 +2602,19 @@ ctx.fillRect(rightX + 1, ry - Math.ceil(groupPad / 2), rightW - 2, 2000);
 
 // Lista os itens individuais
 ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Adiantamento', fmtBRL(r.adiant), 
-             { valueColor:'#b91c1c', size: 12, spacing: 5 });
+             { valueColor:'#b91c1c', size: R_LINE, spacing: SPACING_ITEM });
 
 ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Deve Anterior', fmtBRL(deveAnt2),
-             { valueColor:'#b91c1c', size: 12, spacing: 5 });
+             { valueColor:'#b91c1c', size: R_LINE, spacing: SPACING_ITEM });
 
 ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Valor Extra', fmtBRL(r.valorExtra), 
-             { valueColor:'#b91c1c', size: 12, spacing: 5 });
+             { valueColor:'#b91c1c', size: R_LINE, spacing: SPACING_ITEM });
 
 // VALES
 const iniPNG = rec.ini || '';
 const fimPNG = rec.fim || '';
-const gidPNG = rec.gerenteId || '';  // ← RENOMEADO de gidSel para gidPNG
-const parcelasVale = Array.isArray(rec.valeParcAplicado) ? rec.valeParcAplicado : [];
+const gidPNG = rec.gerenteId || '';
+const parcelasVale = Array.isArray(rec.valeParcAplicado) ? rec.valeParcAplicado : [];  // ✅ Esta é a declaração correta
 const aplicadoPorId = new Map(parcelasVale.map(function(p) { 
   return [p.id, Number(p.aplicado)||0]; 
 }));
@@ -2620,7 +2648,7 @@ itensVale.forEach(function(p) {
 
     const rotulo = 'VALE ' + codTxt + ': ' + fmtBRL(saldoLabel);
     ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, rotulo, fmtBRL(Math.abs(aplicado)),
-                 { valueColor:'#b91c1c', size: 11, lineHeight: 14 });  // ✅ Fonte menor para vales
+                 { valueColor:'#b91c1c', size: SIZE_ITEM, spacing: SPACING_ITEM });
   });
 
 // ✅ TOTAL ACRÉSCIMOS (Deve Anterior + Adiantamento + Valor Extra + Vales)
@@ -2629,18 +2657,17 @@ const totalAcrescimos = (Number(r.adiant)||0) + deveAnt2 + (Number(r.valorExtra)
 ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Total Acréscimos', fmtBRL(totalAcrescimos),
              { bold:true, valueColor:'#b91c1c', size: R_BOLD });
 
-// listas de pagamentos 
-const _pagts = Array.isArray(rec.pagamentos) ? rec.pagamentos : [];
-const adiantamentos = _pagts
+// listas de pagamentos (usa _pagtsCount já declarado)
+const adiantamentos = _pagtsCount
   .filter(function(p) { return String(p.forma||'').toUpperCase() === 'ADIANTAMENTO'; })
   .sort(function(a,b) { return (a.data||'').localeCompare(b.data||''); });
-const pagamentosNormais = _pagts
+
+const pagamentosNormais = _pagtsCount
   .filter(function(p) {
     const f = String(p.forma||'').toUpperCase();
     return f !== 'ADIANTAMENTO' && f !== 'VALE';
   })
   .sort(function(a,b) { return (a.data||'').localeCompare(b.data||''); });
-
 // ---- RESULTADO ----
 ry += groupPad;
 ry = drawGroup(ctx, rightX, ry + 6, rightW, 'RESULTADO', R_GROUP);
@@ -2666,14 +2693,14 @@ ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'À Pagar', fmtBRL(aPagarCalc),
 adiantamentos.forEach(function(p) {
   const rot = fmtData(p.data||'') + ' — ADIANTAMENTO';
   ry = drawKV2(ctx, rightX+26, ry, rightW-52, rot, fmtBRL(Number(p.valor)||0),
-               { color:'#16a34a', valueColor:'#16a34a', size: 11, spacing: 4 });
+               { color:'#16a34a', valueColor:'#16a34a', size: SIZE_ITEM, spacing: SPACING_ITEM });
 });
 
 pagamentosNormais.forEach(function(p) {
   const forma = (p.forma || '').toString().toUpperCase() || 'PAGTO';
   const rot = fmtData(p.data||'') + ' — ' + forma;
   ry = drawKV2(ctx, rightX+12, ry, rightW-24, rot, fmtBRL(Number(p.valor)||0),
-               { color:'#16a34a', valueColor:'#16a34a', size: 11, spacing: 4 });
+               { color:'#16a34a', valueColor:'#16a34a', size: SIZE_ITEM, spacing: SPACING_ITEM });
 });
 
 

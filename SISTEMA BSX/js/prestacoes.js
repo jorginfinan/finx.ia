@@ -3351,7 +3351,23 @@ window.prestToDataURL = function(rec) {
     const headerHeight = 100;
     const footerHeight = 60;
     const minTableHeight = 700;
-    const tableHeightNeeded = Math.max(minTableHeight, qtdDespesas * rowHeight + 100);
+    
+    // ✅ CALCULA ALTURA NECESSÁRIA PARA COLUNA DIREITA
+    const _pagtsCalc = Array.isArray(rec.pagamentos) ? rec.pagamentos : [];
+    const _parcelasCalc = Array.isArray(rec.valeParcAplicado) ? rec.valeParcAplicado : [];
+    const _coletasCalc = Array.isArray(rec.coletas) ? rec.coletas : [];
+    
+    const numValesCalc = _parcelasCalc.length || (window.vales||[]).filter(v => v.gerenteId === rec.gerenteId && !v.quitado).length;
+    const numPagtosCalc = _pagtsCalc.filter(p => String(p.forma||'').toUpperCase() !== 'VALE').length;
+    
+    // Itens na coluna direita: coletas + acréscimos + resultado
+    const itensColunaDireita = _coletasCalc.length + 10 + // coletas + totais
+                               (3 + numValesCalc + 1) +    // acréscimos
+                               (2 + numPagtosCalc + 2);    // resultado
+    
+    const alturaColunaDireita = itensColunaDireita * 22 + 150; // 22px por item + headers
+    
+    const tableHeightNeeded = Math.max(minTableHeight, qtdDespesas * rowHeight + 100, alturaColunaDireita);
     const canvasHeight = Math.max(900, headerHeight + tableHeightNeeded + footerHeight);
     
     // Canvas base (offscreen)
@@ -3360,20 +3376,27 @@ window.prestToDataURL = function(rec) {
     cvs.height = canvasHeight; // ✅ Altura dinâmica
     const ctx = cvs.getContext('2d');
     
-    console.log('[prestToDataURL] Canvas:', cvs.width, 'x', cvs.height, '| Despesas:', qtdDespesas);
+    console.log('[prestToDataURL] Canvas:', cvs.width, 'x', cvs.height, '| Despesas:', qtdDespesas, '| Itens direita:', itensColunaDireita);
     
     if (!ctx) {
       console.error('[prestToDataURL] Erro ao criar contexto 2D');
       return null;
     }
 
-    // ===== Helpers de fonte/tamanhos para a COLUNA DIREITA =====
-    const R_GROUP = 20;   // título dos grupos (COLETAS / ACRÉSCIMOS / RESULTADO)
-    const R_LINE  = 16;   // linhas normais
-    const R_SUB   = 15;   // linhas secundárias (itens de lista)
-    const R_BOLD  = 17;   // totais/intermediários
-    const R_REST  = 24;   // "RESTAM"
-    const groupPad = 8;
+    // ===== CÁLCULO DINÂMICO DE TAMANHOS =====
+    const rightHCalc = canvasHeight - 140;
+    const espacoPorItemCalc = rightHCalc / Math.max(itensColunaDireita, 15);
+    
+    const R_GROUP = 18;
+    const R_BOLD = Math.max(12, Math.min(17, espacoPorItemCalc * 0.7));
+    const R_LINE = Math.max(10, Math.min(16, espacoPorItemCalc * 0.65));
+    const R_SUB = Math.max(9, Math.min(15, espacoPorItemCalc * 0.55));
+    const R_REST = Math.max(18, Math.min(24, espacoPorItemCalc * 1.0));
+    const groupPad = Math.max(4, Math.min(8, espacoPorItemCalc * 0.3));
+    const SPACING_ITEM = Math.max(2, Math.min(6, espacoPorItemCalc * 0.25));
+    const SIZE_ITEM = Math.max(9, Math.min(14, espacoPorItemCalc * 0.5));
+    
+    console.log('📐 [prestToDataURL] Layout:', { itensColunaDireita, espacoPorItemCalc: espacoPorItemCalc.toFixed(1), R_LINE, SIZE_ITEM });
 
     // ===== Fundo / Topo =====
     ctx.fillStyle = '#fff';
@@ -3727,10 +3750,10 @@ window.prestToDataURL = function(rec) {
           ? saldoDepoisPorVale.get(p.id)
           : Math.max((Number(v?.valor)||0) - aplicado, 0);
 
-        const rotulo = 'VALE ' + codTxt + ': ' + (window.fmtBRL ? window.fmtBRL(saldoLabel) : String(saldoLabel));
-        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, rotulo, 
-                     window.fmtBRL ? window.fmtBRL(Math.abs(aplicado)) : String(Math.abs(aplicado)),
-                     { valueColor:'#b91c1c', size: R_LINE });
+          const rotulo = 'VALE ' + codTxt + ': ' + (window.fmtBRL ? window.fmtBRL(saldoLabel) : String(saldoLabel));
+          ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, rotulo, 
+                       window.fmtBRL ? window.fmtBRL(Math.abs(aplicado)) : String(Math.abs(aplicado)),
+                       { valueColor:'#b91c1c', size: SIZE_ITEM, spacing: SPACING_ITEM });
       });
 
       // ✅ TOTAL ACRÉSCIMOS (Deve Anterior + Adiantamento + Valor Extra + Vales)
@@ -3781,26 +3804,26 @@ window.prestToDataURL = function(rec) {
                    window.fmtBRL ? window.fmtBRL(aPagarCalc) : String(aPagarCalc),
                    { bold:true, size: R_BOLD });
 
-      // ADIANTAMENTOS / PAGAMENTOS
-      adiantamentos.forEach(function(p) {
-        const rot = (window.fmtData ? window.fmtData(p.data||'') : p.data||'') + ' — ADIANTAMENTO';
-        ry = drawKV2(ctx, rightX+26, ry, rightW-52, rot, 
-                     window.fmtBRL ? window.fmtBRL(Number(p.valor)||0) : String(Number(p.valor)||0),
-                     { color:'#16a34a', valueColor:'#16a34a', size: R_SUB });
-      });
+  // ADIANTAMENTOS / PAGAMENTOS
+  adiantamentos.forEach(function(p) {
+    const rot = (window.fmtData ? window.fmtData(p.data||'') : p.data||'') + ' — ADIANTAMENTO';
+    ry = drawKV2(ctx, rightX+26, ry, rightW-52, rot, 
+                 window.fmtBRL ? window.fmtBRL(Number(p.valor)||0) : String(Number(p.valor)||0),
+                 { color:'#16a34a', valueColor:'#16a34a', size: SIZE_ITEM, spacing: SPACING_ITEM });
+  });
 
-      pagamentosNormais.forEach(function(p) {
-        const forma = (p.forma || '').toString().toUpperCase() || 'PAGTO';
-        const rot = (window.fmtData ? window.fmtData(p.data||'') : p.data||'') + ' — ' + forma;
-        ry = drawKV2(ctx, rightX+12, ry, rightW-24, rot, 
-                     window.fmtBRL ? window.fmtBRL(Number(p.valor)||0) : String(Number(p.valor)||0),
-                     { color:'#16a34a', valueColor:'#16a34a', size: R_SUB });
-      });
+  pagamentosNormais.forEach(function(p) {
+    const forma = (p.forma || '').toString().toUpperCase() || 'PAGTO';
+    const rot = (window.fmtData ? window.fmtData(p.data||'') : p.data||'') + ' — ' + forma;
+    ry = drawKV2(ctx, rightX+12, ry, rightW-24, rot, 
+                 window.fmtBRL ? window.fmtBRL(Number(p.valor)||0) : String(Number(p.valor)||0),
+                 { color:'#16a34a', valueColor:'#16a34a', size: SIZE_ITEM, spacing: SPACING_ITEM });
+  });
     }
 
     // ✅ RESTAM NO FINAL (dentro do quadrado RESULTADO)
     // Adiciona espaço antes do RESTAM para separá-lo do conteúdo acima
-    ry += 20;
+    ry += 8;
 
     const restamValor = Number(r.restam) || 0;
     const restamCor = restamValor < 0 ? '#b91c1c' : '#111';

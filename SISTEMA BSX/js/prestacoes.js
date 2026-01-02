@@ -5133,78 +5133,147 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ====== CAMPO EDITÁVEL PARA SALDO A CARREGAR (EXCEÇÕES) ======
 (function() {
-  // Aguarda o DOM estar pronto
+  let tentativas = 0;
+  const maxTentativas = 30;
+  
   function initSaldoManual() {
-    // Procura o container onde adicionar o campo
-    const creditoInput = document.getElementById('pcCredito');
-    if (!creditoInput) {
-      setTimeout(initSaldoManual, 500);
+    tentativas++;
+    
+    // Verifica se já foi criado
+    if (document.getElementById('pcSaldoManualContainer')) {
+      console.log('✅ Campo Saldo Manual já existe');
       return;
     }
     
-    // Verifica se já foi criado
-    if (document.getElementById('pcSaldoManual')) return;
+    // Estratégias para encontrar onde inserir o campo
+    let targetEl = document.getElementById('pcCredito') 
+                || document.getElementById('pcDivida')
+                || document.getElementById('pcValorExtra')
+                || document.getElementById('pcAdiant')
+                || document.getElementById('pcDeveAnterior');
     
-    // Cria o container do campo
-    const container = document.createElement('div');
-    container.className = 'form-group';
-    container.style.marginTop = '10px';
-    container.innerHTML = `
-      <label style="display:flex;align-items:center;gap:8px;">
-        <input type="checkbox" id="pcUsarSaldoManual" style="width:auto;margin:0;">
-        <span>Usar Saldo Manual (exceção)</span>
-      </label>
-      <input type="number" 
-             id="pcSaldoManual" 
-             placeholder="0,00" 
-             step="0.01" 
-             min="0"
-             style="margin-top:5px;display:none;"
-             title="Digite o valor do saldo a carregar manualmente">
-      <small style="color:#888;font-size:11px;display:none;" id="pcSaldoManualHelp">
-        ⚠️ Este valor substituirá o saldo calculado automaticamente
-      </small>
-    `;
-    
-    // Insere após o campo de crédito
-    const parentContainer = creditoInput.closest('.form-group') || creditoInput.parentElement;
-    if (parentContainer && parentContainer.parentElement) {
-      parentContainer.parentElement.insertBefore(container, parentContainer.nextSibling);
+    // Se não encontrou, tenta pelo formulário de prestação
+    if (!targetEl) {
+      const pcForm = document.querySelector('#formPrestacao, .prestacao-form, [data-form="prestacao"]');
+      if (pcForm) {
+        targetEl = pcForm.querySelector('input[type="number"]');
+      }
     }
     
-    // Eventos
-    const checkbox = document.getElementById('pcUsarSaldoManual');
-    const input = document.getElementById('pcSaldoManual');
-    const help = document.getElementById('pcSaldoManualHelp');
-    
-    checkbox.addEventListener('change', function() {
-      input.style.display = this.checked ? 'block' : 'none';
-      help.style.display = this.checked ? 'block' : 'none';
-      if (!this.checked) {
-        input.value = '';
-        window.__saldoManualAtivo = false;
-      } else {
-        window.__saldoManualAtivo = true;
+    // Se não encontrou, tenta pelo canvas (indica que está na página de prestações)
+    if (!targetEl) {
+      const pcCanvas = document.getElementById('pcCanvas');
+      if (pcCanvas) {
+        // Procura inputs próximos ao canvas
+        const container = pcCanvas.closest('.card, .panel, section, .content');
+        if (container) {
+          targetEl = container.querySelector('input[id^="pc"]');
+        }
       }
-      // Recalcula
-      if (typeof pcCalcular === 'function') pcCalcular();
-    });
+    }
     
-    input.addEventListener('input', function() {
-      window.__saldoManualValor = parseFloat(this.value) || 0;
-      // Recalcula
-      if (typeof pcCalcular === 'function') pcCalcular();
-    });
+    if (!targetEl) {
+      if (tentativas < maxTentativas) {
+        setTimeout(initSaldoManual, 500);
+      } else {
+        console.warn('⚠️ Campo Saldo Manual: não encontrou local para inserir após', maxTentativas, 'tentativas');
+      }
+      return;
+    }
     
-    console.log('✅ Campo de Saldo Manual inicializado');
+    // Cria o container do campo com visual destacado
+    const container = document.createElement('div');
+    container.id = 'pcSaldoManualContainer';
+    container.style.cssText = 'margin:15px 0; padding:12px; background:linear-gradient(135deg, #fff3cd 0%, #ffe69c 100%); border:2px solid #ffc107; border-radius:10px; box-shadow: 0 2px 8px rgba(255,193,7,0.3);';
+    container.innerHTML = `
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:8px;">
+        <input type="checkbox" id="pcUsarSaldoManual" style="width:20px;height:20px;margin:0;cursor:pointer;accent-color:#d39e00;">
+        <span style="font-weight:700;color:#856404;font-size:14px;">⚠️ Usar Saldo Manual (exceção/acordo)</span>
+      </label>
+      <div id="pcSaldoManualWrapper" style="display:none;margin-top:10px;">
+        <input type="number" 
+               id="pcSaldoManual" 
+               placeholder="Digite o valor (use 0 para zerar)..."
+               step="0.01" 
+               min="0"
+               style="width:100%;padding:10px;border:2px solid #d39e00;border-radius:6px;font-size:15px;background:#fff;">
+        <small id="pcSaldoManualHelp" style="color:#856404;font-size:12px;margin-top:6px;display:block;">
+          💡 Este valor substituirá o saldo calculado automaticamente
+        </small>
+      </div>
+    `;
+    
+    // Tenta inserir no melhor local possível
+    let inserted = false;
+    
+    // Estratégia 1: Após o último campo de input da seção
+    const parentContainer = targetEl.closest('.form-group, .input-group, .field, .form-row') || targetEl.parentElement;
+    if (parentContainer && parentContainer.parentElement) {
+      const siblings = parentContainer.parentElement.children;
+      // Insere no final do grupo de inputs
+      parentContainer.parentElement.appendChild(container);
+      inserted = true;
+    }
+    
+    // Estratégia 2: Após o elemento target
+    if (!inserted && targetEl.parentElement) {
+      targetEl.parentElement.appendChild(container);
+      inserted = true;
+    }
+    
+    if (!inserted) {
+      console.warn('⚠️ Não conseguiu inserir o campo Saldo Manual');
+      return;
+    }
+    
+    // Configura eventos
+    const checkbox = document.getElementById('pcUsarSaldoManual');
+    const wrapper = document.getElementById('pcSaldoManualWrapper');
+    const input = document.getElementById('pcSaldoManual');
+    
+    if (checkbox && wrapper && input) {
+      checkbox.addEventListener('change', function() {
+        wrapper.style.display = this.checked ? 'block' : 'none';
+        window.__saldoManualAtivo = this.checked;
+        
+        if (!this.checked) {
+          input.value = '';
+          window.__saldoManualValor = undefined;
+        }
+        
+        // Recalcula
+        if (typeof pcCalcular === 'function') {
+          setTimeout(pcCalcular, 100);
+        }
+      });
+      
+      input.addEventListener('input', function() {
+        window.__saldoManualValor = parseFloat(this.value) || 0;
+        // Recalcula
+        if (typeof pcCalcular === 'function') {
+          setTimeout(pcCalcular, 100);
+        }
+      });
+      
+      console.log('✅ Campo de Saldo Manual inicializado com sucesso!');
+    }
   }
   
-  // Inicia
+  // Inicia após delays para garantir que a página carregou
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initSaldoManual);
+    document.addEventListener('DOMContentLoaded', () => setTimeout(initSaldoManual, 1500));
   } else {
-    setTimeout(initSaldoManual, 1000);
+    setTimeout(initSaldoManual, 1500);
   }
+  
+  // Também tenta quando navegar para a página de prestações
+  window.addEventListener('hashchange', () => setTimeout(initSaldoManual, 1000));
+  document.addEventListener('click', function(e) {
+    const link = e.target.closest('a, button, [data-nav]');
+    if (link && (link.textContent || '').toLowerCase().includes('presta')) {
+      setTimeout(initSaldoManual, 1000);
+    }
+  });
 })();
 
 // Função auxiliar para obter o saldo (manual ou calculado)

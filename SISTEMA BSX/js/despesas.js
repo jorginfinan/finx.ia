@@ -813,7 +813,7 @@ function __buildPrintHTML({ titulo, sub, rows, modo }) {
     </div>
   `;
 
-  const thead = isCom
+ const thead = isCom
     ? `
       <thead>
         <tr>
@@ -821,7 +821,6 @@ function __buildPrintHTML({ titulo, sub, rows, modo }) {
           <th class="col-ficha">Ficha</th>
           <th class="col-info">Informações</th>
           <th class="col-num">Valor Ajuda</th>
-          <th class="col-num">Venda Bruta</th>
         </tr>
       </thead>
     `
@@ -852,14 +851,13 @@ function __buildPrintHTML({ titulo, sub, rows, modo }) {
           const vBrutaTd = showCalc ? fmtBRL(r.vBruta||0) : '—';
           const vLiqTd   = showCalc ? fmtBRL(r.vLiq  ||0) : '—';
           const trCls    = isTotal ? 'class="group-total"' : '';
-    if (isCom){
+ if (isCom){
       return `
         <tr ${trCls}>
           <td>${esc(r.rota)}</td>
           <td>${esc(r.ficha)}</td>
           <td>${esc(r.info)}</td>
           <td class="num">${fmtBRL(r.valorAj)}</td>
-          <td class="num">${vBrutaTd}</td>
         </tr>
       `;
     }
@@ -878,13 +876,12 @@ function __buildPrintHTML({ titulo, sub, rows, modo }) {
     `;
   }).join('');
 
-  const tfoot = isCom
+ const tfoot = isCom
     ? `
       <tfoot>
         <tr>
           <td colspan="3" class="num">Totais:</td>
           <td class="num">${fmtBRL(totais.ajuda)}</td>
-          <td class="num">${fmtBRL(totais.bruta)}</td>
         </tr>
       </tfoot>
     `

@@ -1953,6 +1953,29 @@ const valePg = valesAplicados.reduce((sum, v) => {
       };
     }
     
+    // Atualiza o snapshot com informações do saldo
+// ✅ Verifica se tem saldo manual ativo
+const saldoNovoFinal = window.getSaldoParaUsar 
+? window.getSaldoParaUsar(calculoSaldo.saldoCarregarNovo)
+: calculoSaldo.saldoCarregarNovo;
+
+prestacaoAtual.saldoInfo = {
+saldoCarregarAnterior: calculoSaldo.saldoCarregarAnterior,
+saldoCarregarNovo: saldoNovoFinal,
+saldoManualUsado: window.__saldoManualAtivo || false,
+      // ✅ NOVO: Guarda apenas a contribuição DESTA prestação
+      contribuicaoDestaPrestacao: calculoSaldo.resultado < 0 ? Math.abs(calculoSaldo.resultado) : 0,
+      baseCalculoSaldo: calculoSaldo.baseCalculo,
+      resultadoSemana: calculoSaldo.resultado,
+      observacao: calculoSaldo.observacao,
+      usandoSaldoAcumulado: true
+    };
+    
+    prestacaoAtual.resumo = {
+      ...(prestacaoAtual.resumo || {}),
+      // ✅ Usa saldo manual se ativo, senão usa o calculado
+      saldoNegAcarreado: Number(saldoNovoFinal) || 0
+    };
 
     console.log('💰 Saldo Acumulado aplicado:', {
       baseComissao,

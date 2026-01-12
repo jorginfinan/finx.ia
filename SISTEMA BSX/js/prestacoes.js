@@ -1845,76 +1845,114 @@ const valePg = valesAplicados.reduce((sum, v) => {
       });
     }
     
- // ✅ CORREÇÃO: Passa parâmetros adicionais para o módulo
-    // ✅ REGRA: Gerentes com 2ª comissão acumulam saldo apenas das COLETAS (sem despesas)
-    const despesasParaSaldo = temSegundaComissao ? 0 : despesasTot;
+// ============================================
+    // REGRA ESPECIAL: Gerentes com 2ª comissão
+    // ============================================
+    // - Saldo acumula apenas COLETAS (sem despesas)
+    // - Comissão 1 (25%): Só paga quando saldo a carregar = 0
+    // - Comissão 2 (5%): Paga sempre que coletas > 0
+    // - Se coletas ≤ 0: Não paga nenhuma comissão
+    // ============================================
     
-    console.log('📊 [SaldoAcumulado] Regra aplicada:', {
-      temSegundaComissao,
-      despesasOriginais: despesasTot,
-      despesasParaSaldo,
-      motivo: temSegundaComissao ? 'Com 2ª comissão: usa apenas COLETAS' : 'Sem 2ª comissão: usa COLETAS - DESPESAS'
-    });
-    
-    const calculoSaldo = await window.SaldoAcumulado.calcular({
-      gerenteId: g.uid,
-      empresaId: empresaAtual,
-      coletas: coletas,
-      despesas: despesasParaSaldo,  // ✅ Zero se tem 2ª comissão
-      comissao: perc1,
-      comissao2: temSegundaComissao ? perc2 : 0,
-      baseCalculo: baseCalculo,
-      saldoAnterior: saldoParaCalcular,
-      temSegundaComissao: temSegundaComissao  // ✅ Flag para o módulo saber
-    });
-    
-    console.log('💰 [SaldoAcumulado] Resultado do cálculo:', calculoSaldo);
-
-    // ✅ Valores retornados pelo módulo de saldo acumulado
-    baseComissao   = Number(calculoSaldo.baseCalculo) || 0;
-    valorComissao1 = Number(calculoSaldo.valorComissao) || 0;
-    valorComissao2 = Number(calculoSaldo.valorComissao2) || 0;
-    
-    // ✅ CORREÇÃO: Recalcula resultado usando despesas REAIS
-    // O módulo de saldo acumulado calcula sem despesas (para gerentes com 2ª comissão)
-    // Mas o resultado final da prestação SEMPRE deve considerar as despesas
     if (temSegundaComissao) {
-      // Para gerentes com 2ª comissão: Coletas - Despesas - Comissões
+      // Saldo anterior do Supabase
+      const saldoAnterior = saldoParaCalcular || 0;
+      
+      // Calcula novo saldo: anterior - coletas (se coletas positivo, reduz o saldo)
+      let novoSaldo = saldoAnterior;
+      if (coletas > 0) {
+        novoSaldo = Math.max(0, saldoAnterior - coletas);
+      } else if (coletas < 0) {
+        // Coletas negativas aumentam o saldo
+        novoSaldo = saldoAnterior + Math.abs(coletas);
+      }
+      
+      // Regra de comissões
+      if (coletas <= 0) {
+        // Coletas negativas: não paga nenhuma comissão
+        valorComissao1 = 0;
+        valorComissao2 = 0;
+        baseComissao = 0;
+      } else if (saldoAnterior > 0) {
+        // Saldo pendente: não paga comissão 1 (25%), mas paga comissão 2 (5%)
+        valorComissao1 = 0;
+        valorComissao2 = coletas * (perc2 / 100);
+        baseComissao = 0; // Base comissão zero porque não paga a principal
+      } else {
+        // Saldo zerado: paga ambas as comissões normalmente
+        valorComissao1 = coletas * (perc1 / 100);
+        valorComissao2 = (coletas - valorComissao1) * (perc2 / 100);
+        baseComissao = coletas;
+      }
+      
+      // Resultado = Coletas - Despesas - Comissões
       resultado = coletas - despesasTot - valorComissao1 - valorComissao2;
-      console.log('📊 [SaldoAcumulado] Resultado recalculado COM despesas:', {
+      
+      console.log('📊 [SaldoAcumulado] Gerente com 2ª comissão - Cálculo especial:', {
         coletas,
         despesasTot,
+        saldoAnterior,
+        novoSaldo,
+        perc1: perc1 + '%',
+        perc2: perc2 + '%',
         valorComissao1,
         valorComissao2,
-        resultado
+        resultado,
+        regra: saldoAnterior > 0 ? 'Saldo pendente: só paga 5%' : 'Saldo zero: paga 25% + 5%'
       });
+      
+      // Atualiza saldoInfo manualmente (não usa o módulo SaldoAcumulado)
+      prestacaoAtual.saldoInfo = {
+        saldoCarregarAnterior: saldoAnterior,
+        saldoCarregarNovo: novoSaldo,
+        usandoSaldoAcumulado: true,
+        regraEspecial: 'SEGUNDA_COMISSAO'
+      };
+      
+      prestacaoAtual.resumo = {
+        ...(prestacaoAtual.resumo || {}),
+        saldoNegAcarreado: novoSaldo,
+        baseComissao: baseComissao
+      };
+      
     } else {
+      // Gerentes SEM 2ª comissão: usa o módulo SaldoAcumulado normalmente
+      const calculoSaldo = await window.SaldoAcumulado.calcular({
+        gerenteId: g.uid,
+        empresaId: empresaAtual,
+        coletas: coletas,
+        despesas: despesasTot,
+        comissao: perc1,
+        comissao2: 0,
+        baseCalculo: baseCalculo,
+        saldoAnterior: saldoParaCalcular
+      });
+      
+      console.log('💰 [SaldoAcumulado] Resultado do cálculo:', calculoSaldo);
+
+      baseComissao   = Number(calculoSaldo.baseCalculo) || 0;
+      valorComissao1 = Number(calculoSaldo.valorComissao) || 0;
+      valorComissao2 = 0;
       resultado = Number(calculoSaldo.resultadoFinal) || calculoSaldo.resultado;
+      
+      // Atualiza saldoInfo
+      const saldoNovoFinal = window.getSaldoParaUsar 
+        ? window.getSaldoParaUsar(calculoSaldo.saldoCarregarNovo)
+        : calculoSaldo.saldoCarregarNovo;
+
+      prestacaoAtual.saldoInfo = {
+        saldoCarregarAnterior: calculoSaldo.saldoCarregarAnterior,
+        saldoCarregarNovo: saldoNovoFinal,
+        saldoManualUsado: window.__saldoManualAtivo || false,
+        usandoSaldoAcumulado: true
+      };
+      
+      prestacaoAtual.resumo = {
+        ...(prestacaoAtual.resumo || {}),
+        saldoNegAcarreado: Number(saldoNovoFinal) || 0
+      };
     }
     
-    // Atualiza o snapshot com informações do saldo
-// ✅ Verifica se tem saldo manual ativo
-const saldoNovoFinal = window.getSaldoParaUsar 
-? window.getSaldoParaUsar(calculoSaldo.saldoCarregarNovo)
-: calculoSaldo.saldoCarregarNovo;
-
-prestacaoAtual.saldoInfo = {
-saldoCarregarAnterior: calculoSaldo.saldoCarregarAnterior,
-saldoCarregarNovo: saldoNovoFinal,
-saldoManualUsado: window.__saldoManualAtivo || false,
-      // ✅ NOVO: Guarda apenas a contribuição DESTA prestação
-      contribuicaoDestaPrestacao: calculoSaldo.resultado < 0 ? Math.abs(calculoSaldo.resultado) : 0,
-      baseCalculoSaldo: calculoSaldo.baseCalculo,
-      resultadoSemana: calculoSaldo.resultado,
-      observacao: calculoSaldo.observacao,
-      usandoSaldoAcumulado: true
-    };
-    
-    prestacaoAtual.resumo = {
-      ...(prestacaoAtual.resumo || {}),
-      // ✅ Usa saldo manual se ativo, senão usa o calculado
-      saldoNegAcarreado: Number(saldoNovoFinal) || 0
-    };
 
     console.log('💰 Saldo Acumulado aplicado:', {
       baseComissao,

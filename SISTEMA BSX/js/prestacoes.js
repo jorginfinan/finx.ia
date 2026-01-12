@@ -1915,6 +1915,9 @@ const valePg = valesAplicados.reduce((sum, v) => {
         baseComissao: baseComissao
       };
       
+      console.log('📊 [SaldoAcumulado] saldoInfo definido:', prestacaoAtual.saldoInfo);
+      console.log('📊 [SaldoAcumulado] resumo.saldoNegAcarreado:', novoSaldo);
+      
     } else {
       // Gerentes SEM 2ª comissão: usa o módulo SaldoAcumulado normalmente
       const calculoSaldo = await window.SaldoAcumulado.calcular({
@@ -2080,11 +2083,17 @@ negAnterior: (
   0
 ),
 // saldo que vai ficar para a PRÓXIMA prestação
-saldoNegAcarreado: (
-  (prestacaoAtual.saldoInfo && Number(prestacaoAtual.saldoInfo.saldoCarregarNovo || 0)) ||
-  (prestacaoAtual.resumo && Number(prestacaoAtual.resumo.saldoNegAcarreado || 0)) ||
-  0
-),
+saldoNegAcarreado: (function() {
+  // Prioridade 1: saldoInfo.saldoCarregarNovo (set pelo bloco de saldo acumulado)
+  if (prestacaoAtual.saldoInfo && prestacaoAtual.saldoInfo.saldoCarregarNovo !== undefined) {
+    return Number(prestacaoAtual.saldoInfo.saldoCarregarNovo);
+  }
+  // Prioridade 2: resumo.saldoNegAcarreado existente
+  if (prestacaoAtual.resumo && prestacaoAtual.resumo.saldoNegAcarreado !== undefined) {
+    return Number(prestacaoAtual.resumo.saldoNegAcarreado);
+  }
+  return 0;
+})(),
 adiantPg: adiantPg,
 totalColetasLista: coletas, 
 totalVales: valePg,

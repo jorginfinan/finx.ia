@@ -1845,7 +1845,7 @@ const valePg = valesAplicados.reduce((sum, v) => {
       });
     }
     
-// ============================================
+    // ============================================
     // REGRA ESPECIAL: Gerentes com 2ª comissão
     // ============================================
     // - Saldo acumula apenas COLETAS (sem despesas)
@@ -1901,7 +1901,7 @@ const valePg = valesAplicados.reduce((sum, v) => {
         regra: saldoAnterior > 0 ? 'Saldo pendente: só paga 5%' : 'Saldo zero: paga 25% + 5%'
       });
       
-      // Atualiza saldoInfo manualmente (não usa o módulo SaldoAcumulado)
+      // Atualiza saldoInfo
       prestacaoAtual.saldoInfo = {
         saldoCarregarAnterior: saldoAnterior,
         saldoCarregarNovo: novoSaldo,
@@ -1951,40 +1951,15 @@ const valePg = valesAplicados.reduce((sum, v) => {
         ...(prestacaoAtual.resumo || {}),
         saldoNegAcarreado: Number(saldoNovoFinal) || 0
       };
+      
+      console.log('💰 Saldo Acumulado aplicado:', {
+        baseComissao,
+        valorComissao1,
+        resultado,
+        saldoAnterior: calculoSaldo.saldoCarregarAnterior,
+        saldoNovo: calculoSaldo.saldoCarregarNovo
+      });
     }
-    
-    // Atualiza o snapshot com informações do saldo
-// ✅ Verifica se tem saldo manual ativo
-const saldoNovoFinal = window.getSaldoParaUsar 
-? window.getSaldoParaUsar(calculoSaldo.saldoCarregarNovo)
-: calculoSaldo.saldoCarregarNovo;
-
-prestacaoAtual.saldoInfo = {
-saldoCarregarAnterior: calculoSaldo.saldoCarregarAnterior,
-saldoCarregarNovo: saldoNovoFinal,
-saldoManualUsado: window.__saldoManualAtivo || false,
-      // ✅ NOVO: Guarda apenas a contribuição DESTA prestação
-      contribuicaoDestaPrestacao: calculoSaldo.resultado < 0 ? Math.abs(calculoSaldo.resultado) : 0,
-      baseCalculoSaldo: calculoSaldo.baseCalculo,
-      resultadoSemana: calculoSaldo.resultado,
-      observacao: calculoSaldo.observacao,
-      usandoSaldoAcumulado: true
-    };
-    
-    prestacaoAtual.resumo = {
-      ...(prestacaoAtual.resumo || {}),
-      // ✅ Usa saldo manual se ativo, senão usa o calculado
-      saldoNegAcarreado: Number(saldoNovoFinal) || 0
-    };
-
-    console.log('💰 Saldo Acumulado aplicado:', {
-      baseComissao,
-      valorComissao1,
-      valorComissao2,
-      resultado,
-      saldoAnterior: calculoSaldo.saldoCarregarAnterior,
-      saldoNovo: calculoSaldo.saldoCarregarNovo
-    });
 
   } else if (temSegundaComissao) {
     // MODELO 1: Dupla comissão (CAÇULA)

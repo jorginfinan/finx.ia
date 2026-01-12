@@ -1800,8 +1800,7 @@ const valePg = valesAplicados.reduce((sum, v) => {
         
         const usaSaldoAcumulado = !empresaSemSaldoAcumulado && 
         window.SaldoAcumulado && g && perc1 > 0 && perc1 < 50 && 
-        !temSegundaComissao &&
-        g.temSaldoAcumulado === true;  // ✅ SÓ usa se o gerente tiver a flag ATIVA
+        g.temSaldoAcumulado === true;  // ✅ SÓ usa se o gerente tiver a flag ATIVA (permite 2ª comissão)
 
   if (usaSaldoAcumulado) {
     console.log('📊 [SaldoAcumulado] Condições atendidas! Calculando...');
@@ -1846,16 +1845,27 @@ const valePg = valesAplicados.reduce((sum, v) => {
       });
     }
     
-    // ✅ CORREÇÃO: Passa parâmetros adicionais para o módulo
+ // ✅ CORREÇÃO: Passa parâmetros adicionais para o módulo
+    // ✅ REGRA: Gerentes com 2ª comissão acumulam saldo apenas das COLETAS (sem despesas)
+    const despesasParaSaldo = temSegundaComissao ? 0 : despesasTot;
+    
+    console.log('📊 [SaldoAcumulado] Regra aplicada:', {
+      temSegundaComissao,
+      despesasOriginais: despesasTot,
+      despesasParaSaldo,
+      motivo: temSegundaComissao ? 'Com 2ª comissão: usa apenas COLETAS' : 'Sem 2ª comissão: usa COLETAS - DESPESAS'
+    });
+    
     const calculoSaldo = await window.SaldoAcumulado.calcular({
       gerenteId: g.uid,
       empresaId: empresaAtual,
       coletas: coletas,
-      despesas: despesasTot,
+      despesas: despesasParaSaldo,  // ✅ Zero se tem 2ª comissão
       comissao: perc1,
-      comissao2: temSegundaComissao ? perc2 : 0,  // ✅ NOVO: Segunda comissão
-      baseCalculo: baseCalculo,                     // ✅ NOVO: Tipo de base
-      saldoAnterior: saldoParaCalcular
+      comissao2: temSegundaComissao ? perc2 : 0,
+      baseCalculo: baseCalculo,
+      saldoAnterior: saldoParaCalcular,
+      temSegundaComissao: temSegundaComissao  // ✅ Flag para o módulo saber
     });
     
     console.log('💰 [SaldoAcumulado] Resultado do cálculo:', calculoSaldo);

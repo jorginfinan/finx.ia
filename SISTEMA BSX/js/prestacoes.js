@@ -1875,8 +1875,22 @@ const valePg = valesAplicados.reduce((sum, v) => {
     valorComissao1 = Number(calculoSaldo.valorComissao) || 0;
     valorComissao2 = Number(calculoSaldo.valorComissao2) || 0;
     
-    // ✅ CORREÇÃO: Usa o resultadoFinal que já considera ambas as comissões
-    resultado = Number(calculoSaldo.resultadoFinal) || calculoSaldo.resultado;
+    // ✅ CORREÇÃO: Recalcula resultado usando despesas REAIS
+    // O módulo de saldo acumulado calcula sem despesas (para gerentes com 2ª comissão)
+    // Mas o resultado final da prestação SEMPRE deve considerar as despesas
+    if (temSegundaComissao) {
+      // Para gerentes com 2ª comissão: Coletas - Despesas - Comissões
+      resultado = coletas - despesasTot - valorComissao1 - valorComissao2;
+      console.log('📊 [SaldoAcumulado] Resultado recalculado COM despesas:', {
+        coletas,
+        despesasTot,
+        valorComissao1,
+        valorComissao2,
+        resultado
+      });
+    } else {
+      resultado = Number(calculoSaldo.resultadoFinal) || calculoSaldo.resultado;
+    }
     
     // Atualiza o snapshot com informações do saldo
 // ✅ Verifica se tem saldo manual ativo

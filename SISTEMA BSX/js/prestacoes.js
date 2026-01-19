@@ -1855,9 +1855,14 @@ const valePg = valesAplicados.reduce((sum, v) => {
     // ============================================
     
     if (temSegundaComissao) {
-      // Saldo anterior do Supabase
-      const saldoAnterior = saldoParaCalcular || 0;
+      // ============================================
+      // REGRA PARA GERENTES COM 2ª COMISSÃO:
+      // - Coletas > Saldo: Paga 25% + 5% sobre (Coletas - Saldo), zera saldo
+      // - Coletas <= Saldo e Coletas > 0: Paga só 5% sobre Coletas, reduz saldo
+      // - Coletas <= 0: Não paga nada, aumenta saldo
+      // ============================================
       
+      const saldoAnterior = saldoParaCalcular || 0;
       let novoSaldo = 0;
       
       if (coletas <= 0) {
@@ -1886,25 +1891,28 @@ const valePg = valesAplicados.reduce((sum, v) => {
       // Resultado = Coletas - Despesas - Comissões
       resultado = coletas - despesasTot - valorComissao1 - valorComissao2;
       
-      console.log('📊 [SaldoAcumulado] Gerente com 2ª comissão - Cálculo especial:', {
+      console.log('📊 [SaldoAcumulado] Gerente com 2ª comissão - Cálculo:', {
         coletas,
         despesasTot,
         saldoAnterior,
         novoSaldo,
+        baseComissao,
         perc1: perc1 + '%',
         perc2: perc2 + '%',
         valorComissao1,
         valorComissao2,
         resultado,
-        regra: saldoAnterior > 0 ? 'Saldo pendente: só paga 5%' : 'Saldo zero: paga 25% + 5%'
+        regra: coletas > saldoAnterior ? 'Coletas > Saldo: paga 25%+5% sobre diferença' : 
+               coletas > 0 ? 'Coletas <= Saldo: só paga 5%' : 'Coletas <= 0: não paga nada'
       });
       
-      // Atualiza saldoInfo
+      // ✅ IMPORTANTE: Define saldoInfo para que o salvamento atualize o Supabase
       prestacaoAtual.saldoInfo = {
         saldoCarregarAnterior: saldoAnterior,
         saldoCarregarNovo: novoSaldo,
-        usandoSaldoAcumulado: true,
-        regraEspecial: 'SEGUNDA_COMISSAO'
+        usandoSaldoAcumulado: true,  // ← ESSENCIAL para atualizar Supabase
+        regraEspecial: 'SEGUNDA_COMISSAO',
+        baseComissaoCalculada: baseComissao
       };
       
       prestacaoAtual.resumo = {
@@ -2947,7 +2955,13 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
         prestacaoAtualCompleta: prestacaoAtual
       });
       
-      if (window.SaldoAcumulado && prestacaoAtual.saldoInfo?.usandoSaldoAcumulado) {
+      // ✅ Atualiza saldo para gerentes com saldo acumulado OU com 2ª comissão
+      const deveAtualizarSaldo = window.SaldoAcumulado && (
+        prestacaoAtual.saldoInfo?.usandoSaldoAcumulado || 
+        prestacaoAtual.saldoInfo?.regraEspecial === 'SEGUNDA_COMISSAO'
+      );
+      
+      if (deveAtualizarSaldo) {
         const empresaId = recPrest.empresaId || (window.getCompany ? window.getCompany() : 'BSX');
         
         if (idx > -1 && prevRec && prevRec.saldoInfo) {

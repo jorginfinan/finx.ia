@@ -91,7 +91,16 @@
 
   function fmtData(d) {
     if (!d) return '';
+    
+    // Se for string no formato YYYY-MM-DD, parse manualmente para evitar problema de fuso horário
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      const [ano, mes, dia] = d.split('-').map(Number);
+      return `${String(dia).padStart(2, '0')}/${String(mes).padStart(2, '0')}/${ano}`;
+    }
+    
+    // Se for string com data e hora, ou Date object
     const date = d instanceof Date ? d : new Date(d);
+    if (isNaN(date.getTime())) return '';
     return date.toLocaleDateString('pt-BR');
   }
 
@@ -1028,8 +1037,15 @@
       if (fechadasQuitadas.length) resp += `• ✅ Fechadas quitadas: ${fechadasQuitadas.length}<br>`;
       if (fechadasComAberto.length) resp += `• ⚠️ Fechadas com saldo: ${fechadasComAberto.length}<br>`;
       
-      // Lista prestações do mês
-      prestMes.forEach(p => {
+      // Ordena prestações por data mais recente (fim)
+      const prestOrdenadas = [...prestMes].sort((a, b) => {
+        const dataA = new Date(a.fim || a.ini);
+        const dataB = new Date(b.fim || b.ini);
+        return dataB - dataA;
+      });
+      
+      // Lista prestações do mês - mostra A PAGAR e RESTAM
+      prestOrdenadas.forEach(p => {
         const periodo = `${fmtData(p.ini)} a ${fmtData(p.fim)}`;
         let status, icon;
         if (!p.fechado) {
@@ -1043,34 +1059,40 @@
           icon = '✅';
         }
         resp += `<br>${icon} <strong>${periodo}</strong> - ${status}<br>`;
-        resp += `&nbsp;&nbsp;A pagar: ${fmt(p.aPagar)} | Pago: ${fmt(p.pagos)} | Resta: ${fmt(p.restam)}<br>`;
+        resp += `&nbsp;&nbsp;A pagar: ${fmt(p.aPagar)} | Restam: ${fmt(p.restam)}<br>`;
       });
       resp += `<br>`;
     }
     
-    // ===== 4. LUCRO/PREJUÍZO DO MÊS =====
-    const totalColetasMes = prestMes.reduce((s, p) => s + p.coletas, 0);
-    const totalDespesasMes = prestMes.reduce((s, p) => s + p.despesas, 0);
-    const totalComissaoMes = prestMes.reduce((s, p) => s + p.comissao, 0);
-    const totalAbertoMes = prestMes.reduce((s, p) => s + p.restam, 0);
+    // ===== 4. LUCRO/PREJUÍZO DO MÊS (BASEADO NO CAIXA) =====
+    // O lucro real vem do que RECEBEMOS no caixa menos o que PAGAMOS (adiantamentos, etc)
+    const totalApagarMes = prestMes.reduce((s, p) => s + p.aPagar, 0);
+    const totalPagoPrests = prestMes.reduce((s, p) => s + p.pagos, 0);
+    const totalRestamMes = prestMes.reduce((s, p) => s + p.restam, 0);
     
-    // Lucro = Recebido no caixa - Adiantamentos - Valores em aberto
-    const lucroReal = totalRecebidoMes - totalAdiantMes;
-    const lucroPotencial = totalColetasMes - totalDespesasMes - totalComissaoMes;
-    
-    resp += `📊 <strong>RESULTADO DO MÊS:</strong><br>`;
-    resp += `• Coletas: ${fmt(totalColetasMes)}<br>`;
-    resp += `• Despesas: ${fmt(totalDespesasMes)}<br>`;
-    resp += `• Comissões: ${fmt(totalComissaoMes)}<br>`;
+    resp += `📊 <strong>RESULTADO DO MÊS (Caixa):</strong><br>`;
+    resp += `• 💰 Recebido no caixa: ${fmt(totalRecebidoMes)}<br>`;
+    resp += `• 💸 Pago (adiant/desp): ${fmt(totalPagoMes)}<br>`;
     if (totalAdiantMes > 0) {
-      resp += `• Adiantamentos: ${fmt(totalAdiantMes)}<br>`;
+      resp += `• 🏷️ Adiantamentos: ${fmt(totalAdiantMes)}<br>`;
     }
-    resp += `• Em aberto: ${fmt(totalAbertoMes)}<br>`;
     
-    const lucroIcon = lucroReal >= 0 ? '✅' : '🔴';
-    const lucroTexto = lucroReal >= 0 ? 'LUCRO' : 'PREJUÍZO';
-    resp += `• ${lucroIcon} <strong>${lucroTexto} REAL: ${fmt(Math.abs(lucroReal))}</strong><br>`;
-    resp += `<em>(Recebido ${fmt(totalRecebidoMes)} - Adiantamentos ${fmt(totalAdiantMes)})</em><br><br>`;
+    // Lucro = Recebido no caixa - Pagamentos do caixa
+    const lucroMes = totalRecebidoMes - totalPagoMes;
+    const lucroIcon = lucroMes >= 0 ? '✅' : '🔴';
+    const lucroTexto = lucroMes >= 0 ? 'LUCRO' : 'PREJUÍZO';
+    resp += `• ${lucroIcon} <strong>${lucroTexto} DO MÊS: ${fmt(Math.abs(lucroMes))}</strong><br>`;
+    
+    // Resumo das prestações
+    resp += `<br>📋 <strong>RESUMO PRESTAÇÕES:</strong><br>`;
+    resp += `• Total a receber: ${fmt(totalApagarMes)}<br>`;
+    resp += `• Já recebido: ${fmt(totalPagoPrests)}<br>`;
+    if (totalRestamMes > 0) {
+      resp += `• ⚠️ <strong>Falta receber: ${fmt(totalRestamMes)}</strong><br>`;
+    } else {
+      resp += `• ✅ Tudo quitado<br>`;
+    }
+    resp += `<br>`;
     
     // ===== 5. ÚLTIMOS LANÇAMENTOS NO CAIXA =====
     if (lancamentosGerente.length > 0) {

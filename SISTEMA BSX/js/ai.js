@@ -585,22 +585,24 @@
       
       if (!prestG.length) return;
       
-      // Conta prestações FECHADAS que foram quitadas (restam = 0)
-      const fechadas = prestG.filter(p => p.fechado);
-      const quitadas = fechadas.filter(p => p.restam <= 0);
-      const naoQuitadas = fechadas.filter(p => p.restam > 0);
+      // Considera TODAS as prestações (não apenas fechadas)
+      // Quitada = restam <= 0 (pagou tudo)
+      // Não quitada = restam > 0 (ficou devendo)
+      const quitadas = prestG.filter(p => p.restam <= 0);
+      const naoQuitadas = prestG.filter(p => p.restam > 0);
       
-      // Taxa de quitação = quitadas / fechadas
-      const taxaQuitacao = fechadas.length > 0 ? (quitadas.length / fechadas.length) * 100 : 0;
+      // Taxa de quitação = quitadas / total
+      const taxaQuitacao = prestG.length > 0 ? (quitadas.length / prestG.length) * 100 : 0;
       
       // Total não pago
       const totalNaoPago = naoQuitadas.reduce((s, p) => s + p.restam, 0);
       
+      // Formata nome corretamente (apenas número da rota + nome)
+      const nomeFormatado = formatarNomeGerente(g);
+      
       stats[g.uid || g.id] = {
-        nome: g.nome,
-        numero: g.numero,
+        nome: nomeFormatado,
         totalPrestacoes: prestG.length,
-        fechadas: fechadas.length,
         quitadas: quitadas.length,
         naoQuitadas: naoQuitadas.length,
         taxaQuitacao,
@@ -609,7 +611,7 @@
     });
     
     const ranking = Object.values(stats)
-      .filter(g => g.fechadas > 0)
+      .filter(g => g.totalPrestacoes > 0)
       .sort((a, b) => b.taxaQuitacao - a.taxaQuitacao);
     
     if (!ranking.length) {
@@ -617,20 +619,19 @@
     }
     
     let resp = `📊 <strong>Taxa de Quitação - Últimos 3 Meses</strong><br><br>`;
-    resp += `<em>Taxa = prestações pagas 100% / total de prestações fechadas</em><br><br>`;
+    resp += `<em>Taxa = prestações pagas 100% / total de prestações</em><br><br>`;
     
     // Top 10
     const top10 = ranking.slice(0, 10);
     top10.forEach((g, i) => {
-      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
       const barWidth = Math.round((g.taxaQuitacao / 100) * 15);
       const bar = '█'.repeat(barWidth) + '░'.repeat(15 - barWidth);
       const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
       const icon = g.taxaQuitacao >= 80 ? '✅' : g.taxaQuitacao >= 50 ? '🟡' : '🔴';
       
-      resp += `${medal} <strong>${nome}</strong> ${icon}<br>`;
+      resp += `${medal} <strong>${g.nome}</strong> ${icon}<br>`;
       resp += `&nbsp;&nbsp;${bar} ${fmtPerc(g.taxaQuitacao)}<br>`;
-      resp += `&nbsp;&nbsp;<em>${g.quitadas}/${g.fechadas} prestações quitadas</em>`;
+      resp += `&nbsp;&nbsp;<em>${g.quitadas}/${g.totalPrestacoes} prestações quitadas</em>`;
       if (g.totalNaoPago > 0) {
         resp += ` | <span style="color:#ff6b6b">Deve: ${fmt(g.totalNaoPago)}</span>`;
       }
@@ -638,26 +639,52 @@
     });
     
     // Alertas: quem está abaixo de 50%
-    const baixaQuitacao = ranking.filter(g => g.taxaQuitacao < 50 && g.fechadas >= 2);
+    const baixaQuitacao = ranking.filter(g => g.taxaQuitacao < 50 && g.totalPrestacoes >= 2);
     if (baixaQuitacao.length) {
       resp += `<br>⚠️ <strong>Atenção - Baixa quitação (&lt;50%):</strong><br>`;
       baixaQuitacao.slice(0, 5).forEach(g => {
-        const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
-        resp += `• ${nome}: ${fmtPerc(g.taxaQuitacao)} (${g.quitadas}/${g.fechadas}) - Deve: ${fmt(g.totalNaoPago)}<br>`;
+        resp += `• ${g.nome}: ${fmtPerc(g.taxaQuitacao)} (${g.quitadas}/${g.totalPrestacoes}) - Deve: ${fmt(g.totalNaoPago)}<br>`;
       });
     }
     
     // Quem NUNCA quitou
-    const nuncaQuitou = ranking.filter(g => g.taxaQuitacao === 0 && g.fechadas >= 2);
+    const nuncaQuitou = ranking.filter(g => g.taxaQuitacao === 0 && g.totalPrestacoes >= 2);
     if (nuncaQuitou.length) {
       resp += `<br>🔴 <strong>NUNCA quitaram uma prestação:</strong><br>`;
       nuncaQuitou.forEach(g => {
-        const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
-        resp += `• ${nome}: ${g.fechadas} prestações, deve ${fmt(g.totalNaoPago)}<br>`;
+        resp += `• ${g.nome}: ${g.totalPrestacoes} prestações, deve ${fmt(g.totalNaoPago)}<br>`;
       });
     }
     
     return resp;
+  }
+  
+  // Helper: Formata nome do gerente (número da rota + nome, sem telefone)
+  function formatarNomeGerente(g) {
+    // Pega o número da rota (3 dígitos no início do nome ou campo separado)
+    let numero = '';
+    let nome = g.nome || '';
+    
+    // Tenta extrair número de 3 dígitos do campo numero (se não for telefone)
+    if (g.numero && /^\d{3}$/.test(g.numero)) {
+      numero = g.numero;
+    } else if (g.rota && /^\d{3}$/.test(g.rota)) {
+      numero = g.rota;
+    } else {
+      // Tenta extrair do nome (ex: "026 Sávio")
+      const match = nome.match(/^(\d{3})\s*/);
+      if (match) {
+        numero = match[1];
+        nome = nome.replace(/^\d{3}\s*/, '');
+      }
+    }
+    
+    // Se o nome começa com número de 3 dígitos, já está formatado
+    if (/^\d{3}\s/.test(g.nome)) {
+      return g.nome;
+    }
+    
+    return numero ? `${numero} ${nome}` : nome;
   }
 
   // Taxa de Quitação de um gerente específico
@@ -669,58 +696,56 @@
       .sort((a, b) => new Date(b.fim || b.createdAt) - new Date(a.fim || a.createdAt));
     
     if (!prestG.length) {
-      return `📊 <strong>${gerente.numero || ''} ${gerente.nome}</strong><br><br>Nenhuma prestação encontrada.`;
+      return `📊 <strong>${formatarNomeGerente(gerente)}</strong><br><br>Nenhuma prestação encontrada.`;
     }
     
-    // Filtra fechadas
-    const fechadas = prestG.filter(p => p.fechado);
-    const quitadas = fechadas.filter(p => p.restam <= 0);
-    const naoQuitadas = fechadas.filter(p => p.restam > 0);
-    const abertas = prestG.filter(p => !p.fechado);
+    // Quitadas = restam <= 0
+    const quitadas = prestG.filter(p => p.restam <= 0);
+    const naoQuitadas = prestG.filter(p => p.restam > 0);
     
-    const taxaGeral = fechadas.length > 0 ? (quitadas.length / fechadas.length) * 100 : 0;
+    const taxaGeral = prestG.length > 0 ? (quitadas.length / prestG.length) * 100 : 0;
     const totalNaoPago = naoQuitadas.reduce((s, p) => s + p.restam, 0);
     
-    let resp = `📊 <strong>Taxa de Quitação - ${gerente.numero || ''} ${gerente.nome}</strong><br><br>`;
+    const nomeGerente = formatarNomeGerente(gerente);
+    
+    let resp = `📊 <strong>Taxa de Quitação - ${nomeGerente}</strong><br><br>`;
     
     // Resumo
     const icon = taxaGeral >= 80 ? '✅' : taxaGeral >= 50 ? '🟡' : '🔴';
     resp += `📈 <strong>RESUMO GERAL:</strong><br>`;
     resp += `• Total de prestações: ${prestG.length}<br>`;
-    resp += `• Fechadas: ${fechadas.length}<br>`;
     resp += `• ✅ Quitadas (100%): ${quitadas.length}<br>`;
     resp += `• ⚠️ Não quitadas: ${naoQuitadas.length}<br>`;
-    resp += `• 🔓 Abertas: ${abertas.length}<br>`;
     resp += `• Taxa de quitação: <strong>${fmtPerc(taxaGeral)} ${icon}</strong><br>`;
     if (totalNaoPago > 0) {
       resp += `• 🔴 <strong>Total em aberto: ${fmt(totalNaoPago)}</strong><br>`;
     }
     resp += `<br>`;
     
-    // Últimas 10 prestações fechadas com detalhes
+    // Últimas 10 prestações com detalhes
     resp += `📅 <strong>HISTÓRICO DE PAGAMENTOS:</strong><br>`;
-    const ultimas = fechadas.slice(0, 10);
+    const ultimas = prestG.slice(0, 10);
     
     ultimas.forEach(p => {
       const periodo = `${fmtData(p.ini)} a ${fmtData(p.fim)}`;
       const quitou = p.restam <= 0;
-      const icon = quitou ? '✅' : '🔴';
+      const iconP = quitou ? '✅' : '🔴';
       const status = quitou ? 'QUITOU' : `DEVE ${fmt(p.restam)}`;
       
-      resp += `<br>${icon} <strong>${periodo}</strong><br>`;
+      resp += `<br>${iconP} <strong>${periodo}</strong><br>`;
       resp += `&nbsp;&nbsp;A pagar: ${fmt(p.aPagar)} | Pago: ${fmt(p.pagos)}<br>`;
       resp += `&nbsp;&nbsp;<strong>${status}</strong><br>`;
     });
     
-    if (fechadas.length > 10) {
-      resp += `<br><em>... e mais ${fechadas.length - 10} prestações anteriores</em><br>`;
+    if (prestG.length > 10) {
+      resp += `<br><em>... e mais ${prestG.length - 10} prestações anteriores</em><br>`;
     }
     
     // Análise de tendência (últimos 3 meses vs anteriores)
     const tresMesesAtras = new Date();
     tresMesesAtras.setMonth(tresMesesAtras.getMonth() - 3);
     
-    const recentes = fechadas.filter(p => new Date(p.fim || p.createdAt) >= tresMesesAtras);
+    const recentes = prestG.filter(p => new Date(p.fim || p.createdAt) >= tresMesesAtras);
     const quitadasRecentes = recentes.filter(p => p.restam <= 0);
     const taxaRecente = recentes.length > 0 ? (quitadasRecentes.length / recentes.length) * 100 : 0;
     
@@ -778,8 +803,7 @@
       const taxaRecebimento = totalAPagar > 0 ? (totalPago / totalAPagar) * 100 : 100;
       
       stats[g.uid || g.id] = {
-        nome: g.nome,
-        numero: g.numero,
+        nome: formatarNomeGerente(g),
         qtdPrestacoes: prestG.length,
         totalColetas,
         totalDespesas,
@@ -821,10 +845,9 @@
     // Top 5 melhores
     resp += `🏆 <strong>TOP 5 - MAIOR RENDIMENTO:</strong><br>`;
     ranking.slice(0, 5).forEach((g, i) => {
-      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
       const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
       
-      resp += `${medal} <strong>${nome}</strong>: ${fmt(g.rendimentoLiquido)}<br>`;
+      resp += `${medal} <strong>${g.nome}</strong>: ${fmt(g.rendimentoLiquido)}<br>`;
       resp += `&nbsp;&nbsp;Coletas: ${fmt(g.totalColetas)} | Margem: ${fmtPerc(g.margem)}<br><br>`;
     });
     
@@ -833,8 +856,7 @@
     if (negativos.length) {
       resp += `<br>⚠️ <strong>ROTAS COM PREJUÍZO:</strong><br>`;
       negativos.slice(-3).forEach(g => {
-        const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
-        resp += `🔴 <strong>${nome}</strong>: ${fmt(g.rendimentoLiquido)}<br>`;
+        resp += `🔴 <strong>${g.nome}</strong>: ${fmt(g.rendimentoLiquido)}<br>`;
         resp += `&nbsp;&nbsp;Despesas: ${fmtPerc(g.percDespesa)} das coletas<br>`;
       });
     }
@@ -844,8 +866,7 @@
     if (despesaAlta.length) {
       resp += `<br>💸 <strong>DESPESAS ACIMA DE 25%:</strong><br>`;
       despesaAlta.slice(0, 3).forEach(g => {
-        const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
-        resp += `• ${nome}: ${fmtPerc(g.percDespesa)} das coletas<br>`;
+        resp += `• ${g.nome}: ${fmtPerc(g.percDespesa)} das coletas<br>`;
       });
     }
     
@@ -860,8 +881,10 @@
       .filter(p => p.gerenteId === gerente.uid || p.gerenteId === gerente.id)
       .sort((a, b) => new Date(b.fim || b.createdAt) - new Date(a.fim || a.createdAt));
     
+    const nomeGerente = formatarNomeGerente(gerente);
+    
     if (!prestG.length) {
-      return `💰 <strong>${gerente.numero || ''} ${gerente.nome}</strong><br><br>Nenhuma prestação encontrada.`;
+      return `💰 <strong>${nomeGerente}</strong><br><br>Nenhuma prestação encontrada.`;
     }
     
     // Agrupa por mês
@@ -873,7 +896,7 @@
     
     const mesesOrdenados = Object.keys(porMes).sort().reverse();
     
-    let resp = `💰 <strong>Rendimento - ${gerente.numero || ''} ${gerente.nome}</strong><br><br>`;
+    let resp = `💰 <strong>Rendimento - ${nomeGerente}</strong><br><br>`;
     
     // Resumo geral
     const totalColetas = prestG.reduce((s, p) => s + p.coletas, 0);
@@ -955,7 +978,7 @@
     }
     
     const { todasPrestacoes, lancamentosSemFiltro } = ctx;
-    const nomeCompleto = `${gerente.numero || '---'} ${gerente.nome}`;
+    const nomeCompleto = formatarNomeGerente(gerente);
     const gerenteId = gerente.uid || gerente.id;
     
     const prestG = todasPrestacoes
@@ -1231,14 +1254,9 @@
       
       if (!prestG.length) return null;
       
-      const porMes = {};
-      prestG.forEach(p => {
-        if (!porMes[p.mesAno]) porMes[p.mesAno] = 0;
-        porMes[p.mesAno]++;
-      });
-      
-      const mesesAtivos = Object.keys(porMes).length;
-      const taxaEnvio = mesesAtivos > 0 ? Math.min((prestG.length / (mesesAtivos * 4)) * 100, 100) : 0;
+      // Taxa de quitação = quitadas / total
+      const quitadas = prestG.filter(p => p.restam <= 0);
+      const taxaQuitacao = prestG.length > 0 ? (quitadas.length / prestG.length) * 100 : 0;
       
       const totalColetas = prestG.reduce((s, p) => s + p.coletas, 0);
       const totalDespesas = prestG.reduce((s, p) => s + p.despesas, 0);
@@ -1246,24 +1264,17 @@
       const rendimento = totalColetas - totalDespesas - totalComissao;
       const percDespesa = totalColetas > 0 ? (totalDespesas / totalColetas) * 100 : 0;
       
-      const totalAPagar = prestG.reduce((s, p) => s + p.aPagar, 0);
-      const totalPago = prestG.reduce((s, p) => s + p.pagos, 0);
-      const taxaQuitacao = totalAPagar > 0 ? (totalPago / totalAPagar) * 100 : 100;
-      
       // Score
-      const scoreFreq = taxaEnvio >= 80 ? 100 : taxaEnvio >= 60 ? 75 : taxaEnvio >= 40 ? 50 : 25;
+      const scoreQuitacao = taxaQuitacao >= 80 ? 100 : taxaQuitacao >= 60 ? 75 : taxaQuitacao >= 40 ? 50 : 25;
       const scoreDespesa = percDespesa <= 20 ? 100 : percDespesa <= 30 ? 75 : percDespesa <= 40 ? 50 : 25;
-      const scoreQuitacao = taxaQuitacao >= 95 ? 100 : taxaQuitacao >= 80 ? 75 : taxaQuitacao >= 60 ? 50 : 25;
-      const scoreGeral = Math.round((scoreFreq + scoreDespesa + scoreQuitacao) / 3);
+      const scoreGeral = Math.round((scoreQuitacao + scoreDespesa) / 2);
       
       return {
-        nome: g.nome,
-        numero: g.numero,
+        nome: formatarNomeGerente(g),
         prestacoes: prestG.length,
-        taxaEnvio,
+        taxaQuitacao,
         rendimento,
         percDespesa,
-        taxaQuitacao,
         scoreGeral
       };
     }).filter(Boolean);
@@ -1279,27 +1290,24 @@
     
     resp += `🏆 <strong>RANKING GERAL (Score):</strong><br>`;
     porScore.slice(0, 10).forEach((g, i) => {
-      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
       const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
       const emoji = g.scoreGeral >= 80 ? '🌟' : g.scoreGeral >= 60 ? '👍' : g.scoreGeral >= 40 ? '👎' : '⚠️';
       
-      resp += `${medal} <strong>${nome}</strong>: ${g.scoreGeral}/100 ${emoji}<br>`;
+      resp += `${medal} <strong>${g.nome}</strong>: ${g.scoreGeral}/100 ${emoji}<br>`;
     });
     
     // Ranking por Rendimento
     resp += `<br>💰 <strong>TOP 5 - RENDIMENTO:</strong><br>`;
     const porRendimento = [...metricas].sort((a, b) => b.rendimento - a.rendimento);
     porRendimento.slice(0, 5).forEach((g, i) => {
-      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
-      resp += `${i+1}. ${nome}: ${fmt(g.rendimento)}<br>`;
+      resp += `${i+1}. ${g.nome}: ${fmt(g.rendimento)}<br>`;
     });
     
-    // Ranking por Frequência
-    resp += `<br>📊 <strong>TOP 5 - FREQUÊNCIA:</strong><br>`;
-    const porFreq = [...metricas].sort((a, b) => b.taxaEnvio - a.taxaEnvio);
-    porFreq.slice(0, 5).forEach((g, i) => {
-      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
-      resp += `${i+1}. ${nome}: ${fmtPerc(g.taxaEnvio)}<br>`;
+    // Ranking por Taxa de Quitação
+    resp += `<br>📊 <strong>TOP 5 - QUITAÇÃO:</strong><br>`;
+    const porQuitacao = [...metricas].sort((a, b) => b.taxaQuitacao - a.taxaQuitacao);
+    porQuitacao.slice(0, 5).forEach((g, i) => {
+      resp += `${i+1}. ${g.nome}: ${fmtPerc(g.taxaQuitacao)}<br>`;
     });
     
     // Alertas
@@ -1307,8 +1315,7 @@
     if (problematicos.length) {
       resp += `<br>⚠️ <strong>ATENÇÃO NECESSÁRIA (Score < 50):</strong><br>`;
       problematicos.forEach(g => {
-        const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
-        resp += `• ${nome}: Score ${g.scoreGeral}/100<br>`;
+        resp += `• ${g.nome}: Score ${g.scoreGeral}/100<br>`;
       });
     }
     
@@ -1394,7 +1401,7 @@
   // ===== PROCESSADORES EXISTENTES (mantidos) =====
   
   function processDevedorSemana(ctx) {
-    const { prestacoes, periodo } = ctx;
+    const { prestacoes, periodo, gerentes } = ctx;
     const comAberto = prestacoes.filter(p => p.restam > 0);
     
     if (!comAberto.length) {
@@ -1405,7 +1412,10 @@
     comAberto.forEach(p => {
       const gid = p.gerenteId;
       if (!stats[gid]) {
-        stats[gid] = { nome: p.gerenteNome || 'Desconhecido', numero: p.gerenteNumero || '', totalAberto: 0, qtdAbertas: 0 };
+        // Busca gerente para formatar nome corretamente
+        const gerente = gerentes.find(g => g.uid === gid || g.id === gid);
+        const nome = gerente ? formatarNomeGerente(gerente) : (p.gerenteNome || 'Desconhecido');
+        stats[gid] = { nome, totalAberto: 0, qtdAbertas: 0 };
       }
       stats[gid].totalAberto += p.restam;
       stats[gid].qtdAbertas++;
@@ -1414,9 +1424,8 @@
     const ranking = Object.values(stats).sort((a, b) => b.totalAberto - a.totalAberto).slice(0, 10);
     
     const lista = ranking.map((g, i) => {
-      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
       const medal = i === 0 ? '🔴' : i === 1 ? '🟠' : i === 2 ? '🟡' : `${i+1}.`;
-      return `${medal} <strong>${nome}</strong>: ${fmt(g.totalAberto)} (${g.qtdAbertas} prestação)`;
+      return `${medal} <strong>${g.nome}</strong>: ${fmt(g.totalAberto)} (${g.qtdAbertas} prestação)`;
     }).join('<br>');
     
     const totalGeral = ranking.reduce((s, g) => s + g.totalAberto, 0);
@@ -1425,7 +1434,7 @@
   }
 
   function processFinalizouComAberto(ctx) {
-    const { prestacoes, periodo } = ctx;
+    const { prestacoes, periodo, gerentes } = ctx;
     const finalizadasComAberto = prestacoes.filter(p => p.fechado && p.restam > 0);
     
     if (!finalizadasComAberto.length) {
@@ -1436,7 +1445,9 @@
     finalizadasComAberto.forEach(p => {
       const gid = p.gerenteId;
       if (!stats[gid]) {
-        stats[gid] = { nome: p.gerenteNome || 'Desconhecido', numero: p.gerenteNumero || '', totalAberto: 0, qtd: 0 };
+        const gerente = gerentes.find(g => g.uid === gid || g.id === gid);
+        const nome = gerente ? formatarNomeGerente(gerente) : (p.gerenteNome || 'Desconhecido');
+        stats[gid] = { nome, totalAberto: 0, qtd: 0 };
       }
       stats[gid].totalAberto += p.restam;
       stats[gid].qtd++;
@@ -1445,8 +1456,7 @@
     const ranking = Object.values(stats).sort((a, b) => b.totalAberto - a.totalAberto);
     
     const lista = ranking.map((g, i) => {
-      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
-      return `${i+1}. <strong>${nome}</strong>: ${fmt(g.totalAberto)} (${g.qtd} prestação)`;
+      return `${i+1}. <strong>${g.nome}</strong>: ${fmt(g.totalAberto)} (${g.qtd} prestação)`;
     }).join('<br>');
     
     const totalGeral = ranking.reduce((s, g) => s + g.totalAberto, 0);
@@ -1529,9 +1539,10 @@
     const { gerentes } = ctx;
     if (!gerentes.length) return 'Nenhum gerente cadastrado.';
     
-    const lista = gerentes.map((g, i) => 
-      `${i+1}. <strong>${g.numero || '---'}</strong> ${g.nome} (${g.comissao}%)`
-    ).join('<br>');
+    const lista = gerentes.map((g, i) => {
+      const nome = formatarNomeGerente(g);
+      return `${i+1}. <strong>${nome}</strong> (${g.comissao}%)`;
+    }).join('<br>');
     
     return `👥 <strong>Gerentes (${gerentes.length})</strong><br><br>${lista}`;
   }

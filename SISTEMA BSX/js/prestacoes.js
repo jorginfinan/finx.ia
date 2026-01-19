@@ -1858,31 +1858,29 @@ const valePg = valesAplicados.reduce((sum, v) => {
       // Saldo anterior do Supabase
       const saldoAnterior = saldoParaCalcular || 0;
       
-      // Calcula novo saldo: anterior - coletas (se coletas positivo, reduz o saldo)
-      let novoSaldo = saldoAnterior;
-      if (coletas > 0) {
-        novoSaldo = Math.max(0, saldoAnterior - coletas);
-      } else if (coletas < 0) {
-        // Coletas negativas aumentam o saldo
-        novoSaldo = saldoAnterior + Math.abs(coletas);
-      }
+      let novoSaldo = 0;
       
-      // Regra de comissões
       if (coletas <= 0) {
-        // Coletas negativas: não paga nenhuma comissão
+        // Coletas negativas ou zero: não paga nenhuma comissão, aumenta saldo
         valorComissao1 = 0;
         valorComissao2 = 0;
         baseComissao = 0;
-      } else if (saldoAnterior > 0) {
-        // Saldo pendente: não paga comissão 1 (25%), mas paga comissão 2 (5%)
+        novoSaldo = saldoAnterior + Math.abs(coletas);
+        
+      } else if (coletas > saldoAnterior) {
+        // Coletas MAIORES que saldo: paga comissões sobre a DIFERENÇA, zera saldo
+        const baseParaComissao = coletas - saldoAnterior;
+        baseComissao = baseParaComissao;
+        valorComissao1 = baseParaComissao * (perc1 / 100);
+        valorComissao2 = (baseParaComissao - valorComissao1) * (perc2 / 100);
+        novoSaldo = 0;
+        
+      } else {
+        // Coletas MENORES ou IGUAIS ao saldo: só paga 5% sobre coletas, reduz saldo
+        baseComissao = 0;
         valorComissao1 = 0;
         valorComissao2 = coletas * (perc2 / 100);
-        baseComissao = 0; // Base comissão zero porque não paga a principal
-      } else {
-        // Saldo zerado: paga ambas as comissões normalmente
-        valorComissao1 = coletas * (perc1 / 100);
-        valorComissao2 = (coletas - valorComissao1) * (perc2 / 100);
-        baseComissao = coletas;
+        novoSaldo = saldoAnterior - coletas;
       }
       
       // Resultado = Coletas - Despesas - Comissões

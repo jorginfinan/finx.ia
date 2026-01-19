@@ -1800,7 +1800,7 @@ const valePg = valesAplicados.reduce((sum, v) => {
         
         const usaSaldoAcumulado = !empresaSemSaldoAcumulado && 
         window.SaldoAcumulado && g && perc1 > 0 && perc1 < 50 && 
-        g.temSaldoAcumulado === true;  // ✅ SÓ usa se o gerente tiver a flag ATIVA (permite 2ª comissão)
+        (g.temSaldoAcumulado === true || temSegundaComissao);  // ← INCLUI 2ª COMISSÃO
 
   if (usaSaldoAcumulado) {
     console.log('📊 [SaldoAcumulado] Condições atendidas! Calculando...');

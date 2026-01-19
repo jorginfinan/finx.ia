@@ -1,4 +1,4 @@
-// js/ai.js — Assistente IA Inteligente para Gestão Financeira v2.0
+// js/ai.js — Assistente IA FINX v3.0 - Analytics Avançado
 (function () {
   'use strict';
 
@@ -24,14 +24,16 @@
 
   if (!el.panel) return;
 
-  // ===== CONTEXTO CONVERSACIONAL =====
+  // ===== CONTEXTO CONVERSACIONAL AVANÇADO =====
   const conversationContext = {
     lastTopic: null,
     lastEntity: null,
     lastPeriodo: null,
+    lastGerente: null,
     lastNumbers: [],
     lastAction: null,
-    turnHistory: []
+    turnHistory: [],
+    suggestedFollowups: []
   };
 
   // ===== Estado e persistência =====
@@ -93,6 +95,10 @@
     return date.toLocaleDateString('pt-BR');
   }
 
+  function fmtNum(n) {
+    return (Number(n) || 0).toLocaleString('pt-BR');
+  }
+
   // ===== PARSER DE PERÍODO MELHORADO =====
   const MESES = {
     'janeiro': 0, 'jan': 0,
@@ -115,13 +121,13 @@
     const anoAtual = hoje.getFullYear();
     const mesAtual = hoje.getMonth();
 
-    // ===== SEMANA PASSADA =====
+    // Semana passada
     if (s.includes('semana passada') || s.includes('ultima semana') || s.includes('semana anterior')) {
       const inicioSemanaPassada = new Date(hoje);
-      inicioSemanaPassada.setDate(hoje.getDate() - hoje.getDay() - 7); // Domingo da semana passada
+      inicioSemanaPassada.setDate(hoje.getDate() - hoje.getDay() - 7);
       inicioSemanaPassada.setHours(0,0,0,0);
       const fimSemanaPassada = new Date(inicioSemanaPassada);
-      fimSemanaPassada.setDate(inicioSemanaPassada.getDate() + 6); // Sábado da semana passada
+      fimSemanaPassada.setDate(inicioSemanaPassada.getDate() + 6);
       fimSemanaPassada.setHours(23,59,59,999);
       return { 
         tipo: 'semana', 
@@ -132,14 +138,14 @@
       };
     }
 
-    // ===== ESTA SEMANA / ESSA SEMANA =====
+    // Esta semana
     if (s.includes('essa semana') || s.includes('esta semana') || s.includes('semana atual') || 
         (s.includes('semana') && !s.includes('passada') && !s.includes('anterior'))) {
       const inicioSemana = new Date(hoje);
-      inicioSemana.setDate(hoje.getDate() - hoje.getDay()); // Domingo desta semana
+      inicioSemana.setDate(hoje.getDate() - hoje.getDay());
       inicioSemana.setHours(0,0,0,0);
       const fimSemana = new Date(inicioSemana);
-      fimSemana.setDate(inicioSemana.getDate() + 6); // Sábado desta semana
+      fimSemana.setDate(inicioSemana.getDate() + 6);
       fimSemana.setHours(23,59,59,999);
       return { 
         tipo: 'semana', 
@@ -150,7 +156,7 @@
       };
     }
 
-    // Detecta mês específico
+    // Mês específico
     for (const [nome, num] of Object.entries(MESES)) {
       if (s.includes(nome)) {
         const anoMatch = s.match(/20\d{2}/);
@@ -166,7 +172,18 @@
       }
     }
 
-    // Detecta períodos relativos
+    // Trimestre
+    if (s.includes('trimestre') || s.includes('ultimos 3 meses')) {
+      const inicioTri = new Date(anoAtual, mesAtual - 2, 1);
+      return {
+        tipo: 'trimestre',
+        inicio: inicioTri,
+        fim: new Date(anoAtual, mesAtual + 1, 0, 23, 59, 59),
+        label: 'Últimos 3 meses'
+      };
+    }
+
+    // Períodos relativos
     if (s.includes('hoje')) {
       const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 0, 0, 0);
       const fimHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 23, 59, 59);
@@ -176,9 +193,7 @@
     if (s.includes('ontem')) {
       const ontem = new Date(hoje);
       ontem.setDate(hoje.getDate() - 1);
-      const inicioOntem = new Date(ontem.getFullYear(), ontem.getMonth(), ontem.getDate(), 0, 0, 0);
-      const fimOntem = new Date(ontem.getFullYear(), ontem.getMonth(), ontem.getDate(), 23, 59, 59);
-      return { tipo: 'dia', inicio: inicioOntem, fim: fimOntem, label: 'Ontem' };
+      return { tipo: 'dia', inicio: new Date(ontem.setHours(0,0,0,0)), fim: new Date(ontem.setHours(23,59,59,999)), label: 'Ontem' };
     }
 
     if (s.includes('mes passado') || s.includes('ultimo mes') || s.includes('mes anterior')) {
@@ -205,7 +220,7 @@
       };
     }
 
-    if (s.includes('ano')) {
+    if (s.includes('ano') || s.includes('anual')) {
       return {
         tipo: 'ano',
         ano: anoAtual,
@@ -226,7 +241,7 @@
     };
   }
 
-  // ===== EXTRAÇÃO DE ENTIDADES =====
+  // ===== EXTRAÇÃO DE ENTIDADES AVANÇADA =====
   function extractEntities(text) {
     const s = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     
@@ -235,11 +250,16 @@
       gerentes: extrairNomesGerentes(s),
       fichas: (s.match(/\b\d{4}\b/g) || []),
       temComparativo: /compar|melhor|pior|mais|menos|maior|menor|ranking|top|primeiro|ultimo/.test(s),
-      temTendencia: /tendencia|evolucao|cresceu|caiu|subiu|desceu|variacao/.test(s),
+      temTendencia: /tendencia|evolucao|cresceu|caiu|subiu|desceu|variacao|historico/.test(s),
       temAlerta: /alerta|problema|atencao|cuidado|critico|urgente|acima|estoura/.test(s),
       temSemana: /semana/.test(s),
+      temMes: /mes|mensal/.test(s),
+      temFrequencia: /frequencia|envio|quantas|vezes|regularidade|pontualidade/.test(s),
+      temRendimento: /rendimento|performance|desempenho|resultado|lucro|prejuizo/.test(s),
+      temRota: /rota|rotas/.test(s),
       temFinalizou: /finaliz|encerr|fechou|quitou|conclu/.test(s),
-      temAberto: /aberto|pendente|devendo|deve|falta/.test(s)
+      temAberto: /aberto|pendente|devendo|deve|falta/.test(s),
+      temAnalise: /analise|analisar|analisa|detalh|completo|relatorio/.test(s)
     };
   }
 
@@ -253,12 +273,11 @@
       matches.push({ numero: match[1], nome: match[2] });
     }
     
-    // Padrão 2: "do/da/de [Nome]" (ex: "do Luís", "da Maria", "de Bruno")
+    // Padrão 2: "do/da/de [Nome]"
     const pattern2 = /\b(do|da|de)\s+([a-záéíóúãõ]+)\b/gi;
     while ((match = pattern2.exec(s)) !== null) {
       const nome = match[2];
-      // Ignora palavras comuns que não são nomes
-      const ignorar = ['mês', 'mes', 'ano', 'semana', 'dia', 'período', 'periodo', 'caixa', 'sistema', 'valor', 'total'];
+      const ignorar = ['mês', 'mes', 'ano', 'semana', 'dia', 'período', 'periodo', 'caixa', 'sistema', 'valor', 'total', 'rota', 'rotas'];
       if (!ignorar.includes(nome.toLowerCase())) {
         matches.push({ numero: '', nome: nome });
       }
@@ -276,56 +295,69 @@
       return { type: 'debug_caixa', confidence: 1.0 };
     }
     
-    // Mapeamento de padrões para intenções
+    // ===== NOVAS INTENÇÕES DE ANALYTICS =====
     const intents = [
-      // ===== NOVAS INTENÇÕES SEMANAIS =====
+      // Frequência e Regularidade de Envio
+      { pattern: /frequencia.*(envio|prestac)|quantas.*(prestac|vezes).*mes/, type: 'frequencia_envio', confidence: 0.95 },
+      { pattern: /(taxa|percentual|porcent).*(envio|prestac)/, type: 'taxa_envio', confidence: 0.95 },
+      { pattern: /regularidade|pontualidade.*envio/, type: 'frequencia_envio', confidence: 0.9 },
+      { pattern: /quem.*(mais|menos).*(envia|entrega|prestac)/, type: 'ranking_frequencia', confidence: 0.95 },
+      
+      // Rendimento por Rota
+      { pattern: /rendimento.*(rota|gerente)|performance.*(rota|gerente)/, type: 'rendimento_rota', confidence: 0.95 },
+      { pattern: /(qual|quais).*(rota|gerente).*(melhor|pior|mais.*lucro|menos.*lucro)/, type: 'ranking_rendimento', confidence: 0.95 },
+      { pattern: /lucro.*(rota|gerente)|prejuizo.*(rota|gerente)/, type: 'rendimento_rota', confidence: 0.9 },
+      { pattern: /resultado.*(rota|por.*gerente)/, type: 'rendimento_rota', confidence: 0.9 },
+      
+      // Análise Completa de Gerente
+      { pattern: /analise.*(complet|detalh).*(gerente|\d{3})/, type: 'analise_completa_gerente', confidence: 0.95 },
+      { pattern: /relatorio.*(complet|detalh).*(gerente|\d{3})/, type: 'analise_completa_gerente', confidence: 0.95 },
+      { pattern: /tudo.*sobre.*(gerente|\d{3})/, type: 'analise_completa_gerente', confidence: 0.9 },
+      
+      // Comparativo entre Gerentes
+      { pattern: /compar.*(gerente|rota)/, type: 'comparativo_gerentes', confidence: 0.95 },
+      { pattern: /diferenca.*entre.*(gerente|\d{3})/, type: 'comparativo_gerentes', confidence: 0.9 },
+      
+      // Tendências e Histórico
+      { pattern: /tendencia|evolucao|historico.*(gerente|rota|geral)/, type: 'tendencia_historico', confidence: 0.9 },
+      { pattern: /como.*evoluiu|como.*esta.*indo/, type: 'tendencia_historico', confidence: 0.85 },
+      
+      // Métricas do Caixa
+      { pattern: /metricas.*caixa|kpi|indicadores/, type: 'metricas_caixa', confidence: 0.9 },
+      
+      // Intenções Semanais
       { pattern: /semana.*(quem|qual).*(deve|devendo|aberto|maior)/, type: 'devedor_semana', confidence: 0.95 },
       { pattern: /(quem|qual).*(deve|devendo|aberto|maior).*semana/, type: 'devedor_semana', confidence: 0.95 },
-      { pattern: /(essa|esta|semana).*(deve|devendo|maior.*valor)/, type: 'devedor_semana', confidence: 0.95 },
-      { pattern: /semana.*(finaliz|encerr|fechou).*(aberto|pendente|valor)/, type: 'finalizou_com_aberto', confidence: 0.95 },
-      { pattern: /(finaliz|encerr|fechou).*(aberto|pendente|valor).*semana/, type: 'finalizou_com_aberto', confidence: 0.95 },
-      { pattern: /semana.*gerente.*(finaliz|fechou)/, type: 'finalizou_com_aberto', confidence: 0.9 },
-      { pattern: /semana.*(prestac|conta).*aberta/, type: 'prestacoes_semana', confidence: 0.9 },
-      { pattern: /semana.*(receb|entrada|pagou|pago)/, type: 'movimentacao_semana', confidence: 0.9 },
-      { pattern: /(receb|entrada|pagou|pago).*semana/, type: 'movimentacao_semana', confidence: 0.9 },
+      { pattern: /semana.*(finaliz|encerr|fechou).*(aberto|pendente)/, type: 'finalizou_com_aberto', confidence: 0.95 },
       { pattern: /semana.*(resum|como.*esta|situacao)/, type: 'resumo_semana', confidence: 0.9 },
-      { pattern: /(resum|situacao).*semana/, type: 'resumo_semana', confidence: 0.9 },
       
       // Caixa e Financeiro
       { pattern: /caixa|saldo|balanco|entrada|saida/, type: 'caixa_periodo', confidence: 0.9 },
       { pattern: /fluxo\s*(de\s*)?caixa/, type: 'fluxo_caixa', confidence: 0.95 },
       
-      // Rankings e Comparativos
-      { pattern: /(quem|qual).*(paga|pagou).*(melhor|mais\s*rapido|pontual|primeiro)/, type: 'ranking_pagamento', confidence: 0.95 },
-      { pattern: /(quem|qual).*(paga|pagou).*(pior|atrasado|devagar|ultimo)/, type: 'ranking_inadimplente', confidence: 0.95 },
+      // Rankings
+      { pattern: /(quem|qual).*(paga|pagou).*(melhor|mais\s*rapido|pontual)/, type: 'ranking_pagamento', confidence: 0.95 },
       { pattern: /(maior|mais).*(devedor|divida|deve|aberto)/, type: 'maior_devedor', confidence: 0.9 },
-      { pattern: /(menor|menos).*(devedor|divida|deve)/, type: 'menor_devedor', confidence: 0.9 },
       
       // Despesas
-      { pattern: /despesa.*(acima|estoura|passa|ultrapassa|permitid|ideal|limit)/, type: 'despesas_acima', confidence: 0.95 },
+      { pattern: /despesa.*(acima|estoura|passa|ultrapassa)/, type: 'despesas_acima', confidence: 0.95 },
       { pattern: /(quem|qual).*(mais|maior).*(despesa|gast)/, type: 'ranking_despesas', confidence: 0.9 },
-      { pattern: /total.*(despesa|gasto)/, type: 'total_despesas', confidence: 0.85 },
       
       // Prestações
       { pattern: /prestac.*(aberta|pendente|atrasad)/, type: 'prestacoes_abertas', confidence: 0.9 },
-      { pattern: /prestac.*(fechad|quitad|pag)/, type: 'prestacoes_fechadas', confidence: 0.9 },
-      { pattern: /total.*prestac/, type: 'total_prestacoes', confidence: 0.85 },
       
-// Gerentes específicos
-{ pattern: /gerente.*(lista|todos|quais|quantos)/, type: 'listar_gerentes', confidence: 0.9 },
-{ pattern: /(valor|quanto|saldo|divida|aberto|deve).*(do|da|de)\s+\w+/, type: 'info_gerente_detalhe', confidence: 0.95 },
-{ pattern: /(historico|pagamentos|prestacoes).*(do|da|de)\s+\w+/, type: 'info_gerente_detalhe', confidence: 0.95 },
-{ pattern: /(como|situacao|status).*(do|da|de)\s+\w+/, type: 'info_gerente_detalhe', confidence: 0.9 },
-{ pattern: /\d{3}\s+[a-z]/, type: 'info_gerente_detalhe', confidence: 0.85 },
+      // Gerentes específicos
+      { pattern: /gerente.*(lista|todos|quais|quantos)/, type: 'listar_gerentes', confidence: 0.9 },
+      { pattern: /(valor|quanto|saldo|divida|aberto|deve).*(do|da|de)\s+\w+/, type: 'info_gerente_detalhe', confidence: 0.95 },
+      { pattern: /(historico|pagamentos|prestacoes).*(do|da|de)\s+\w+/, type: 'info_gerente_detalhe', confidence: 0.95 },
+      { pattern: /\d{3}\s+[a-z]/, type: 'info_gerente_detalhe', confidence: 0.85 },
       
       // Análises e Insights
       { pattern: /resum|visao\s*geral|status|como\s*(esta|vai|anda)|situacao/, type: 'resumo_geral', confidence: 0.85 },
       { pattern: /alert|problema|atencao|cuidado|critico/, type: 'alertas', confidence: 0.9 },
-      { pattern: /tendencia|evolucao|historico|comparar.*mes/, type: 'tendencia', confidence: 0.85 },
-      { pattern: /previsao|projecao|estimativa/, type: 'previsao', confidence: 0.8 },
       
       // Ajuda
-      { pattern: /ajuda|help|o\s*que\s*(voce|vc)\s*(faz|pode)|como\s*(usar|funciona)/, type: 'ajuda', confidence: 0.95 }
+      { pattern: /ajuda|help|o\s*que\s*(voce|vc)\s*(faz|pode)|como\s*(usar|funciona)|comandos/, type: 'ajuda', confidence: 0.95 }
     ];
 
     for (const intent of intents) {
@@ -342,32 +374,37 @@
     const ctx = {
       gerentes: [],
       prestacoes: [],
-      prestacoesSemFiltro: [], // Para análises que precisam de todas
+      prestacoesSemFiltro: [],
+      todasPrestacoes: [], // Histórico completo
       lancamentos: [],
+      lancamentosSemFiltro: [],
       pendencias: [],
       despesas: [],
-      periodo: periodo
+      periodo: periodo,
+      empresa: getCompany()
     };
 
     const empresaAtual = getCompany();
     console.log('[AI] Coletando dados para:', empresaAtual, periodo?.label);
 
-// Gerentes - SEMPRE do Supabase
-try {
-  if (window.SupabaseAPI?.gerentes?.getAll) {
-    const gerentes = await window.SupabaseAPI.gerentes.getAll();
-    ctx.gerentes = (gerentes || []).map(g => ({
-      id: g.id,
-      uid: g.uid || g.id,
-      nome: g.nome || g.apelido || '',
-      numero: g.numero || g.rota || '',
-      comissao: Number(g.comissao) || 0
-    }));
-    console.log('[AI] ✅ Gerentes carregados do Supabase:', ctx.gerentes.length);
-  }
-} catch(e) { console.warn('[AI] Erro gerentes:', e); }
+    // ===== GERENTES =====
+    try {
+      if (window.SupabaseAPI?.gerentes?.getAll) {
+        const gerentes = await window.SupabaseAPI.gerentes.getAll();
+        ctx.gerentes = (gerentes || []).map(g => ({
+          id: g.id,
+          uid: g.uid || g.id,
+          nome: g.nome || g.apelido || '',
+          numero: g.numero || g.rota || '',
+          comissao: Number(g.comissao) || 0,
+          comissao2: Number(g.comissao2) || 0,
+          temSaldoAcumulado: g.tem_saldo_acumulado || g.temSaldoAcumulado || false
+        }));
+        console.log('[AI] ✅ Gerentes:', ctx.gerentes.length);
+      }
+    } catch(e) { console.warn('[AI] Erro gerentes:', e); }
 
-    // Prestações
+    // ===== PRESTAÇÕES - TODAS =====
     try {
       if (window.SupabaseAPI?.prestacoes?.getAll) {
         const prestacoes = await window.SupabaseAPI.prestacoes.getAll();
@@ -388,21 +425,33 @@ try {
             gerenteId: p.gerente_id || p.gerenteId,
             gerenteNome: gerente?.nome || p.gerente_nome || '',
             gerenteNumero: gerente?.numero || '',
-            ini: p.ini,
-            fim: p.fim,
+            ini: p.ini || p.periodo_ini,
+            fim: p.fim || p.periodo_fim,
             fechado: !!p.fechado,
             aPagar: Number(resumo.aPagar) || Number(p.a_pagar) || 0,
             restam: Number(resumo.restam) || Number(p.restam) || 0,
             pagos: Number(resumo.pagos) || Number(p.pagos) || 0,
-            coletas: Number(resumo.coletas) || 0,
-            despesas: Number(resumo.despesas) || 0,
-            createdAt: p.created_at || p.createdAt
+            coletas: Number(resumo.coletas) || Number(p.coletas) || 0,
+            despesas: Number(resumo.despesas) || Number(p.despesas) || 0,
+            comissao: Number(resumo.comissaoVal) || Number(p.valor_comissao) || 0,
+            resultado: Number(resumo.resultado) || 0,
+            baseCalculo: Number(resumo.baseCalculo) || Number(p.base_calculo) || 0,
+            createdAt: p.created_at || p.createdAt,
+            mesAno: null // Será calculado
           };
         });
         
+        // Adiciona campo mesAno para análises
+        mapped.forEach(p => {
+          const d = new Date(p.fim || p.ini || p.createdAt);
+          p.mesAno = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          p.semanaAno = getWeekNumber(d);
+        });
+        
+        ctx.todasPrestacoes = mapped;
         ctx.prestacoesSemFiltro = mapped;
         
-        // Filtra por período se especificado
+        // Filtra por período
         if (periodo?.inicio && periodo?.fim) {
           ctx.prestacoes = mapped.filter(p => {
             const dataP = new Date(p.fim || p.ini || p.createdAt);
@@ -411,58 +460,53 @@ try {
         } else {
           ctx.prestacoes = mapped;
         }
+        console.log('[AI] ✅ Prestações:', ctx.prestacoes.length, '/', mapped.length);
       }
     } catch(e) { console.warn('[AI] Erro prestações:', e); }
 
-// Lançamentos (Financeiro) - SEMPRE DO SUPABASE
-try {
-  let lancamentosRaw = [];
-  
-  // ✅ SEMPRE busca do Supabase com empresa explícita
-  if (window.SupabaseAPI?.lancamentos?.getAll) {
-    const lancamentos = await window.SupabaseAPI.lancamentos.getAll(empresaAtual);
-    lancamentosRaw = lancamentos || [];
-    console.log('[AI] ✅ Lançamentos do Supabase para', empresaAtual + ':', lancamentosRaw.length);
-  }
-  
-  const mapped = lancamentosRaw.map(l => ({
-    id: l.id,
-    uid: l.uid,
-    gerente: l.gerente || '',
-    gerenteId: l.gerente_id || l.gerenteId,
-    gerenteNome: ctx.gerentes.find(g => g.uid === l.gerente_id || g.id === l.gerente_id)?.nome || l.gerente || '',
-    valor: Number(l.valor) || 0,
-    tipo: l.tipo || '',
-    status: l.status || '',
-    forma: l.forma || '',
-    data: l.data,
-    createdAt: l.created_at || l.createdAt
-  }));
-  
-  // ✅ FILTRA POR PERÍODO - com parsing de data robusto
-  if (periodo?.inicio && periodo?.fim) {
-    ctx.lancamentos = mapped.filter(l => {
-      // Converte a data do lançamento para Date
-      const dataStr = l.data || l.createdAt || '';
-      if (!dataStr) return false;
+    // ===== LANÇAMENTOS =====
+    try {
+      let lancamentosRaw = [];
       
-      // Trata formato YYYY-MM-DD
-      const parts = dataStr.split('-');
-      const dataL = parts.length === 3 
-        ? new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0)
-        : new Date(dataStr);
+      if (window.SupabaseAPI?.lancamentos?.getAll) {
+        const lancamentos = await window.SupabaseAPI.lancamentos.getAll(empresaAtual);
+        lancamentosRaw = lancamentos || [];
+      }
       
-      if (isNaN(dataL.getTime())) return false;
+      const mapped = lancamentosRaw.map(l => ({
+        id: l.id,
+        uid: l.uid,
+        gerente: l.gerente || '',
+        gerenteId: l.gerente_id || l.gerenteId,
+        gerenteNome: ctx.gerentes.find(g => g.uid === l.gerente_id || g.id === l.gerente_id)?.nome || l.gerente || '',
+        valor: Number(l.valor) || 0,
+        tipo: l.tipo || '',
+        status: l.status || '',
+        forma: l.forma || '',
+        data: l.data,
+        createdAt: l.created_at || l.createdAt
+      }));
       
-      return dataL >= periodo.inicio && dataL <= periodo.fim;
-    });
-    console.log('[AI] Após filtro de período:', ctx.lancamentos.length, 'de', mapped.length, 'lançamentos');
-  } else {
-    ctx.lancamentos = mapped;
-  }
-} catch(e) { console.warn('[AI] Erro lançamentos:', e); }
+      ctx.lancamentosSemFiltro = mapped;
+      
+      if (periodo?.inicio && periodo?.fim) {
+        ctx.lancamentos = mapped.filter(l => {
+          const dataStr = l.data || l.createdAt || '';
+          if (!dataStr) return false;
+          const parts = dataStr.split('-');
+          const dataL = parts.length === 3 
+            ? new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0)
+            : new Date(dataStr);
+          if (isNaN(dataL.getTime())) return false;
+          return dataL >= periodo.inicio && dataL <= periodo.fim;
+        });
+      } else {
+        ctx.lancamentos = mapped;
+      }
+      console.log('[AI] ✅ Lançamentos:', ctx.lancamentos.length);
+    } catch(e) { console.warn('[AI] Erro lançamentos:', e); }
 
-    // Pendências
+    // ===== PENDÊNCIAS =====
     try {
       if (window.PendenciasAPI?.getAll) {
         const pendencias = await window.PendenciasAPI.getAll();
@@ -478,9 +522,10 @@ try {
       }
     } catch(e) { console.warn('[AI] Erro pendências:', e); }
 
-    console.log('[AI] Dados coletados:', {
+    console.log('[AI] Coleta finalizada:', {
       gerentes: ctx.gerentes.length,
       prestacoes: ctx.prestacoes.length,
+      todasPrestacoes: ctx.todasPrestacoes.length,
       lancamentos: ctx.lancamentos.length,
       pendencias: ctx.pendencias.length
     });
@@ -488,248 +533,733 @@ try {
     return ctx;
   }
 
-  // ===== PROCESSADORES DE RESPOSTA =====
+  // Helper: Número da semana no ano
+  function getWeekNumber(d) {
+    const date = new Date(d);
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() + 4 - (date.getDay() || 7));
+    const yearStart = new Date(date.getFullYear(), 0, 1);
+    return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  }
 
-  // ===== NOVOS PROCESSADORES SEMANAIS =====
+  // =============================================
+  // ===== NOVOS PROCESSADORES DE ANALYTICS =====
+  // =============================================
 
-  // 🔴 Quem está devendo mais esta semana/semana passada
+  // 📊 FREQUÊNCIA DE ENVIO DE PRESTAÇÕES
+  function processFrequenciaEnvio(ctx, nomesBuscados) {
+    const { todasPrestacoes, gerentes } = ctx;
+    
+    // Se tem gerente específico
+    if (nomesBuscados?.length) {
+      const gerente = findGerente(ctx, nomesBuscados[0]);
+      if (gerente) {
+        return processFrequenciaGerenteEspecifico(ctx, gerente);
+      }
+    }
+    
+    // Análise geral - últimos 3 meses
+    const tresMesesAtras = new Date();
+    tresMesesAtras.setMonth(tresMesesAtras.getMonth() - 3);
+    
+    const stats = {};
+    
+    gerentes.forEach(g => {
+      const prestG = todasPrestacoes.filter(p => 
+        (p.gerenteId === g.uid || p.gerenteId === g.id) &&
+        new Date(p.createdAt || p.fim) >= tresMesesAtras
+      );
+      
+      // Agrupa por mês
+      const porMes = {};
+      prestG.forEach(p => {
+        if (!porMes[p.mesAno]) porMes[p.mesAno] = 0;
+        porMes[p.mesAno]++;
+      });
+      
+      const meses = Object.keys(porMes);
+      const mediaPorMes = meses.length > 0 ? prestG.length / meses.length : 0;
+      
+      // Calcula semanas esperadas (4 por mês)
+      const semanasEsperadas = meses.length * 4;
+      const taxaEnvio = semanasEsperadas > 0 ? (prestG.length / semanasEsperadas) * 100 : 0;
+      
+      stats[g.uid || g.id] = {
+        nome: g.nome,
+        numero: g.numero,
+        totalPrestacoes: prestG.length,
+        mesesAtivos: meses.length,
+        mediaPorMes: mediaPorMes,
+        taxaEnvio: Math.min(taxaEnvio, 100), // Cap em 100%
+        ultimaPrestacao: prestG.length ? new Date(Math.max(...prestG.map(p => new Date(p.createdAt || p.fim)))) : null
+      };
+    });
+    
+    const ranking = Object.values(stats)
+      .filter(g => g.totalPrestacoes > 0)
+      .sort((a, b) => b.taxaEnvio - a.taxaEnvio);
+    
+    if (!ranking.length) {
+      return '📊 <strong>Frequência de Envio</strong><br><br>Sem dados suficientes para análise.';
+    }
+    
+    // Gráfico de barras em texto
+    const maxTaxa = Math.max(...ranking.map(r => r.taxaEnvio));
+    
+    let resp = `📊 <strong>Frequência de Envio - Últimos 3 Meses</strong><br><br>`;
+    resp += `<em>Taxa = prestações enviadas / semanas esperadas (4/mês)</em><br><br>`;
+    
+    // Top 10
+    const top10 = ranking.slice(0, 10);
+    top10.forEach((g, i) => {
+      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
+      const barWidth = Math.round((g.taxaEnvio / maxTaxa) * 15);
+      const bar = '█'.repeat(barWidth) + '░'.repeat(15 - barWidth);
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
+      
+      resp += `${medal} <strong>${nome}</strong><br>`;
+      resp += `&nbsp;&nbsp;${bar} ${fmtPerc(g.taxaEnvio)}<br>`;
+      resp += `&nbsp;&nbsp;<em>${g.totalPrestacoes} prestações em ${g.mesesAtivos} meses (${g.mediaPorMes.toFixed(1)}/mês)</em><br><br>`;
+    });
+    
+    // Alertas: quem está abaixo de 50%
+    const baixaFrequencia = ranking.filter(g => g.taxaEnvio < 50 && g.mesesAtivos >= 2);
+    if (baixaFrequencia.length) {
+      resp += `<br>⚠️ <strong>Atenção - Baixa frequência (&lt;50%):</strong><br>`;
+      baixaFrequencia.slice(0, 5).forEach(g => {
+        const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
+        const diasSemEnvio = g.ultimaPrestacao ? Math.round((new Date() - g.ultimaPrestacao) / (1000 * 60 * 60 * 24)) : '?';
+        resp += `• ${nome}: ${fmtPerc(g.taxaEnvio)} (último envio há ${diasSemEnvio} dias)<br>`;
+      });
+    }
+    
+    return resp;
+  }
+
+  // Frequência de um gerente específico
+  function processFrequenciaGerenteEspecifico(ctx, gerente) {
+    const { todasPrestacoes } = ctx;
+    
+    const prestG = todasPrestacoes
+      .filter(p => p.gerenteId === gerente.uid || p.gerenteId === gerente.id)
+      .sort((a, b) => new Date(b.fim || b.createdAt) - new Date(a.fim || a.createdAt));
+    
+    if (!prestG.length) {
+      return `📊 <strong>${gerente.numero || ''} ${gerente.nome}</strong><br><br>Nenhuma prestação encontrada.`;
+    }
+    
+    // Agrupa por mês
+    const porMes = {};
+    prestG.forEach(p => {
+      if (!porMes[p.mesAno]) porMes[p.mesAno] = [];
+      porMes[p.mesAno].push(p);
+    });
+    
+    const mesesOrdenados = Object.keys(porMes).sort().reverse();
+    
+    let resp = `📊 <strong>Frequência de Envio - ${gerente.numero || ''} ${gerente.nome}</strong><br><br>`;
+    
+    // Resumo
+    const totalPrest = prestG.length;
+    const mesesAtivos = mesesOrdenados.length;
+    const mediaPorMes = mesesAtivos > 0 ? totalPrest / mesesAtivos : 0;
+    const semanasEsperadas = mesesAtivos * 4;
+    const taxaGeral = semanasEsperadas > 0 ? Math.min((totalPrest / semanasEsperadas) * 100, 100) : 0;
+    
+    resp += `📈 <strong>RESUMO GERAL:</strong><br>`;
+    resp += `• Total de prestações: ${totalPrest}<br>`;
+    resp += `• Meses ativos: ${mesesAtivos}<br>`;
+    resp += `• Média por mês: ${mediaPorMes.toFixed(1)} prestações<br>`;
+    resp += `• Taxa de envio: <strong>${fmtPerc(taxaGeral)}</strong><br><br>`;
+    
+    // Detalhamento por mês (últimos 6)
+    resp += `📅 <strong>DETALHAMENTO POR MÊS:</strong><br>`;
+    mesesOrdenados.slice(0, 6).forEach(mes => {
+      const pMes = porMes[mes];
+      const qtd = pMes.length;
+      const taxa = Math.min((qtd / 4) * 100, 100);
+      const icon = taxa >= 75 ? '✅' : taxa >= 50 ? '🟡' : '🔴';
+      
+      const [ano, mesNum] = mes.split('-');
+      const nomeMes = new Date(ano, mesNum - 1).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+      
+      resp += `${icon} <strong>${nomeMes}:</strong> ${qtd} prestações (${fmtPerc(taxa)})<br>`;
+    });
+    
+    // Padrão detectado
+    resp += `<br>📊 <strong>PADRÃO DETECTADO:</strong><br>`;
+    if (mediaPorMes >= 3.5) {
+      resp += `✅ Envio <strong>SEMANAL</strong> consistente<br>`;
+    } else if (mediaPorMes >= 2) {
+      resp += `🟡 Envio <strong>QUINZENAL</strong> aproximado<br>`;
+    } else if (mediaPorMes >= 1) {
+      resp += `🟠 Envio <strong>MENSAL</strong><br>`;
+    } else {
+      resp += `🔴 Envio <strong>IRREGULAR</strong><br>`;
+    }
+    
+    return resp;
+  }
+
+  // 💰 RENDIMENTO POR ROTA
+  function processRendimentoRota(ctx, nomesBuscados) {
+    const { todasPrestacoes, gerentes, lancamentosSemFiltro } = ctx;
+    
+    // Se tem gerente específico
+    if (nomesBuscados?.length) {
+      const gerente = findGerente(ctx, nomesBuscados[0]);
+      if (gerente) {
+        return processRendimentoGerenteEspecifico(ctx, gerente);
+      }
+    }
+    
+    // Análise geral - últimos 3 meses
+    const tresMesesAtras = new Date();
+    tresMesesAtras.setMonth(tresMesesAtras.getMonth() - 3);
+    
+    const stats = {};
+    
+    gerentes.forEach(g => {
+      const prestG = todasPrestacoes.filter(p => 
+        (p.gerenteId === g.uid || p.gerenteId === g.id) &&
+        new Date(p.createdAt || p.fim) >= tresMesesAtras
+      );
+      
+      if (!prestG.length) return;
+      
+      const totalColetas = prestG.reduce((s, p) => s + p.coletas, 0);
+      const totalDespesas = prestG.reduce((s, p) => s + p.despesas, 0);
+      const totalComissao = prestG.reduce((s, p) => s + p.comissao, 0);
+      const totalAPagar = prestG.reduce((s, p) => s + p.aPagar, 0);
+      const totalPago = prestG.reduce((s, p) => s + p.pagos, 0);
+      const totalAberto = prestG.reduce((s, p) => s + p.restam, 0);
+      
+      // Rendimento líquido = Coletas - Despesas - Comissão
+      const rendimentoLiquido = totalColetas - totalDespesas - totalComissao;
+      // Margem = Rendimento / Coletas
+      const margem = totalColetas > 0 ? (rendimentoLiquido / totalColetas) * 100 : 0;
+      // Taxa de recebimento
+      const taxaRecebimento = totalAPagar > 0 ? (totalPago / totalAPagar) * 100 : 100;
+      
+      stats[g.uid || g.id] = {
+        nome: g.nome,
+        numero: g.numero,
+        qtdPrestacoes: prestG.length,
+        totalColetas,
+        totalDespesas,
+        totalComissao,
+        rendimentoLiquido,
+        margem,
+        totalAPagar,
+        totalPago,
+        totalAberto,
+        taxaRecebimento,
+        percDespesa: totalColetas > 0 ? (totalDespesas / totalColetas) * 100 : 0
+      };
+    });
+    
+    const ranking = Object.values(stats)
+      .filter(g => g.qtdPrestacoes > 0)
+      .sort((a, b) => b.rendimentoLiquido - a.rendimentoLiquido);
+    
+    if (!ranking.length) {
+      return '💰 <strong>Rendimento por Rota</strong><br><br>Sem dados suficientes.';
+    }
+    
+    let resp = `💰 <strong>Rendimento por Rota - Últimos 3 Meses</strong><br><br>`;
+    
+    // Totais gerais
+    const totGeral = ranking.reduce((acc, g) => ({
+      coletas: acc.coletas + g.totalColetas,
+      despesas: acc.despesas + g.totalDespesas,
+      comissao: acc.comissao + g.totalComissao,
+      rendimento: acc.rendimento + g.rendimentoLiquido
+    }), { coletas: 0, despesas: 0, comissao: 0, rendimento: 0 });
+    
+    resp += `📊 <strong>TOTAIS GERAIS:</strong><br>`;
+    resp += `• Coletas: ${fmt(totGeral.coletas)}<br>`;
+    resp += `• Despesas: ${fmt(totGeral.despesas)}<br>`;
+    resp += `• Comissões: ${fmt(totGeral.comissao)}<br>`;
+    resp += `• <strong>Rendimento Líquido: ${fmt(totGeral.rendimento)}</strong><br><br>`;
+    
+    // Top 5 melhores
+    resp += `🏆 <strong>TOP 5 - MAIOR RENDIMENTO:</strong><br>`;
+    ranking.slice(0, 5).forEach((g, i) => {
+      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
+      
+      resp += `${medal} <strong>${nome}</strong>: ${fmt(g.rendimentoLiquido)}<br>`;
+      resp += `&nbsp;&nbsp;Coletas: ${fmt(g.totalColetas)} | Margem: ${fmtPerc(g.margem)}<br><br>`;
+    });
+    
+    // Bottom 3 (piores ou negativos)
+    const negativos = ranking.filter(g => g.rendimentoLiquido < 0);
+    if (negativos.length) {
+      resp += `<br>⚠️ <strong>ROTAS COM PREJUÍZO:</strong><br>`;
+      negativos.slice(-3).forEach(g => {
+        const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
+        resp += `🔴 <strong>${nome}</strong>: ${fmt(g.rendimentoLiquido)}<br>`;
+        resp += `&nbsp;&nbsp;Despesas: ${fmtPerc(g.percDespesa)} das coletas<br>`;
+      });
+    }
+    
+    // Alertas de despesa alta
+    const despesaAlta = ranking.filter(g => g.percDespesa > 25);
+    if (despesaAlta.length) {
+      resp += `<br>💸 <strong>DESPESAS ACIMA DE 25%:</strong><br>`;
+      despesaAlta.slice(0, 3).forEach(g => {
+        const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
+        resp += `• ${nome}: ${fmtPerc(g.percDespesa)} das coletas<br>`;
+      });
+    }
+    
+    return resp;
+  }
+
+  // Rendimento de um gerente específico
+  function processRendimentoGerenteEspecifico(ctx, gerente) {
+    const { todasPrestacoes, lancamentosSemFiltro } = ctx;
+    
+    const prestG = todasPrestacoes
+      .filter(p => p.gerenteId === gerente.uid || p.gerenteId === gerente.id)
+      .sort((a, b) => new Date(b.fim || b.createdAt) - new Date(a.fim || a.createdAt));
+    
+    if (!prestG.length) {
+      return `💰 <strong>${gerente.numero || ''} ${gerente.nome}</strong><br><br>Nenhuma prestação encontrada.`;
+    }
+    
+    // Agrupa por mês
+    const porMes = {};
+    prestG.forEach(p => {
+      if (!porMes[p.mesAno]) porMes[p.mesAno] = [];
+      porMes[p.mesAno].push(p);
+    });
+    
+    const mesesOrdenados = Object.keys(porMes).sort().reverse();
+    
+    let resp = `💰 <strong>Rendimento - ${gerente.numero || ''} ${gerente.nome}</strong><br><br>`;
+    
+    // Resumo geral
+    const totalColetas = prestG.reduce((s, p) => s + p.coletas, 0);
+    const totalDespesas = prestG.reduce((s, p) => s + p.despesas, 0);
+    const totalComissao = prestG.reduce((s, p) => s + p.comissao, 0);
+    const totalAPagar = prestG.reduce((s, p) => s + p.aPagar, 0);
+    const totalPago = prestG.reduce((s, p) => s + p.pagos, 0);
+    const totalAberto = prestG.reduce((s, p) => s + p.restam, 0);
+    const rendimentoLiquido = totalColetas - totalDespesas - totalComissao;
+    const margem = totalColetas > 0 ? (rendimentoLiquido / totalColetas) * 100 : 0;
+    
+    resp += `📊 <strong>RESUMO GERAL (${prestG.length} prestações):</strong><br>`;
+    resp += `• Coletas totais: ${fmt(totalColetas)}<br>`;
+    resp += `• Despesas totais: ${fmt(totalDespesas)} (${fmtPerc(totalColetas > 0 ? (totalDespesas/totalColetas)*100 : 0)})<br>`;
+    resp += `• Comissões totais: ${fmt(totalComissao)}<br>`;
+    resp += `• <strong>Rendimento líquido: ${fmt(rendimentoLiquido)}</strong><br>`;
+    resp += `• Margem: ${fmtPerc(margem)}<br><br>`;
+    
+    // Situação financeira
+    resp += `💵 <strong>SITUAÇÃO FINANCEIRA:</strong><br>`;
+    resp += `• Total a pagar: ${fmt(totalAPagar)}<br>`;
+    resp += `• Total pago: ${fmt(totalPago)}<br>`;
+    if (totalAberto > 0) {
+      resp += `• ⚠️ <strong>Em aberto: ${fmt(totalAberto)}</strong><br>`;
+    } else {
+      resp += `• ✅ Sem valores em aberto<br>`;
+    }
+    resp += `<br>`;
+    
+    // Evolução mensal
+    resp += `📈 <strong>EVOLUÇÃO MENSAL:</strong><br>`;
+    mesesOrdenados.slice(0, 6).forEach(mes => {
+      const pMes = porMes[mes];
+      const colMes = pMes.reduce((s, p) => s + p.coletas, 0);
+      const despMes = pMes.reduce((s, p) => s + p.despesas, 0);
+      const comMes = pMes.reduce((s, p) => s + p.comissao, 0);
+      const rendMes = colMes - despMes - comMes;
+      const icon = rendMes >= 0 ? '✅' : '🔴';
+      
+      const [ano, mesNum] = mes.split('-');
+      const nomeMes = new Date(ano, mesNum - 1).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
+      
+      resp += `${icon} <strong>${nomeMes}:</strong> ${fmt(rendMes)}<br>`;
+      resp += `&nbsp;&nbsp;Coletas: ${fmt(colMes)} | ${pMes.length} prestações<br>`;
+    });
+    
+    // Análise de tendência
+    if (mesesOrdenados.length >= 3) {
+      const ultimos3 = mesesOrdenados.slice(0, 3);
+      const rendUltimos = ultimos3.map(mes => {
+        const pMes = porMes[mes];
+        const col = pMes.reduce((s, p) => s + p.coletas, 0);
+        const desp = pMes.reduce((s, p) => s + p.despesas, 0);
+        const com = pMes.reduce((s, p) => s + p.comissao, 0);
+        return col - desp - com;
+      });
+      
+      const tendencia = rendUltimos[0] > rendUltimos[2] ? '📈 Crescendo' : 
+                        rendUltimos[0] < rendUltimos[2] ? '📉 Caindo' : '➡️ Estável';
+      
+      resp += `<br>📊 <strong>TENDÊNCIA:</strong> ${tendencia}`;
+    }
+    
+    return resp;
+  }
+
+  // 📋 ANÁLISE COMPLETA DE UM GERENTE
+  function processAnaliseCompletaGerente(ctx, nomesBuscados) {
+    if (!nomesBuscados?.length) {
+      return `❓ <strong>Qual gerente você quer analisar?</strong><br><br>` +
+        `Exemplos:<br>` +
+        `• "Análise completa do 026 Sávio"<br>` +
+        `• "Relatório detalhado do Luís"`;
+    }
+    
+    const gerente = findGerente(ctx, nomesBuscados[0]);
+    if (!gerente) {
+      return `❌ Gerente "${nomesBuscados[0].nome}" não encontrado.`;
+    }
+    
+    const { todasPrestacoes, lancamentosSemFiltro } = ctx;
+    const nomeCompleto = `${gerente.numero || '---'} ${gerente.nome}`;
+    
+    const prestG = todasPrestacoes
+      .filter(p => p.gerenteId === gerente.uid || p.gerenteId === gerente.id)
+      .sort((a, b) => new Date(b.fim || b.createdAt) - new Date(a.fim || a.createdAt));
+    
+    if (!prestG.length) {
+      return `📋 <strong>Análise - ${nomeCompleto}</strong><br><br>Nenhuma prestação encontrada para este gerente.`;
+    }
+    
+    let resp = `📋 <strong>ANÁLISE COMPLETA - ${nomeCompleto}</strong><br><br>`;
+    
+    // ===== 1. DADOS CADASTRAIS =====
+    resp += `👤 <strong>DADOS CADASTRAIS:</strong><br>`;
+    resp += `• Comissão: ${gerente.comissao}%`;
+    if (gerente.comissao2 > 0) resp += ` + ${gerente.comissao2}% (2ª comissão)`;
+    resp += `<br>`;
+    if (gerente.temSaldoAcumulado) resp += `• ✅ Usa saldo acumulado<br>`;
+    resp += `<br>`;
+    
+    // ===== 2. FREQUÊNCIA DE ENVIO =====
+    const tresMesesAtras = new Date();
+    tresMesesAtras.setMonth(tresMesesAtras.getMonth() - 3);
+    const prestRecentes = prestG.filter(p => new Date(p.createdAt || p.fim) >= tresMesesAtras);
+    
+    const porMes = {};
+    prestRecentes.forEach(p => {
+      if (!porMes[p.mesAno]) porMes[p.mesAno] = 0;
+      porMes[p.mesAno]++;
+    });
+    const mesesAtivos = Object.keys(porMes).length;
+    const mediaPorMes = mesesAtivos > 0 ? prestRecentes.length / mesesAtivos : 0;
+    const taxaEnvio = Math.min((prestRecentes.length / (mesesAtivos * 4)) * 100, 100);
+    
+    resp += `📊 <strong>FREQUÊNCIA DE ENVIO (3 meses):</strong><br>`;
+    resp += `• Prestações enviadas: ${prestRecentes.length}<br>`;
+    resp += `• Média por mês: ${mediaPorMes.toFixed(1)}<br>`;
+    resp += `• Taxa de envio: <strong>${fmtPerc(taxaEnvio)}</strong><br>`;
+    resp += `• Padrão: ${mediaPorMes >= 3.5 ? '✅ Semanal' : mediaPorMes >= 2 ? '🟡 Quinzenal' : '🔴 Irregular'}<br><br>`;
+    
+    // ===== 3. RENDIMENTO =====
+    const totalColetas = prestRecentes.reduce((s, p) => s + p.coletas, 0);
+    const totalDespesas = prestRecentes.reduce((s, p) => s + p.despesas, 0);
+    const totalComissao = prestRecentes.reduce((s, p) => s + p.comissao, 0);
+    const rendimentoLiquido = totalColetas - totalDespesas - totalComissao;
+    const percDespesa = totalColetas > 0 ? (totalDespesas / totalColetas) * 100 : 0;
+    
+    resp += `💰 <strong>RENDIMENTO (3 meses):</strong><br>`;
+    resp += `• Coletas: ${fmt(totalColetas)}<br>`;
+    resp += `• Despesas: ${fmt(totalDespesas)} (${fmtPerc(percDespesa)})<br>`;
+    resp += `• Comissões: ${fmt(totalComissao)}<br>`;
+    resp += `• <strong>Rendimento líquido: ${fmt(rendimentoLiquido)}</strong><br>`;
+    resp += `• Status despesas: ${percDespesa <= 20 ? '✅ Dentro do ideal' : percDespesa <= 30 ? '🟡 Atenção' : '🔴 Acima do ideal'}<br><br>`;
+    
+    // ===== 4. SITUAÇÃO FINANCEIRA =====
+    const totalAPagar = prestRecentes.reduce((s, p) => s + p.aPagar, 0);
+    const totalPago = prestRecentes.reduce((s, p) => s + p.pagos, 0);
+    const totalAberto = prestRecentes.reduce((s, p) => s + p.restam, 0);
+    const taxaQuitacao = totalAPagar > 0 ? (totalPago / totalAPagar) * 100 : 100;
+    
+    resp += `💵 <strong>SITUAÇÃO FINANCEIRA:</strong><br>`;
+    resp += `• A pagar: ${fmt(totalAPagar)}<br>`;
+    resp += `• Pago: ${fmt(totalPago)} (${fmtPerc(taxaQuitacao)})<br>`;
+    if (totalAberto > 0) {
+      resp += `• ⚠️ <strong>Em aberto: ${fmt(totalAberto)}</strong><br>`;
+    } else {
+      resp += `• ✅ Sem valores em aberto<br>`;
+    }
+    resp += `<br>`;
+    
+    // ===== 5. ÚLTIMAS PRESTAÇÕES =====
+    resp += `📅 <strong>ÚLTIMAS 5 PRESTAÇÕES:</strong><br>`;
+    prestG.slice(0, 5).forEach(p => {
+      const periodo = `${fmtData(p.ini)} a ${fmtData(p.fim)}`;
+      const icon = p.fechado ? (p.restam > 0 ? '⚠️' : '✅') : '🔓';
+      resp += `${icon} ${periodo}: ${fmt(p.coletas)} col. | ${fmt(p.restam)} aberto<br>`;
+    });
+    resp += `<br>`;
+    
+    // ===== 6. SCORE GERAL =====
+    const scoreFreq = taxaEnvio >= 80 ? 100 : taxaEnvio >= 60 ? 75 : taxaEnvio >= 40 ? 50 : 25;
+    const scoreDespesa = percDespesa <= 20 ? 100 : percDespesa <= 30 ? 75 : percDespesa <= 40 ? 50 : 25;
+    const scoreQuitacao = taxaQuitacao >= 95 ? 100 : taxaQuitacao >= 80 ? 75 : taxaQuitacao >= 60 ? 50 : 25;
+    const scoreGeral = Math.round((scoreFreq + scoreDespesa + scoreQuitacao) / 3);
+    
+    const getScoreEmoji = (s) => s >= 80 ? '🌟' : s >= 60 ? '👍' : s >= 40 ? '👎' : '⚠️';
+    
+    resp += `🎯 <strong>SCORE GERAL: ${scoreGeral}/100 ${getScoreEmoji(scoreGeral)}</strong><br>`;
+    resp += `• Frequência: ${scoreFreq}/100<br>`;
+    resp += `• Despesas: ${scoreDespesa}/100<br>`;
+    resp += `• Quitação: ${scoreQuitacao}/100<br>`;
+    
+    return resp;
+  }
+
+  // 🔄 COMPARATIVO ENTRE GERENTES
+  function processComparativoGerentes(ctx) {
+    const { todasPrestacoes, gerentes } = ctx;
+    
+    const tresMesesAtras = new Date();
+    tresMesesAtras.setMonth(tresMesesAtras.getMonth() - 3);
+    
+    // Calcula métricas para cada gerente
+    const metricas = gerentes.map(g => {
+      const prestG = todasPrestacoes.filter(p => 
+        (p.gerenteId === g.uid || p.gerenteId === g.id) &&
+        new Date(p.createdAt || p.fim) >= tresMesesAtras
+      );
+      
+      if (!prestG.length) return null;
+      
+      const porMes = {};
+      prestG.forEach(p => {
+        if (!porMes[p.mesAno]) porMes[p.mesAno] = 0;
+        porMes[p.mesAno]++;
+      });
+      
+      const mesesAtivos = Object.keys(porMes).length;
+      const taxaEnvio = mesesAtivos > 0 ? Math.min((prestG.length / (mesesAtivos * 4)) * 100, 100) : 0;
+      
+      const totalColetas = prestG.reduce((s, p) => s + p.coletas, 0);
+      const totalDespesas = prestG.reduce((s, p) => s + p.despesas, 0);
+      const totalComissao = prestG.reduce((s, p) => s + p.comissao, 0);
+      const rendimento = totalColetas - totalDespesas - totalComissao;
+      const percDespesa = totalColetas > 0 ? (totalDespesas / totalColetas) * 100 : 0;
+      
+      const totalAPagar = prestG.reduce((s, p) => s + p.aPagar, 0);
+      const totalPago = prestG.reduce((s, p) => s + p.pagos, 0);
+      const taxaQuitacao = totalAPagar > 0 ? (totalPago / totalAPagar) * 100 : 100;
+      
+      // Score
+      const scoreFreq = taxaEnvio >= 80 ? 100 : taxaEnvio >= 60 ? 75 : taxaEnvio >= 40 ? 50 : 25;
+      const scoreDespesa = percDespesa <= 20 ? 100 : percDespesa <= 30 ? 75 : percDespesa <= 40 ? 50 : 25;
+      const scoreQuitacao = taxaQuitacao >= 95 ? 100 : taxaQuitacao >= 80 ? 75 : taxaQuitacao >= 60 ? 50 : 25;
+      const scoreGeral = Math.round((scoreFreq + scoreDespesa + scoreQuitacao) / 3);
+      
+      return {
+        nome: g.nome,
+        numero: g.numero,
+        prestacoes: prestG.length,
+        taxaEnvio,
+        rendimento,
+        percDespesa,
+        taxaQuitacao,
+        scoreGeral
+      };
+    }).filter(Boolean);
+    
+    if (!metricas.length) {
+      return '🔄 <strong>Comparativo</strong><br><br>Sem dados suficientes.';
+    }
+    
+    let resp = `🔄 <strong>COMPARATIVO DE GERENTES - Últimos 3 Meses</strong><br><br>`;
+    
+    // Ranking por Score
+    const porScore = [...metricas].sort((a, b) => b.scoreGeral - a.scoreGeral);
+    
+    resp += `🏆 <strong>RANKING GERAL (Score):</strong><br>`;
+    porScore.slice(0, 10).forEach((g, i) => {
+      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
+      const emoji = g.scoreGeral >= 80 ? '🌟' : g.scoreGeral >= 60 ? '👍' : g.scoreGeral >= 40 ? '👎' : '⚠️';
+      
+      resp += `${medal} <strong>${nome}</strong>: ${g.scoreGeral}/100 ${emoji}<br>`;
+    });
+    
+    // Ranking por Rendimento
+    resp += `<br>💰 <strong>TOP 5 - RENDIMENTO:</strong><br>`;
+    const porRendimento = [...metricas].sort((a, b) => b.rendimento - a.rendimento);
+    porRendimento.slice(0, 5).forEach((g, i) => {
+      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
+      resp += `${i+1}. ${nome}: ${fmt(g.rendimento)}<br>`;
+    });
+    
+    // Ranking por Frequência
+    resp += `<br>📊 <strong>TOP 5 - FREQUÊNCIA:</strong><br>`;
+    const porFreq = [...metricas].sort((a, b) => b.taxaEnvio - a.taxaEnvio);
+    porFreq.slice(0, 5).forEach((g, i) => {
+      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
+      resp += `${i+1}. ${nome}: ${fmtPerc(g.taxaEnvio)}<br>`;
+    });
+    
+    // Alertas
+    const problematicos = metricas.filter(g => g.scoreGeral < 50);
+    if (problematicos.length) {
+      resp += `<br>⚠️ <strong>ATENÇÃO NECESSÁRIA (Score < 50):</strong><br>`;
+      problematicos.forEach(g => {
+        const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
+        resp += `• ${nome}: Score ${g.scoreGeral}/100<br>`;
+      });
+    }
+    
+    return resp;
+  }
+
+  // 📈 MÉTRICAS DO CAIXA
+  function processMetricasCaixa(ctx) {
+    const { lancamentos, lancamentosSemFiltro, periodo } = ctx;
+    
+    const recebimentos = lancamentos.filter(l => l.status === 'RECEBIDO');
+    const pagamentos = lancamentos.filter(l => l.status === 'PAGO');
+    
+    const totalRec = recebimentos.reduce((s, l) => s + l.valor, 0);
+    const totalPag = pagamentos.reduce((s, l) => s + l.valor, 0);
+    const saldo = totalRec - totalPag;
+    
+    let resp = `📈 <strong>MÉTRICAS DO CAIXA - ${periodo?.label || 'Período'}</strong><br><br>`;
+    
+    // KPIs principais
+    resp += `📊 <strong>KPIs PRINCIPAIS:</strong><br>`;
+    resp += `• Total de entradas: ${fmt(totalRec)}<br>`;
+    resp += `• Total de saídas: ${fmt(totalPag)}<br>`;
+    resp += `• Saldo: ${saldo >= 0 ? '✅' : '🔴'} ${fmt(saldo)}<br>`;
+    resp += `• Qtd. lançamentos: ${lancamentos.length}<br><br>`;
+    
+    // Por forma de pagamento
+    const porForma = {};
+    recebimentos.forEach(l => {
+      const forma = l.forma || 'Outros';
+      if (!porForma[forma]) porForma[forma] = 0;
+      porForma[forma] += l.valor;
+    });
+    
+    if (Object.keys(porForma).length) {
+      resp += `💳 <strong>ENTRADAS POR FORMA:</strong><br>`;
+      Object.entries(porForma)
+        .sort((a, b) => b[1] - a[1])
+        .forEach(([forma, valor]) => {
+          const perc = totalRec > 0 ? (valor / totalRec) * 100 : 0;
+          resp += `• ${forma}: ${fmt(valor)} (${fmtPerc(perc)})<br>`;
+        });
+      resp += `<br>`;
+    }
+    
+    // Top gerentes que mais recebemos
+    const porGerente = {};
+    recebimentos.forEach(l => {
+      const nome = l.gerenteNome || l.gerente || 'Outros';
+      if (!porGerente[nome]) porGerente[nome] = 0;
+      porGerente[nome] += l.valor;
+    });
+    
+    if (Object.keys(porGerente).length) {
+      resp += `👥 <strong>TOP 5 - MAIS RECEBEMOS DE:</strong><br>`;
+      Object.entries(porGerente)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .forEach(([nome, valor], i) => {
+          resp += `${i+1}. ${nome}: ${fmt(valor)}<br>`;
+        });
+    }
+    
+    return resp;
+  }
+
+  // Helper: encontrar gerente
+  function findGerente(ctx, busca) {
+    const { gerentes } = ctx;
+    const buscaNome = (busca.nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const buscaNumero = busca.numero || '';
+    
+    return gerentes.find(g => {
+      const nomeG = (g.nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const numeroG = g.numero || '';
+      
+      if (buscaNumero && numeroG === buscaNumero) return true;
+      if (buscaNome && nomeG.includes(buscaNome)) return true;
+      return false;
+    });
+  }
+
+  // ===== PROCESSADORES EXISTENTES (mantidos) =====
+  
   function processDevedorSemana(ctx) {
     const { prestacoes, periodo } = ctx;
-    
-    // Considera prestações abertas OU com saldo restante
     const comAberto = prestacoes.filter(p => p.restam > 0);
     
     if (!comAberto.length) {
-      return `✅ <strong>Nenhuma prestação com valores em aberto - ${periodo?.label}</strong><br><br>` +
-        `Todos os gerentes estão em dia neste período!`;
+      return `✅ <strong>Nenhuma prestação com valores em aberto - ${periodo?.label}</strong>`;
     }
     
-    // Agrupa por gerente
     const stats = {};
     comAberto.forEach(p => {
       const gid = p.gerenteId;
       if (!stats[gid]) {
-        stats[gid] = {
-          nome: p.gerenteNome || 'Desconhecido',
-          numero: p.gerenteNumero || '',
-          totalAberto: 0,
-          qtdAbertas: 0,
-          prestacoes: []
-        };
+        stats[gid] = { nome: p.gerenteNome || 'Desconhecido', numero: p.gerenteNumero || '', totalAberto: 0, qtdAbertas: 0 };
       }
       stats[gid].totalAberto += p.restam;
       stats[gid].qtdAbertas++;
-      stats[gid].prestacoes.push(p);
     });
     
-    const ranking = Object.values(stats)
-      .sort((a, b) => b.totalAberto - a.totalAberto)
-      .slice(0, 10);
+    const ranking = Object.values(stats).sort((a, b) => b.totalAberto - a.totalAberto).slice(0, 10);
     
     const lista = ranking.map((g, i) => {
       const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
       const medal = i === 0 ? '🔴' : i === 1 ? '🟠' : i === 2 ? '🟡' : `${i+1}.`;
-      return `${medal} <strong>${nome}</strong>: ${fmt(g.totalAberto)} em aberto (${g.qtdAbertas} prestação(ões))`;
+      return `${medal} <strong>${nome}</strong>: ${fmt(g.totalAberto)} (${g.qtdAbertas} prestação)`;
     }).join('<br>');
     
     const totalGeral = ranking.reduce((s, g) => s + g.totalAberto, 0);
     
-    return `📅 <strong>Maiores Devedores - ${periodo?.label}</strong><br><br>` +
-      `${lista}<br><br>` +
-      `💰 <strong>Total em aberto no período:</strong> ${fmt(totalGeral)}`;
+    return `📅 <strong>Maiores Devedores - ${periodo?.label}</strong><br><br>${lista}<br><br>💰 <strong>Total:</strong> ${fmt(totalGeral)}`;
   }
 
-  // 🟠 Quem finalizou prestações com valores em aberto
   function processFinalizouComAberto(ctx) {
     const { prestacoes, periodo } = ctx;
-    
-    // Prestações FECHADAS mas com saldo restante > 0
-    const finalizadasComAberto = prestacoes.filter(p => 
-      p.fechado && p.restam > 0
-    );
+    const finalizadasComAberto = prestacoes.filter(p => p.fechado && p.restam > 0);
     
     if (!finalizadasComAberto.length) {
-      return `✅ <strong>Nenhuma prestação finalizada com valores em aberto - ${periodo?.label}</strong><br><br>` +
-        `Todas as prestações finalizadas neste período foram quitadas corretamente!`;
+      return `✅ <strong>Nenhuma prestação finalizada com valores em aberto - ${periodo?.label}</strong>`;
     }
     
-    // Agrupa por gerente
     const stats = {};
     finalizadasComAberto.forEach(p => {
       const gid = p.gerenteId;
       if (!stats[gid]) {
-        stats[gid] = {
-          nome: p.gerenteNome || 'Desconhecido',
-          numero: p.gerenteNumero || '',
-          totalAberto: 0,
-          qtd: 0,
-          periodos: []
-        };
+        stats[gid] = { nome: p.gerenteNome || 'Desconhecido', numero: p.gerenteNumero || '', totalAberto: 0, qtd: 0 };
       }
       stats[gid].totalAberto += p.restam;
       stats[gid].qtd++;
-      stats[gid].periodos.push(`${fmtData(p.ini)} a ${fmtData(p.fim)}`);
     });
     
-    const ranking = Object.values(stats)
-      .sort((a, b) => b.totalAberto - a.totalAberto);
+    const ranking = Object.values(stats).sort((a, b) => b.totalAberto - a.totalAberto);
     
     const lista = ranking.map((g, i) => {
       const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
-      return `${i+1}. <strong>${nome}</strong>: ${fmt(g.totalAberto)} em aberto<br>` +
-        `&nbsp;&nbsp;&nbsp;&nbsp;<em>${g.qtd} prestação(ões) finalizada(s)</em>`;
+      return `${i+1}. <strong>${nome}</strong>: ${fmt(g.totalAberto)} (${g.qtd} prestação)`;
     }).join('<br>');
     
     const totalGeral = ranking.reduce((s, g) => s + g.totalAberto, 0);
     
-    return `⚠️ <strong>Finalizaram com valores em aberto - ${periodo?.label}</strong><br><br>` +
-      `${lista}<br><br>` +
-      `💰 <strong>Total não quitado:</strong> ${fmt(totalGeral)}<br><br>` +
-      `<em>⚠️ Estes valores foram "passados para frente" sem quitação.</em>`;
+    return `⚠️ <strong>Finalizaram com aberto - ${periodo?.label}</strong><br><br>${lista}<br><br>💰 <strong>Total:</strong> ${fmt(totalGeral)}`;
   }
 
-  // 📊 Prestações da semana
-  function processPrestacoesSemana(ctx) {
-    const { prestacoes, periodo } = ctx;
-    
-    if (!prestacoes.length) {
-      return `📅 <strong>Prestações - ${periodo?.label}</strong><br><br>` +
-        `Nenhuma prestação encontrada neste período.`;
-    }
-    
-    const abertas = prestacoes.filter(p => !p.fechado || p.restam > 0);
-    const quitadas = prestacoes.filter(p => p.fechado && p.restam <= 0);
-    
-    const totalAPagar = prestacoes.reduce((s, p) => s + p.aPagar, 0);
-    const totalPago = prestacoes.reduce((s, p) => s + p.pagos, 0);
-    const totalAberto = prestacoes.reduce((s, p) => s + p.restam, 0);
-    const percPago = totalAPagar > 0 ? (totalPago / totalAPagar) * 100 : 0;
-    
-    let resp = `📅 <strong>Prestações - ${periodo?.label}</strong><br><br>`;
-    resp += `📊 <strong>Resumo:</strong><br>`;
-    resp += `• Total de prestações: ${prestacoes.length}<br>`;
-    resp += `• Quitadas: ${quitadas.length}<br>`;
-    resp += `• Em aberto: ${abertas.length}<br><br>`;
-    resp += `💰 <strong>Valores:</strong><br>`;
-    resp += `• A pagar: ${fmt(totalAPagar)}<br>`;
-    resp += `• Pago: ${fmt(totalPago)} (${fmtPerc(percPago)})<br>`;
-    resp += `• Resta: ${fmt(totalAberto)}`;
-    
-    return resp;
-  }
-
-  // 💸 Movimentação da semana
-  function processMovimentacaoSemana(ctx) {
-    const { lancamentos, periodo } = ctx;
-    
-    if (!lancamentos.length) {
-      return `📅 <strong>Movimentação - ${periodo?.label}</strong><br><br>` +
-        `Nenhum lançamento encontrado neste período.`;
-    }
-    
-    // ✅ IGUAL AO FINANCEIRO: usa APENAS status === 'RECEBIDO' ou 'PAGO'
-    const recebimentos = lancamentos.filter(l => l.status === 'RECEBIDO');
-    const pagamentos = lancamentos.filter(l => l.status === 'PAGO');
-    
-    const totalRec = recebimentos.reduce((s, l) => s + l.valor, 0);
-    const totalPag = pagamentos.reduce((s, l) => s + l.valor, 0);
-    const saldo = totalRec - totalPag;
-    
-    // Top 5 recebimentos
-    const topRec = [...recebimentos].sort((a,b) => b.valor - a.valor).slice(0, 5);
-    // Top 5 pagamentos
-    const topPag = [...pagamentos].sort((a,b) => b.valor - a.valor).slice(0, 5);
-    
-    let resp = `📅 <strong>Movimentação - ${periodo?.label}</strong><br><br>`;
-    
-    resp += `💰 <strong>Entradas:</strong> ${fmt(totalRec)} (${recebimentos.length} lançamentos)<br>`;
-    if (topRec.length) {
-      resp += `<em>Maiores:</em><br>`;
-      topRec.forEach((l, i) => {
-        resp += `&nbsp;&nbsp;${i+1}. ${l.gerente || l.gerenteNome || 'N/A'}: ${fmt(l.valor)}<br>`;
-      });
-    }
-    
-    resp += `<br>💸 <strong>Saídas:</strong> ${fmt(totalPag)} (${pagamentos.length} lançamentos)<br>`;
-    if (topPag.length) {
-      resp += `<em>Maiores:</em><br>`;
-      topPag.forEach((l, i) => {
-        resp += `&nbsp;&nbsp;${i+1}. ${l.gerente || l.gerenteNome || 'N/A'}: ${fmt(l.valor)}<br>`;
-      });
-    }
-    
-    const saldoIcon = saldo >= 0 ? '✅' : '⚠️';
-    resp += `<br>${saldoIcon} <strong>Saldo:</strong> ${fmt(saldo)}`;
-    
-    return resp;
-  }
-
-  // 📋 Resumo da semana
-  function processResumoSemana(ctx) {
-    const { prestacoes, lancamentos, pendencias, periodo } = ctx;
-    
-    // Prestações
-    const prestacoesAbertas = prestacoes.filter(p => !p.fechado || p.restam > 0);
-    const totalAberto = prestacoesAbertas.reduce((s, p) => s + p.restam, 0);
-    
-    // Caixa - ✅ IGUAL AO FINANCEIRO
-    const recebimentos = lancamentos.filter(l => l.status === 'RECEBIDO');
-    const pagamentos = lancamentos.filter(l => l.status === 'PAGO');
-    const totalRec = recebimentos.reduce((s, l) => s + l.valor, 0);
-    const totalPag = pagamentos.reduce((s, l) => s + l.valor, 0);
-    const saldo = totalRec - totalPag;
-    
-    let resp = `📅 <strong>Resumo - ${periodo?.label}</strong><br><br>`;
-    
-    resp += `📋 <strong>Prestações:</strong><br>`;
-    resp += `• Total: ${prestacoes.length}<br>`;
-    resp += `• Em aberto: ${prestacoesAbertas.length} (${fmt(totalAberto)})<br><br>`;
-    
-    resp += `💰 <strong>Caixa:</strong><br>`;
-    resp += `• Entradas: ${fmt(totalRec)} (${recebimentos.length})<br>`;
-    resp += `• Saídas: ${fmt(totalPag)} (${pagamentos.length})<br>`;
-    const saldoIcon = saldo >= 0 ? '✅' : '⚠️';
-    resp += `• Saldo: ${saldoIcon} ${fmt(saldo)}<br><br>`;
-    
-    if (pendencias.length) {
-      const totalPend = pendencias.reduce((s, p) => s + p.valor, 0);
-      resp += `⏳ <strong>Pendências:</strong> ${pendencias.length} (${fmt(totalPend)})<br><br>`;
-    }
-    
-    // Alertas
-    const alertas = [];
-    if (saldo < 0) alertas.push('🔴 Saldo negativo');
-    if (prestacoesAbertas.length > 5) alertas.push(`⚠️ ${prestacoesAbertas.length} prestações em aberto`);
-    if (pendencias.length > 5) alertas.push(`📋 ${pendencias.length} pendências aguardando`);
-    
-    // Finalizaram com aberto
-    const finalizadasComAberto = prestacoes.filter(p => p.fechado && p.restam > 0);
-    if (finalizadasComAberto.length) {
-      const totalFinAberto = finalizadasComAberto.reduce((s, p) => s + p.restam, 0);
-      alertas.push(`⚠️ ${finalizadasComAberto.length} fecharam com ${fmt(totalFinAberto)} em aberto`);
-    }
-    
-    if (alertas.length) {
-      resp += `<strong>🚨 Alertas:</strong><br>` + alertas.join('<br>');
-    } else {
-      resp += `✅ <strong>Tudo em ordem!</strong>`;
-    }
-    
-    return resp;
-  }
-
-  // ===== PROCESSADORES EXISTENTES (MELHORADOS) =====
-
-  // Caixa do período - USA MESMA LÓGICA DO PAINEL FINANCEIRO
   function processCaixaPeriodo(ctx) {
     const { lancamentos, periodo } = ctx;
     
     if (!lancamentos.length) {
-      return `📊 <strong>Caixa - ${periodo?.label || 'Período'}</strong><br><br>` +
-        `Sem lançamentos encontrados para este período.`;
+      return `📊 <strong>Caixa - ${periodo?.label}</strong><br><br>Sem lançamentos.`;
     }
     
-    // ✅ IGUAL AO FINANCEIRO: usa APENAS status === 'RECEBIDO' ou 'PAGO'
     const recebimentos = lancamentos.filter(l => l.status === 'RECEBIDO');
     const pagamentos = lancamentos.filter(l => l.status === 'PAGO');
     
@@ -737,688 +1267,203 @@ try {
     const totalPag = pagamentos.reduce((s, l) => s + l.valor, 0);
     const saldo = totalRec - totalPag;
     
-    const saldoClass = saldo >= 0 ? '✅' : '⚠️';
-    
-    return `📊 <strong>Caixa - ${periodo?.label || 'Período'}</strong><br><br>` +
-      `💰 <strong>Entradas:</strong> ${fmt(totalRec)} (${recebimentos.length} lançamentos)<br>` +
-      `💸 <strong>Saídas:</strong> ${fmt(totalPag)} (${pagamentos.length} lançamentos)<br>` +
-      `${saldoClass} <strong>Saldo:</strong> ${fmt(saldo)}<br><br>` +
-      (saldo < 0 ? `<em>⚠️ Atenção: Saldo negativo no período!</em>` : 
-       saldo > 0 ? `<em>✅ Período positivo!</em>` : '');
+    return `📊 <strong>Caixa - ${periodo?.label}</strong><br><br>` +
+      `💰 Entradas: ${fmt(totalRec)} (${recebimentos.length})<br>` +
+      `💸 Saídas: ${fmt(totalPag)} (${pagamentos.length})<br>` +
+      `${saldo >= 0 ? '✅' : '⚠️'} Saldo: ${fmt(saldo)}`;
   }
 
-  // Ranking de pagamento (quem paga melhor)
-  function processRankingPagamento(ctx) {
-    const { prestacoes, gerentes } = ctx;
-    
-    if (!prestacoes.length) {
-      return 'Sem prestações para analisar no período.';
-    }
-    
-    const stats = {};
-    prestacoes.forEach(p => {
-      const gid = p.gerenteId;
-      if (!stats[gid]) {
-        stats[gid] = {
-          nome: p.gerenteNome || 'Desconhecido',
-          numero: p.gerenteNumero || '',
-          totalAPagar: 0,
-          totalPago: 0,
-          qtdPrestacoes: 0,
-          qtdQuitadas: 0
-        };
-      }
-      stats[gid].totalAPagar += p.aPagar;
-      stats[gid].totalPago += p.pagos;
-      stats[gid].qtdPrestacoes++;
-      if (p.fechado && p.restam <= 0) stats[gid].qtdQuitadas++;
-    });
-    
-    const ranking = Object.values(stats)
-      .map(g => ({
-        ...g,
-        percPago: g.totalAPagar > 0 ? (g.totalPago / g.totalAPagar) * 100 : 0,
-        percQuitadas: g.qtdPrestacoes > 0 ? (g.qtdQuitadas / g.qtdPrestacoes) * 100 : 0
-      }))
-      .sort((a, b) => b.percPago - a.percPago)
-      .slice(0, 10);
-    
-    if (!ranking.length) {
-      return 'Sem dados suficientes para ranking.';
-    }
-    
-    const lista = ranking.map((g, i) => {
-      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
-      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
-      return `${medal} <strong>${nome}</strong>: ${fmtPerc(g.percPago)} pago (${g.qtdQuitadas}/${g.qtdPrestacoes} quitadas)`;
-    }).join('<br>');
-    
-    return `🏆 <strong>Ranking - Quem Paga Melhor</strong><br><br>${lista}`;
-  }
-
-  // Ranking de inadimplentes
-  function processRankingInadimplente(ctx) {
-    const { prestacoes } = ctx;
+  function processResumoGeral(ctx) {
+    const { gerentes, prestacoes, lancamentos, pendencias, periodo } = ctx;
     
     const abertas = prestacoes.filter(p => p.restam > 0);
-    
-    if (!abertas.length) {
-      return '✅ Nenhuma prestação em aberto no momento!';
-    }
-    
-    const stats = {};
-    abertas.forEach(p => {
-      const gid = p.gerenteId;
-      if (!stats[gid]) {
-        stats[gid] = {
-          nome: p.gerenteNome,
-          numero: p.gerenteNumero,
-          totalAberto: 0,
-          qtdAbertas: 0
-        };
-      }
-      stats[gid].totalAberto += p.restam;
-      stats[gid].qtdAbertas++;
-    });
-    
-    const ranking = Object.values(stats)
-      .sort((a, b) => b.totalAberto - a.totalAberto)
-      .slice(0, 10);
-    
-    const lista = ranking.map((g, i) => {
-      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
-      return `${i+1}. <strong>${nome}</strong>: ${fmt(g.totalAberto)} em aberto (${g.qtdAbertas} prestações)`;
-    }).join('<br>');
-    
-    const totalGeral = ranking.reduce((s, g) => s + g.totalAberto, 0);
-    
-    return `⚠️ <strong>Maiores Devedores</strong><br><br>${lista}<br><br>` +
-      `💰 <strong>Total em aberto:</strong> ${fmt(totalGeral)}`;
-  }
-
-  // Despesas acima do permitido
-  function processDespesasAcima(ctx) {
-    const { prestacoes, gerentes } = ctx;
-    
-    const stats = {};
-    prestacoes.forEach(p => {
-      const gid = p.gerenteId;
-      if (!stats[gid]) {
-        stats[gid] = {
-          nome: p.gerenteNome,
-          numero: p.gerenteNumero,
-          totalDespesas: 0,
-          totalColetas: 0,
-          qtdPrestacoes: 0
-        };
-      }
-      stats[gid].totalDespesas += p.despesas;
-      stats[gid].totalColetas += p.coletas;
-      stats[gid].qtdPrestacoes++;
-    });
-    
-    const ranking = Object.values(stats)
-      .filter(g => g.totalColetas > 0)
-      .map(g => ({
-        ...g,
-        percDespesa: (g.totalDespesas / g.totalColetas) * 100,
-        excedente: g.totalDespesas - (g.totalColetas * 0.20)
-      }))
-      .filter(g => g.excedente > 0)
-      .sort((a, b) => b.excedente - a.excedente)
-      .slice(0, 10);
-    
-    if (!ranking.length) {
-      return '✅ <strong>Nenhum gerente com despesas acima do ideal!</strong><br><br>' +
-        'Todos estão dentro do limite de 20% das coletas.';
-    }
-    
-    const lista = ranking.map((g, i) => {
-      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
-      return `${i+1}. <strong>${nome}</strong>: ${fmtPerc(g.percDespesa)} das coletas<br>` +
-        `&nbsp;&nbsp;&nbsp;&nbsp;Despesas: ${fmt(g.totalDespesas)} | Excedente: ${fmt(g.excedente)}`;
-    }).join('<br>');
-    
-    return `⚠️ <strong>Despesas Acima do Ideal (>20%)</strong><br><br>${lista}`;
-  }
-
-  // Ranking de despesas
-  function processRankingDespesas(ctx) {
-    const { prestacoes } = ctx;
-    
-    const stats = {};
-    prestacoes.forEach(p => {
-      const gid = p.gerenteId;
-      if (!stats[gid]) {
-        stats[gid] = { nome: p.gerenteNome, numero: p.gerenteNumero, total: 0, qtd: 0 };
-      }
-      stats[gid].total += p.despesas;
-      stats[gid].qtd++;
-    });
-    
-    const ranking = Object.values(stats)
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 10);
-    
-    const lista = ranking.map((g, i) => {
-      const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
-      return `${i+1}. <strong>${nome}</strong>: ${fmt(g.total)} (${g.qtd} prestações)`;
-    }).join('<br>');
-    
-    return `💸 <strong>Ranking de Despesas</strong><br><br>${lista}`;
-  }
-
-  // Total de despesas
-  function processTotalDespesas(ctx) {
-    const { prestacoes, periodo } = ctx;
-    
-    const total = prestacoes.reduce((s, p) => s + p.despesas, 0);
-    const totalColetas = prestacoes.reduce((s, p) => s + p.coletas, 0);
-    const perc = totalColetas > 0 ? (total / totalColetas) * 100 : 0;
-    
-    return `💸 <strong>Total de Despesas - ${periodo?.label}</strong><br><br>` +
-      `• Total: ${fmt(total)}<br>` +
-      `• % sobre coletas: ${fmtPerc(perc)}<br>` +
-      `• Prestações analisadas: ${prestacoes.length}`;
-  }
-
-  // Prestações abertas
-  function processPrestacoesAbertas(ctx) {
-    const { prestacoes } = ctx;
-    
-    const abertas = prestacoes.filter(p => p.restam > 0);
-    
-    if (!abertas.length) {
-      return '✅ Nenhuma prestação em aberto!';
-    }
-    
     const totalAberto = abertas.reduce((s, p) => s + p.restam, 0);
     
-    const lista = abertas
-      .sort((a, b) => b.restam - a.restam)
-      .slice(0, 10)
-      .map((p, i) => {
-        const nome = p.gerenteNumero ? `${p.gerenteNumero} ${p.gerenteNome}` : p.gerenteNome;
-        const status = p.fechado ? ' (finalizada!)' : '';
-        return `${i+1}. <strong>${nome}</strong>: ${fmt(p.restam)}${status}`;
-      }).join('<br>');
+    const recebido = lancamentos.filter(l => l.status === 'RECEBIDO').reduce((s,l) => s + l.valor, 0);
+    const pago = lancamentos.filter(l => l.status === 'PAGO').reduce((s,l) => s + l.valor, 0);
+    const saldo = recebido - pago;
     
-    return `📋 <strong>Prestações em Aberto (${abertas.length})</strong><br><br>` +
-      `${lista}<br><br>` +
-      `💰 <strong>Total em aberto:</strong> ${fmt(totalAberto)}`;
+    let resp = `📊 <strong>Resumo Geral - ${periodo?.label}</strong><br><br>`;
+    resp += `👥 Gerentes: ${gerentes.length}<br>`;
+    resp += `📋 Prestações: ${prestacoes.length} (${abertas.length} em aberto: ${fmt(totalAberto)})<br>`;
+    resp += `💰 Caixa: ${saldo >= 0 ? '✅' : '⚠️'} ${fmt(saldo)}<br>`;
+    if (pendencias.length) resp += `⏳ Pendências: ${pendencias.length}<br>`;
+    
+    return resp;
   }
 
-  // Listar gerentes
-  function processListarGerentes(ctx) {
-    const { gerentes } = ctx;
-    
-    if (!gerentes.length) {
-      return 'Nenhum gerente cadastrado.';
-    }
-    
-    const lista = gerentes.map((g, i) => 
-      `${i+1}. <strong>${g.numero || '---'}</strong> ${g.nome} (${g.comissao}%)`
-    ).join('<br>');
-    
-    return `👥 <strong>Gerentes Cadastrados (${gerentes.length})</strong><br><br>${lista}`;
-  }
-// ===== INFO DETALHADA DO GERENTE =====
-function processInfoGerenteDetalhe(ctx, nomesBuscados) {
-  const { prestacoes, prestacoesSemFiltro, lancamentos, gerentes } = ctx;
-  
-  if (!nomesBuscados || !nomesBuscados.length) {
-    return `❓ <strong>Qual gerente você quer consultar?</strong><br><br>` +
-      `Exemplos:<br>` +
-      `• "Qual o valor em aberto do Luís?"<br>` +
-      `• "Histórico do 016 Bruno"<br>` +
-      `• "Situação do 003 Luís"`;
-  }
-  
-  // Busca o gerente pelo nome ou número
-  const busca = nomesBuscados[0];
-  const buscaNome = busca.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const buscaNumero = busca.numero || '';
-  
-  const gerente = gerentes.find(g => {
-    const nomeG = (g.nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const numeroG = g.numero || '';
-    
-    // Match por número exato
-    if (buscaNumero && numeroG === buscaNumero) return true;
-    
-    // Match por nome (parcial)
-    if (buscaNome && nomeG.includes(buscaNome)) return true;
-    
-    return false;
-  });
-  
-  if (!gerente) {
-    // Tenta busca mais flexível
-    const possiveis = gerentes.filter(g => {
-      const nomeG = (g.nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      return nomeG.includes(buscaNome) || buscaNome.includes(nomeG.split(' ')[0]);
-    });
-    
-    if (possiveis.length === 0) {
-      return `❌ <strong>Gerente "${busca.numero ? busca.numero + ' ' : ''}${busca.nome}" não encontrado.</strong><br><br>` +
-        `Verifique se o nome está correto ou use o número da rota.`;
-    } else if (possiveis.length > 1) {
-      const lista = possiveis.slice(0, 5).map(g => `• ${g.numero || '---'} ${g.nome}`).join('<br>');
-      return `🔍 <strong>Encontrei ${possiveis.length} gerentes com nome similar:</strong><br><br>${lista}<br><br>` +
-        `Por favor, especifique o número da rota.`;
-    } else {
-      // Usa o único encontrado
-      return processInfoGerenteDetalhe(ctx, [{ numero: possiveis[0].numero, nome: possiveis[0].nome }]);
-    }
-  }
-  
-  const nomeCompleto = `${gerente.numero || '---'} ${gerente.nome}`;
-  const gerenteId = gerente.uid || gerente.id;
-  
-  // Busca TODAS as prestações do gerente (sem filtro de período)
-  const todasPrestacoes = prestacoesSemFiltro.filter(p => 
-    p.gerenteId === gerenteId || 
-    String(p.gerenteId) === String(gerenteId)
-  ).sort((a, b) => new Date(b.fim || b.ini) - new Date(a.fim || a.ini));
-  
-  // Busca lançamentos do gerente
-  const lancamentosGerente = lancamentos.filter(l => {
-    const nomeL = (l.gerente || l.gerenteNome || '').toLowerCase();
-    const nomeG = gerente.nome.toLowerCase();
-    return nomeL.includes(nomeG) || nomeG.includes(nomeL.split(' ')[0]);
-  });
-  
-  if (!todasPrestacoes.length && !lancamentosGerente.length) {
-    return `📋 <strong>${nomeCompleto}</strong><br><br>` +
-      `Nenhuma prestação ou lançamento encontrado para este gerente.`;
-  }
-  
-  let resp = `📋 <strong>Relatório - ${nomeCompleto}</strong><br><br>`;
-  
-  // ===== RESUMO ATUAL =====
-  const prestAbertas = todasPrestacoes.filter(p => p.restam > 0);
-  const totalAberto = prestAbertas.reduce((s, p) => s + p.restam, 0);
-  
-  resp += `💰 <strong>SITUAÇÃO ATUAL:</strong><br>`;
-  if (totalAberto > 0) {
-    resp += `⚠️ Valor em aberto: <strong>${fmt(totalAberto)}</strong><br>`;
-    resp += `📋 Prestações pendentes: ${prestAbertas.length}<br>`;
-  } else {
-    resp += `✅ <strong>Sem valores em aberto!</strong><br>`;
-  }
-  resp += `<br>`;
-  
-  // ===== PRESTAÇÕES COM SALDO CARREGADO =====
-  const prestComSaldoCarregado = todasPrestacoes.filter(p => {
-    // Verifica se tem saldo que foi carregado (veio de prestação anterior)
-    const saldoAnterior = p.saldoCarregarAnterior || 0;
-    // Ou se fechou com saldo (carregou para próxima)
-    const fechouComSaldo = p.fechado && p.restam > 0;
-    return saldoAnterior > 0 || fechouComSaldo;
-  });
-  
-  if (prestComSaldoCarregado.length > 0) {
-    resp += `🔄 <strong>HISTÓRICO DE SALDOS CARREGADOS:</strong><br>`;
-    
-    const ultimas = prestComSaldoCarregado.slice(0, 5);
-    ultimas.forEach(p => {
-      const periodo = `${fmtData(p.ini)} a ${fmtData(p.fim)}`;
-      const status = p.fechado ? (p.restam > 0 ? '⚠️ Fechada COM saldo' : '✅ Quitada') : '🔓 Aberta';
-      
-      resp += `<br>• <strong>${periodo}</strong> - ${status}<br>`;
-      
-      if (p.saldoCarregarAnterior > 0) {
-        resp += `&nbsp;&nbsp;↪️ Recebeu: ${fmt(p.saldoCarregarAnterior)} (saldo anterior)<br>`;
-      }
-      if (p.fechado && p.restam > 0) {
-        resp += `&nbsp;&nbsp;↩️ Passou: ${fmt(p.restam)} (para próxima)<br>`;
-      }
-      resp += `&nbsp;&nbsp;A pagar: ${fmt(p.aPagar)} | Pago: ${fmt(p.pagos)}<br>`;
-    });
-    
-    if (prestComSaldoCarregado.length > 5) {
-      resp += `<br><em>... e mais ${prestComSaldoCarregado.length - 5} prestações</em><br>`;
-    }
-    resp += `<br>`;
-  }
-  
-  // ===== ÚLTIMAS PRESTAÇÕES =====
-  resp += `📊 <strong>ÚLTIMAS PRESTAÇÕES:</strong><br>`;
-  const ultimas = todasPrestacoes.slice(0, 5);
-  
-  ultimas.forEach(p => {
-    const periodo = `${fmtData(p.ini)} a ${fmtData(p.fim)}`;
-    const statusIcon = p.fechado ? (p.restam > 0 ? '⚠️' : '✅') : '🔓';
-    const statusText = p.fechado ? (p.restam > 0 ? 'Fechada c/ saldo' : 'Quitada') : 'Aberta';
-    
-    resp += `<br>${statusIcon} <strong>${periodo}</strong> - ${statusText}<br>`;
-    resp += `&nbsp;&nbsp;A pagar: ${fmt(p.aPagar)} | Pago: ${fmt(p.pagos)} | Resta: ${fmt(p.restam)}<br>`;
-  });
-  
-  if (todasPrestacoes.length > 5) {
-    resp += `<br><em>... e mais ${todasPrestacoes.length - 5} prestações anteriores</em><br>`;
-  }
-  resp += `<br>`;
-  
-  // ===== ÚLTIMOS PAGAMENTOS =====
-  if (lancamentosGerente.length > 0) {
-    const recebimentos = lancamentosGerente.filter(l => l.status === 'RECEBIDO');
-    const pagamentos = lancamentosGerente.filter(l => l.status === 'PAGO');
-    
-    resp += `💸 <strong>MOVIMENTAÇÃO NO PERÍODO:</strong><br>`;
-    resp += `• Recebido: ${fmt(recebimentos.reduce((s, l) => s + l.valor, 0))} (${recebimentos.length} lançamentos)<br>`;
-    resp += `• Pago: ${fmt(pagamentos.reduce((s, l) => s + l.valor, 0))} (${pagamentos.length} lançamentos)<br>`;
-    
-    // Últimos 5 lançamentos
-    const ultimosLanc = lancamentosGerente
-      .sort((a, b) => new Date(b.data) - new Date(a.data))
-      .slice(0, 5);
-    
-    if (ultimosLanc.length) {
-      resp += `<br><em>Últimos lançamentos:</em><br>`;
-      ultimosLanc.forEach(l => {
-        const icon = l.status === 'RECEBIDO' ? '💰' : '💸';
-        resp += `${icon} ${fmtData(l.data)}: ${fmt(l.valor)} (${l.forma || 'N/A'})<br>`;
-      });
-    }
-  }
-  
-  // ===== RESUMO ESTATÍSTICO =====
-  if (todasPrestacoes.length >= 3) {
-    const totalAPagar = todasPrestacoes.reduce((s, p) => s + p.aPagar, 0);
-    const totalPago = todasPrestacoes.reduce((s, p) => s + p.pagos, 0);
-    const percPago = totalAPagar > 0 ? (totalPago / totalAPagar) * 100 : 0;
-    const quitadas = todasPrestacoes.filter(p => p.fechado && p.restam <= 0).length;
-    const fechadasComSaldo = todasPrestacoes.filter(p => p.fechado && p.restam > 0).length;
-    
-    resp += `<br>📈 <strong>ESTATÍSTICAS GERAIS:</strong><br>`;
-    resp += `• Total de prestações: ${todasPrestacoes.length}<br>`;
-    resp += `• Quitadas: ${quitadas} ✅<br>`;
-    resp += `• Fechadas com saldo: ${fechadasComSaldo} ⚠️<br>`;
-    resp += `• % médio de pagamento: ${fmtPerc(percPago)}<br>`;
-  }
-  
-  return resp;
-}
-
-  // Alertas
   function processAlertas(ctx) {
     const { prestacoes, pendencias, lancamentos } = ctx;
     const alertas = [];
     
     const muitoAberto = prestacoes.filter(p => p.restam > 5000);
     if (muitoAberto.length) {
-      alertas.push(`⚠️ <strong>${muitoAberto.length}</strong> prestações com mais de R$ 5.000 em aberto`);
+      alertas.push(`⚠️ ${muitoAberto.length} prestações com mais de R$ 5.000 em aberto`);
     }
     
-    // Finalizaram com aberto
     const finalizadasComAberto = prestacoes.filter(p => p.fechado && p.restam > 0);
     if (finalizadasComAberto.length) {
-      const totalFinAberto = finalizadasComAberto.reduce((s, p) => s + p.restam, 0);
-      alertas.push(`🔴 <strong>${finalizadasComAberto.length}</strong> prestações finalizadas com ${fmt(totalFinAberto)} em aberto`);
+      const total = finalizadasComAberto.reduce((s, p) => s + p.restam, 0);
+      alertas.push(`🔴 ${finalizadasComAberto.length} prestações finalizadas com ${fmt(total)} em aberto`);
     }
     
     if (pendencias.length > 10) {
-      alertas.push(`📋 <strong>${pendencias.length}</strong> pendências aguardando confirmação`);
+      alertas.push(`📋 ${pendencias.length} pendências aguardando`);
     }
     
-    const despesasAltas = prestacoes.filter(p => 
-      p.coletas > 0 && (p.despesas / p.coletas) > 0.25
-    );
-    if (despesasAltas.length) {
-      alertas.push(`💸 <strong>${despesasAltas.length}</strong> prestações com despesas acima de 25%`);
-    }
-    
-    // ✅ IGUAL AO FINANCEIRO
     const recebido = lancamentos.filter(l => l.status === 'RECEBIDO').reduce((s,l) => s + l.valor, 0);
     const pago = lancamentos.filter(l => l.status === 'PAGO').reduce((s,l) => s + l.valor, 0);
     if (pago > recebido) {
-      alertas.push(`🔴 Saldo negativo no período: ${fmt(recebido - pago)}`);
+      alertas.push(`🔴 Saldo negativo: ${fmt(recebido - pago)}`);
     }
     
     if (!alertas.length) {
-      return '✅ <strong>Nenhum alerta no momento!</strong><br><br>Tudo parece estar em ordem.';
+      return '✅ <strong>Nenhum alerta!</strong> Tudo em ordem.';
     }
     
     return `🚨 <strong>Alertas</strong><br><br>` + alertas.join('<br><br>');
   }
 
-  // Resumo geral
-  function processResumoGeral(ctx) {
-    const { gerentes, prestacoes, lancamentos, pendencias, periodo } = ctx;
-    const parts = [];
+  function processListarGerentes(ctx) {
+    const { gerentes } = ctx;
+    if (!gerentes.length) return 'Nenhum gerente cadastrado.';
     
-    parts.push(`📅 <strong>Período:</strong> ${periodo?.label || 'Geral'}`);
-    
-    parts.push(`👥 <strong>Gerentes:</strong> ${gerentes.length} cadastrados`);
-    
-    const abertas = prestacoes.filter(p => p.restam > 0);
-    const totalAberto = abertas.reduce((s, p) => s + p.restam, 0);
-    parts.push(`📋 <strong>Prestações:</strong> ${prestacoes.length} no período (${abertas.length} em aberto: ${fmt(totalAberto)})`);
-    
-    // ✅ IGUAL AO FINANCEIRO
-    const recebido = lancamentos.filter(l => l.status === 'RECEBIDO')
-      .reduce((s, l) => s + l.valor, 0);
-    const pago = lancamentos.filter(l => l.status === 'PAGO')
-      .reduce((s, l) => s + l.valor, 0);
-    const saldo = recebido - pago;
-    const saldoIcon = saldo >= 0 ? '✅' : '⚠️';
-    parts.push(`💰 <strong>Caixa:</strong> ${saldoIcon} ${fmt(saldo)} (Entradas: ${fmt(recebido)} | Saídas: ${fmt(pago)})`);
-    
-    if (pendencias.length) {
-      const totalPend = pendencias.reduce((s, p) => s + p.valor, 0);
-      parts.push(`⏳ <strong>Pendências:</strong> ${pendencias.length} (${fmt(totalPend)})`);
-    }
-    
-    return parts.join('<br><br>');
-  }
-
-  // Ajuda
-  function processAjuda() {
-    return `🤖 <strong>Assistente Financeiro Inteligente v2.0</strong><br><br>` +
-      `Posso ajudar com:<br><br>` +
-      `<strong>📊 Caixa e Financeiro:</strong><br>` +
-      `• "Como está o caixa de dezembro?"<br>` +
-      `• "Qual o saldo do mês passado?"<br>` +
-      `• "Movimentação desta semana"<br><br>` +
-      `<strong>📅 Análises Semanais:</strong><br>` +
-      `• "Quem está devendo mais esta semana?"<br>` +
-      `• "Da semana passada quem finalizou com valores em aberto?"<br>` +
-      `• "Resumo da semana"<br><br>` +
-      `<strong>🏆 Rankings e Análises:</strong><br>` +
-      `• "Quem paga melhor as prestações?"<br>` +
-      `• "Qual gerente mais devedor?"<br>` +
-      `• "Quem tem despesas acima do ideal?"<br><br>` +
-      `<strong>📋 Prestações:</strong><br>` +
-      `• "Prestações em aberto"<br>` +
-      `• "Total de despesas deste mês"<br><br>` +
-      `<strong>🚨 Alertas:</strong><br>` +
-      `• "Tem algum alerta?"<br>` +
-      `• "Situação atual"<br><br>` +
-      `<strong>🔧 Debug:</strong><br>` +
-      `• "/debug" - Mostra detalhes do cálculo do caixa<br><br>` +
-      `<em>💡 Dica: Especifique o período para análises mais precisas!</em>`;
-  }
-
-  // 🔧 DEBUG - Mostra detalhes do cálculo para comparação
-  function processDebugCaixa(ctx) {
-    const { lancamentos, periodo } = ctx;
-    
-    const fonte = Array.isArray(window.lanc) && window.lanc.length > 0 ? 'window.lanc' : 'Supabase';
-    const totalLanc = lancamentos.length;
-    
-    // Filtra igual ao financeiro
-    const recebimentos = lancamentos.filter(l => l.status === 'RECEBIDO');
-    const pagamentos = lancamentos.filter(l => l.status === 'PAGO');
-    const outros = lancamentos.filter(l => l.status !== 'RECEBIDO' && l.status !== 'PAGO');
-    
-    const totalRec = recebimentos.reduce((s, l) => s + l.valor, 0);
-    const totalPag = pagamentos.reduce((s, l) => s + l.valor, 0);
-    const saldo = totalRec - totalPag;
-    
-    // Amostra dos últimos 5 lançamentos
-    const amostra = lancamentos.slice(-5).map(l => 
-      `${l.data?.split('-').reverse().join('/') || 'N/A'} | ${l.gerente || 'N/A'} | ${l.status} | ${fmt(l.valor)}`
+    const lista = gerentes.map((g, i) => 
+      `${i+1}. <strong>${g.numero || '---'}</strong> ${g.nome} (${g.comissao}%)`
     ).join('<br>');
     
-    let resp = `🔧 <strong>DEBUG - Cálculo do Caixa</strong><br><br>`;
-    
-    resp += `<strong>Fonte de dados:</strong> ${fonte}<br>`;
-    resp += `<strong>Período:</strong> ${periodo?.label || 'Todos'}<br>`;
-    if (periodo?.inicio && periodo?.fim) {
-      resp += `<strong>Intervalo:</strong> ${fmtData(periodo.inicio)} a ${fmtData(periodo.fim)}<br>`;
-    }
-    resp += `<br>`;
-    
-    resp += `<strong>Total de lançamentos:</strong> ${totalLanc}<br>`;
-    resp += `<strong>Recebimentos (status=RECEBIDO):</strong> ${recebimentos.length}<br>`;
-    resp += `<strong>Pagamentos (status=PAGO):</strong> ${pagamentos.length}<br>`;
-    resp += `<strong>Outros status:</strong> ${outros.length}<br>`;
-    resp += `<br>`;
-    
-    resp += `💰 <strong>Total Recebimentos:</strong> ${fmt(totalRec)}<br>`;
-    resp += `💸 <strong>Total Pagamentos:</strong> ${fmt(totalPag)}<br>`;
-    resp += `📊 <strong>Saldo:</strong> ${fmt(saldo)}<br>`;
-    resp += `<br>`;
-    
-    if (outros.length > 0) {
-      resp += `⚠️ <strong>Status diferentes encontrados:</strong><br>`;
-      const statusUnicos = [...new Set(outros.map(l => l.status || 'VAZIO'))];
-      resp += statusUnicos.map(s => `• "${s}": ${outros.filter(l => (l.status || 'VAZIO') === s).length}`).join('<br>');
-      resp += `<br><br>`;
-    }
-    
-    resp += `<strong>Últimos 5 lançamentos:</strong><br>`;
-    resp += amostra || 'Nenhum';
-    
-    return resp;
+    return `👥 <strong>Gerentes (${gerentes.length})</strong><br><br>${lista}`;
   }
 
-  // Fallback
-  function processFallback(ctx) {
-    const sugestoes = [
-      'Resumo geral',
-      'Como está o caixa deste mês?',
-      'Quem está devendo mais esta semana?',
-      'Da semana passada quem finalizou com aberto?',
-      'Quem paga melhor?',
-      'Despesas acima do ideal'
-    ];
-    
-    return `🤔 Não entendi bem sua pergunta.<br><br>` +
-      `<strong>Tente perguntar:</strong><br>` +
-      sugestoes.map(s => `• "${s}"`).join('<br>') +
-      `<br><br>Ou digite "ajuda" para ver todas as opções.`;
+  function processAjuda() {
+    return `🤖 <strong>Assistente FINX v3.0</strong><br><br>` +
+      `<strong>📊 ANÁLISES NOVAS:</strong><br>` +
+      `• "Frequência de envio" - Taxa de prestações por gerente<br>` +
+      `• "Rendimento por rota" - Performance financeira<br>` +
+      `• "Análise completa do [gerente]" - Relatório detalhado<br>` +
+      `• "Comparativo de gerentes" - Ranking geral<br>` +
+      `• "Métricas do caixa" - KPIs financeiros<br><br>` +
+      `<strong>💰 FINANCEIRO:</strong><br>` +
+      `• "Caixa deste mês" ou "Caixa de janeiro"<br>` +
+      `• "Quem está devendo mais?"<br>` +
+      `• "Finalizaram com aberto"<br><br>` +
+      `<strong>👥 GERENTES:</strong><br>` +
+      `• "Situação do 026 Sávio"<br>` +
+      `• "Histórico do Luís"<br>` +
+      `• "Listar gerentes"<br><br>` +
+      `<strong>⏰ PERÍODOS:</strong><br>` +
+      `• "esta semana", "semana passada"<br>` +
+      `• "este mês", "mês passado"<br>` +
+      `• "janeiro", "fevereiro 2025"<br><br>` +
+      `<strong>💡 DICA:</strong> Use "/limpar" para limpar o histórico.`;
   }
 
-  // ===== PROCESSAMENTO PRINCIPAL =====
-  async function askLLM(question) {
-    const entities = extractEntities(question);
-    const intent = detectIntent(question);
+  // ===== MOTOR PRINCIPAL DE IA =====
+  async function askLLM(text) {
+    const intent = detectIntent(text);
+    const entities = extractEntities(text);
     
-    console.log('[AI] Intent:', intent);
-    console.log('[AI] Período:', entities.periodo?.label);
+    console.log('[AI] Intent:', intent.type, '| Confidence:', intent.confidence);
     
-    conversationContext.lastPeriodo = entities.periodo;
-    conversationContext.lastTopic = intent.type;
-    
+    // Coleta dados
     const ctx = await collectData(entities.periodo);
     
+    // Atualiza contexto conversacional
+    conversationContext.lastTopic = intent.type;
+    conversationContext.lastPeriodo = entities.periodo;
+    if (entities.gerentes.length) {
+      conversationContext.lastGerente = entities.gerentes[0];
+    }
+    
+    // Processa por intenção
     switch (intent.type) {
-      // NOVAS INTENÇÕES SEMANAIS
+      // Novos analytics
+      case 'frequencia_envio':
+      case 'taxa_envio':
+      case 'ranking_frequencia':
+        return processFrequenciaEnvio(ctx, entities.gerentes);
+      
+      case 'rendimento_rota':
+      case 'ranking_rendimento':
+        return processRendimentoRota(ctx, entities.gerentes);
+      
+      case 'analise_completa_gerente':
+        return processAnaliseCompletaGerente(ctx, entities.gerentes);
+      
+      case 'comparativo_gerentes':
+        return processComparativoGerentes(ctx);
+      
+      case 'metricas_caixa':
+        return processMetricasCaixa(ctx);
+      
+      // Intenções existentes
       case 'devedor_semana':
         return processDevedorSemana(ctx);
       
       case 'finalizou_com_aberto':
         return processFinalizouComAberto(ctx);
       
-      case 'prestacoes_semana':
-        return processPrestacoesSemana(ctx);
-      
-      case 'movimentacao_semana':
-        return processMovimentacaoSemana(ctx);
-      
-      case 'resumo_semana':
-        return processResumoSemana(ctx);
-      
-      // INTENÇÕES EXISTENTES
       case 'caixa_periodo':
       case 'fluxo_caixa':
         return processCaixaPeriodo(ctx);
       
-      case 'ranking_pagamento':
-        return processRankingPagamento(ctx);
+      case 'resumo_geral':
+      case 'resumo_semana':
+        return processResumoGeral(ctx);
       
-      case 'ranking_inadimplente':
-      case 'maior_devedor':
-        return processRankingInadimplente(ctx);
-      
-      case 'despesas_acima':
-        return processDespesasAcima(ctx);
-      
-      case 'ranking_despesas':
-        return processRankingDespesas(ctx);
-      
-      case 'total_despesas':
-        return processTotalDespesas(ctx);
-      
-      case 'prestacoes_abertas':
-        return processPrestacoesAbertas(ctx);
+      case 'alertas':
+        return processAlertas(ctx);
       
       case 'listar_gerentes':
         return processListarGerentes(ctx);
       
-        case 'info_gerente_detalhe':
-        return processInfoGerenteDetalhe(ctx, entities.gerentes);
-        
-      case 'alertas':
-        return processAlertas(ctx);
+      case 'info_gerente_detalhe':
+        return processAnaliseCompletaGerente(ctx, entities.gerentes);
       
-      case 'resumo_geral':
-        return processResumoGeral(ctx);
+      case 'maior_devedor':
+      case 'ranking_inadimplente':
+        return processDevedorSemana(ctx);
       
       case 'ajuda':
         return processAjuda();
       
-      case 'debug_caixa':
-        return processDebugCaixa(ctx);
-      
       default:
-        return processFallback(ctx);
+        // Tenta inferir do contexto
+        if (entities.temFrequencia) {
+          return processFrequenciaEnvio(ctx, entities.gerentes);
+        }
+        if (entities.temRendimento || entities.temRota) {
+          return processRendimentoRota(ctx, entities.gerentes);
+        }
+        if (entities.temAnalise && entities.gerentes.length) {
+          return processAnaliseCompletaGerente(ctx, entities.gerentes);
+        }
+        if (entities.gerentes.length) {
+          return processAnaliseCompletaGerente(ctx, entities.gerentes);
+        }
+        
+        return processAjuda();
     }
   }
 
-  // ===== UI =====
-  const now_ = () => new Date();
-  
+  // ===== UI FUNCTIONS =====
+  const now_ = () => new Date().toISOString();
+
   function openPanel() {
+    if (!el.panel) return;
     el.panel.classList.remove('is-hidden');
-    el.input?.focus();
+    el.panel.classList.add('is-visible');
     renderCompanyTag();
     if (!state.history.length) {
       renderGreeting();
-    } else {
-      renderHistory();
+      renderChips();
     }
-    renderChips();
-    const ui = loadUI();
-    if (ui.pos) {
-      el.panel.style.right = 'auto';
-      el.panel.style.bottom = 'auto';
-      el.panel.style.left = (ui.pos.x || 40) + 'px';
-      el.panel.style.top = (ui.pos.y || 40) + 'px';
-      state.pos = ui.pos;
-      state.pinned = !!ui.pinned;
-      updatePin();
-    }
-    if (ui.size) {
-      el.panel.style.width = (ui.size.w || 380) + 'px';
-      el.panel.style.height = (ui.size.h || 520) + 'px';
-      state.size = ui.size;
-    }
+    el.input?.focus();
   }
 
   function closePanel() {
+    if (!el.panel) return;
+    el.panel.classList.remove('is-visible');
     el.panel.classList.add('is-hidden');
   }
 
@@ -1454,10 +1499,11 @@ function processInfoGerenteDetalhe(ctx, nomesBuscados) {
     if (!el.chips) return;
     const chips = [
       'Resumo geral',
-      'Devedores da semana',
-      'Finalizaram com aberto',
-      'Caixa deste mês',
-      'Alertas'
+      'Frequência de envio',
+      'Rendimento por rota',
+      'Comparativo de gerentes',
+      'Alertas',
+      'Ajuda'
     ];
     el.chips.innerHTML = '';
     chips.forEach(t => {
@@ -1477,13 +1523,13 @@ function processInfoGerenteDetalhe(ctx, nomesBuscados) {
     el.msgs.innerHTML = '';
     const row = document.createElement('div');
     row.className = 'ai__msg bot';
-    row.innerHTML = `<div class="bubble">Olá! 👋 Sou seu assistente financeiro da <strong>${nice}</strong>.<br><br>` +
-      `Posso te ajudar com:<br>` +
-      `• Análise de caixa por período<br>` +
-      `• Rankings de gerentes<br>` +
-      `• Despesas e alertas<br>` +
-      `• <strong>📅 Análises semanais!</strong><br><br>` +
-      `Pergunte naturalmente ou use os botões abaixo!</div>`;
+    row.innerHTML = `<div class="bubble">Olá! 👋 Sou seu assistente da <strong>${nice}</strong>.<br><br>` +
+      `<strong>🆕 Novidades v3.0:</strong><br>` +
+      `• Análise de <strong>frequência de envio</strong><br>` +
+      `• <strong>Rendimento por rota</strong><br>` +
+      `• <strong>Análise completa</strong> de gerentes<br>` +
+      `• <strong>Comparativo</strong> entre gerentes<br><br>` +
+      `Pergunte naturalmente ou use os botões!</div>`;
     el.msgs.appendChild(row);
   }
 
@@ -1527,7 +1573,7 @@ function processInfoGerenteDetalhe(ctx, nomesBuscados) {
     for (let i = 0; i < parts.length; i++) {
       acc += (i ? ' ' : '') + parts[i];
       contentSpan.innerHTML = acc;
-      await wait(20 + Math.random() * 20);
+      await wait(15 + Math.random() * 15);
       scrollBottom();
     }
     state.history.push({ who: 'bot', text: fullText, ts: now_() });
@@ -1676,5 +1722,5 @@ function processInfoGerenteDetalhe(ctx, nomesBuscados) {
     }
   })();
 
-  console.log('🤖 Assistente Financeiro Inteligente v2.0 carregado!');
+  console.log('🤖 Assistente FINX v3.0 - Analytics Avançado carregado!');
 })();

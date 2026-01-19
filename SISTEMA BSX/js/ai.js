@@ -306,11 +306,14 @@
     
     // ===== NOVAS INTENÇÕES DE ANALYTICS =====
     const intents = [
-      // Frequência e Regularidade de Envio
-      { pattern: /frequencia.*(envio|prestac)|quantas.*(prestac|vezes).*mes/, type: 'frequencia_envio', confidence: 0.95 },
-      { pattern: /(taxa|percentual|porcent).*(envio|prestac)/, type: 'taxa_envio', confidence: 0.95 },
-      { pattern: /regularidade|pontualidade.*envio/, type: 'frequencia_envio', confidence: 0.9 },
-      { pattern: /quem.*(mais|menos).*(envia|entrega|prestac)/, type: 'ranking_frequencia', confidence: 0.95 },
+      // Taxa de Quitação (quem paga 100%)
+      { pattern: /taxa.*(quitacao|quitação|pagamento)/, type: 'frequencia_envio', confidence: 0.95 },
+      { pattern: /quitacao|quitação/, type: 'frequencia_envio', confidence: 0.95 },
+      { pattern: /quem.*(paga|pagou).*(tudo|completo|100|cem|total)/, type: 'frequencia_envio', confidence: 0.95 },
+      { pattern: /quem.*(quita|quitou)/, type: 'frequencia_envio', confidence: 0.95 },
+      { pattern: /quem.*(nao|não).*(paga|pagou)/, type: 'frequencia_envio', confidence: 0.9 },
+      { pattern: /(paga|pagou).*(completo|total|tudo)/, type: 'frequencia_envio', confidence: 0.9 },
+      { pattern: /frequencia.*(pagamento|quitacao)/, type: 'frequencia_envio', confidence: 0.9 },
       
       // Rendimento por Rota
       { pattern: /rendimento.*(rota|gerente)|performance.*(rota|gerente)/, type: 'rendimento_rota', confidence: 0.95 },
@@ -556,7 +559,7 @@
   // ===== NOVOS PROCESSADORES DE ANALYTICS =====
   // =============================================
 
-  // 📊 FREQUÊNCIA DE ENVIO DE PRESTAÇÕES
+  // 📊 TAXA DE QUITAÇÃO - Quantas prestações foram pagas 100%
   function processFrequenciaEnvio(ctx, nomesBuscados) {
     const { todasPrestacoes, gerentes } = ctx;
     
@@ -580,73 +583,84 @@
         new Date(p.createdAt || p.fim) >= tresMesesAtras
       );
       
-      // Agrupa por mês
-      const porMes = {};
-      prestG.forEach(p => {
-        if (!porMes[p.mesAno]) porMes[p.mesAno] = 0;
-        porMes[p.mesAno]++;
-      });
+      if (!prestG.length) return;
       
-      const meses = Object.keys(porMes);
-      const mediaPorMes = meses.length > 0 ? prestG.length / meses.length : 0;
+      // Conta prestações FECHADAS que foram quitadas (restam = 0)
+      const fechadas = prestG.filter(p => p.fechado);
+      const quitadas = fechadas.filter(p => p.restam <= 0);
+      const naoQuitadas = fechadas.filter(p => p.restam > 0);
       
-      // Calcula semanas esperadas (4 por mês)
-      const semanasEsperadas = meses.length * 4;
-      const taxaEnvio = semanasEsperadas > 0 ? (prestG.length / semanasEsperadas) * 100 : 0;
+      // Taxa de quitação = quitadas / fechadas
+      const taxaQuitacao = fechadas.length > 0 ? (quitadas.length / fechadas.length) * 100 : 0;
+      
+      // Total não pago
+      const totalNaoPago = naoQuitadas.reduce((s, p) => s + p.restam, 0);
       
       stats[g.uid || g.id] = {
         nome: g.nome,
         numero: g.numero,
         totalPrestacoes: prestG.length,
-        mesesAtivos: meses.length,
-        mediaPorMes: mediaPorMes,
-        taxaEnvio: Math.min(taxaEnvio, 100), // Cap em 100%
-        ultimaPrestacao: prestG.length ? new Date(Math.max(...prestG.map(p => new Date(p.createdAt || p.fim)))) : null
+        fechadas: fechadas.length,
+        quitadas: quitadas.length,
+        naoQuitadas: naoQuitadas.length,
+        taxaQuitacao,
+        totalNaoPago
       };
     });
     
     const ranking = Object.values(stats)
-      .filter(g => g.totalPrestacoes > 0)
-      .sort((a, b) => b.taxaEnvio - a.taxaEnvio);
+      .filter(g => g.fechadas > 0)
+      .sort((a, b) => b.taxaQuitacao - a.taxaQuitacao);
     
     if (!ranking.length) {
-      return '📊 <strong>Frequência de Envio</strong><br><br>Sem dados suficientes para análise.';
+      return '📊 <strong>Taxa de Quitação</strong><br><br>Sem dados suficientes para análise.';
     }
     
-    // Gráfico de barras em texto
-    const maxTaxa = Math.max(...ranking.map(r => r.taxaEnvio));
-    
-    let resp = `📊 <strong>Frequência de Envio - Últimos 3 Meses</strong><br><br>`;
-    resp += `<em>Taxa = prestações enviadas / semanas esperadas (4/mês)</em><br><br>`;
+    let resp = `📊 <strong>Taxa de Quitação - Últimos 3 Meses</strong><br><br>`;
+    resp += `<em>Taxa = prestações pagas 100% / total de prestações fechadas</em><br><br>`;
     
     // Top 10
     const top10 = ranking.slice(0, 10);
     top10.forEach((g, i) => {
       const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
-      const barWidth = Math.round((g.taxaEnvio / maxTaxa) * 15);
+      const barWidth = Math.round((g.taxaQuitacao / 100) * 15);
       const bar = '█'.repeat(barWidth) + '░'.repeat(15 - barWidth);
       const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
+      const icon = g.taxaQuitacao >= 80 ? '✅' : g.taxaQuitacao >= 50 ? '🟡' : '🔴';
       
-      resp += `${medal} <strong>${nome}</strong><br>`;
-      resp += `&nbsp;&nbsp;${bar} ${fmtPerc(g.taxaEnvio)}<br>`;
-      resp += `&nbsp;&nbsp;<em>${g.totalPrestacoes} prestações em ${g.mesesAtivos} meses (${g.mediaPorMes.toFixed(1)}/mês)</em><br><br>`;
+      resp += `${medal} <strong>${nome}</strong> ${icon}<br>`;
+      resp += `&nbsp;&nbsp;${bar} ${fmtPerc(g.taxaQuitacao)}<br>`;
+      resp += `&nbsp;&nbsp;<em>${g.quitadas}/${g.fechadas} prestações quitadas</em>`;
+      if (g.totalNaoPago > 0) {
+        resp += ` | <span style="color:#ff6b6b">Deve: ${fmt(g.totalNaoPago)}</span>`;
+      }
+      resp += `<br><br>`;
     });
     
     // Alertas: quem está abaixo de 50%
-    const baixaFrequencia = ranking.filter(g => g.taxaEnvio < 50 && g.mesesAtivos >= 2);
-    if (baixaFrequencia.length) {
-      resp += `<br>⚠️ <strong>Atenção - Baixa frequência (&lt;50%):</strong><br>`;
-      baixaFrequencia.slice(0, 5).forEach(g => {
+    const baixaQuitacao = ranking.filter(g => g.taxaQuitacao < 50 && g.fechadas >= 2);
+    if (baixaQuitacao.length) {
+      resp += `<br>⚠️ <strong>Atenção - Baixa quitação (&lt;50%):</strong><br>`;
+      baixaQuitacao.slice(0, 5).forEach(g => {
         const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
-        const diasSemEnvio = g.ultimaPrestacao ? Math.round((new Date() - g.ultimaPrestacao) / (1000 * 60 * 60 * 24)) : '?';
-        resp += `• ${nome}: ${fmtPerc(g.taxaEnvio)} (último envio há ${diasSemEnvio} dias)<br>`;
+        resp += `• ${nome}: ${fmtPerc(g.taxaQuitacao)} (${g.quitadas}/${g.fechadas}) - Deve: ${fmt(g.totalNaoPago)}<br>`;
+      });
+    }
+    
+    // Quem NUNCA quitou
+    const nuncaQuitou = ranking.filter(g => g.taxaQuitacao === 0 && g.fechadas >= 2);
+    if (nuncaQuitou.length) {
+      resp += `<br>🔴 <strong>NUNCA quitaram uma prestação:</strong><br>`;
+      nuncaQuitou.forEach(g => {
+        const nome = g.numero ? `${g.numero} ${g.nome}` : g.nome;
+        resp += `• ${nome}: ${g.fechadas} prestações, deve ${fmt(g.totalNaoPago)}<br>`;
       });
     }
     
     return resp;
   }
 
-  // Frequência de um gerente específico
+  // Taxa de Quitação de um gerente específico
   function processFrequenciaGerenteEspecifico(ctx, gerente) {
     const { todasPrestacoes } = ctx;
     
@@ -658,54 +672,66 @@
       return `📊 <strong>${gerente.numero || ''} ${gerente.nome}</strong><br><br>Nenhuma prestação encontrada.`;
     }
     
-    // Agrupa por mês
-    const porMes = {};
-    prestG.forEach(p => {
-      if (!porMes[p.mesAno]) porMes[p.mesAno] = [];
-      porMes[p.mesAno].push(p);
-    });
+    // Filtra fechadas
+    const fechadas = prestG.filter(p => p.fechado);
+    const quitadas = fechadas.filter(p => p.restam <= 0);
+    const naoQuitadas = fechadas.filter(p => p.restam > 0);
+    const abertas = prestG.filter(p => !p.fechado);
     
-    const mesesOrdenados = Object.keys(porMes).sort().reverse();
+    const taxaGeral = fechadas.length > 0 ? (quitadas.length / fechadas.length) * 100 : 0;
+    const totalNaoPago = naoQuitadas.reduce((s, p) => s + p.restam, 0);
     
-    let resp = `📊 <strong>Frequência de Envio - ${gerente.numero || ''} ${gerente.nome}</strong><br><br>`;
+    let resp = `📊 <strong>Taxa de Quitação - ${gerente.numero || ''} ${gerente.nome}</strong><br><br>`;
     
     // Resumo
-    const totalPrest = prestG.length;
-    const mesesAtivos = mesesOrdenados.length;
-    const mediaPorMes = mesesAtivos > 0 ? totalPrest / mesesAtivos : 0;
-    const semanasEsperadas = mesesAtivos * 4;
-    const taxaGeral = semanasEsperadas > 0 ? Math.min((totalPrest / semanasEsperadas) * 100, 100) : 0;
-    
+    const icon = taxaGeral >= 80 ? '✅' : taxaGeral >= 50 ? '🟡' : '🔴';
     resp += `📈 <strong>RESUMO GERAL:</strong><br>`;
-    resp += `• Total de prestações: ${totalPrest}<br>`;
-    resp += `• Meses ativos: ${mesesAtivos}<br>`;
-    resp += `• Média por mês: ${mediaPorMes.toFixed(1)} prestações<br>`;
-    resp += `• Taxa de envio: <strong>${fmtPerc(taxaGeral)}</strong><br><br>`;
+    resp += `• Total de prestações: ${prestG.length}<br>`;
+    resp += `• Fechadas: ${fechadas.length}<br>`;
+    resp += `• ✅ Quitadas (100%): ${quitadas.length}<br>`;
+    resp += `• ⚠️ Não quitadas: ${naoQuitadas.length}<br>`;
+    resp += `• 🔓 Abertas: ${abertas.length}<br>`;
+    resp += `• Taxa de quitação: <strong>${fmtPerc(taxaGeral)} ${icon}</strong><br>`;
+    if (totalNaoPago > 0) {
+      resp += `• 🔴 <strong>Total em aberto: ${fmt(totalNaoPago)}</strong><br>`;
+    }
+    resp += `<br>`;
     
-    // Detalhamento por mês (últimos 6)
-    resp += `📅 <strong>DETALHAMENTO POR MÊS:</strong><br>`;
-    mesesOrdenados.slice(0, 6).forEach(mes => {
-      const pMes = porMes[mes];
-      const qtd = pMes.length;
-      const taxa = Math.min((qtd / 4) * 100, 100);
-      const icon = taxa >= 75 ? '✅' : taxa >= 50 ? '🟡' : '🔴';
+    // Últimas 10 prestações fechadas com detalhes
+    resp += `📅 <strong>HISTÓRICO DE PAGAMENTOS:</strong><br>`;
+    const ultimas = fechadas.slice(0, 10);
+    
+    ultimas.forEach(p => {
+      const periodo = `${fmtData(p.ini)} a ${fmtData(p.fim)}`;
+      const quitou = p.restam <= 0;
+      const icon = quitou ? '✅' : '🔴';
+      const status = quitou ? 'QUITOU' : `DEVE ${fmt(p.restam)}`;
       
-      const [ano, mesNum] = mes.split('-');
-      const nomeMes = new Date(ano, mesNum - 1).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' });
-      
-      resp += `${icon} <strong>${nomeMes}:</strong> ${qtd} prestações (${fmtPerc(taxa)})<br>`;
+      resp += `<br>${icon} <strong>${periodo}</strong><br>`;
+      resp += `&nbsp;&nbsp;A pagar: ${fmt(p.aPagar)} | Pago: ${fmt(p.pagos)}<br>`;
+      resp += `&nbsp;&nbsp;<strong>${status}</strong><br>`;
     });
     
-    // Padrão detectado
-    resp += `<br>📊 <strong>PADRÃO DETECTADO:</strong><br>`;
-    if (mediaPorMes >= 3.5) {
-      resp += `✅ Envio <strong>SEMANAL</strong> consistente<br>`;
-    } else if (mediaPorMes >= 2) {
-      resp += `🟡 Envio <strong>QUINZENAL</strong> aproximado<br>`;
-    } else if (mediaPorMes >= 1) {
-      resp += `🟠 Envio <strong>MENSAL</strong><br>`;
-    } else {
-      resp += `🔴 Envio <strong>IRREGULAR</strong><br>`;
+    if (fechadas.length > 10) {
+      resp += `<br><em>... e mais ${fechadas.length - 10} prestações anteriores</em><br>`;
+    }
+    
+    // Análise de tendência (últimos 3 meses vs anteriores)
+    const tresMesesAtras = new Date();
+    tresMesesAtras.setMonth(tresMesesAtras.getMonth() - 3);
+    
+    const recentes = fechadas.filter(p => new Date(p.fim || p.createdAt) >= tresMesesAtras);
+    const quitadasRecentes = recentes.filter(p => p.restam <= 0);
+    const taxaRecente = recentes.length > 0 ? (quitadasRecentes.length / recentes.length) * 100 : 0;
+    
+    if (recentes.length >= 2) {
+      resp += `<br>📊 <strong>ÚLTIMOS 3 MESES:</strong><br>`;
+      resp += `• ${quitadasRecentes.length}/${recentes.length} prestações quitadas<br>`;
+      resp += `• Taxa recente: ${fmtPerc(taxaRecente)}<br>`;
+      
+      const tendencia = taxaRecente > taxaGeral ? '📈 Melhorando' : 
+                        taxaRecente < taxaGeral ? '📉 Piorando' : '➡️ Estável';
+      resp += `• Tendência: ${tendencia}`;
     }
     
     return resp;
@@ -1512,8 +1538,8 @@
 
   function processAjuda() {
     return `🤖 <strong>Assistente FINX v3.0</strong><br><br>` +
-      `<strong>📊 ANÁLISES NOVAS:</strong><br>` +
-      `• "Frequência de envio" - Taxa de prestações por gerente<br>` +
+      `<strong>📊 ANÁLISES:</strong><br>` +
+      `• "Taxa de quitação" - Quem paga 100% das prestações<br>` +
       `• "Rendimento por rota" - Performance financeira<br>` +
       `• "Análise completa do [gerente]" - Relatório detalhado<br>` +
       `• "Comparativo de gerentes" - Ranking geral<br>` +
@@ -1674,7 +1700,7 @@
     if (!el.chips) return;
     const chips = [
       'Resumo geral',
-      'Frequência de envio',
+      'Taxa de quitação',
       'Rendimento por rota',
       'Comparativo de gerentes',
       'Alertas',
@@ -1700,10 +1726,10 @@
     row.className = 'ai__msg bot';
     row.innerHTML = `<div class="bubble">Olá! 👋 Sou seu assistente da <strong>${nice}</strong>.<br><br>` +
       `<strong>🆕 Novidades v3.0:</strong><br>` +
-      `• Análise de <strong>frequência de envio</strong><br>` +
+      `• <strong>Taxa de quitação</strong> - quem paga 100%<br>` +
       `• <strong>Rendimento por rota</strong><br>` +
       `• <strong>Análise completa</strong> de gerentes<br>` +
-      `• <strong>Comparativo</strong> entre gerentes<br><br>` +
+      `• <strong>Lucro/Prejuízo</strong> baseado no caixa<br><br>` +
       `Pergunte naturalmente ou use os botões!</div>`;
     el.msgs.appendChild(row);
   }

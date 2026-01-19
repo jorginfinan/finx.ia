@@ -4574,7 +4574,11 @@ window.addEventListener('vales:updated', ()=>{
     try{
       console.log('[EDIT] Carregando:', r.id);
       
-      window.__prestBeingEdited = { id: r.id };
+      window.__prestBeingEdited = { 
+        id: r.id, 
+        saldoInfo: r.saldoInfo ? {...r.saldoInfo} : null,
+        resumo: r.resumo ? {...r.resumo} : null
+      };
       
       // Preenche campos
       const selGer = document.getElementById('pcGerente'); 

@@ -317,6 +317,41 @@
     const tbody = document.getElementById('auditTableBody');
     if (!tbody) return;
     
+    // ✅ Aumenta a altura da área da tabela
+    const table = tbody.closest('table');
+    if (table) {
+      // Verifica se já tem um wrapper com scroll
+      let scrollWrapper = table.parentElement;
+      
+      // Se não tem wrapper adequado, cria um
+      if (!scrollWrapper.classList.contains('audit-table-scroll')) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'audit-table-scroll';
+        wrapper.style.cssText = `
+          max-height: calc(100vh - 350px);
+          min-height: 500px;
+          overflow-y: auto;
+          overflow-x: auto;
+          border-radius: 8px;
+          border: 1px solid rgba(255,255,255,0.1);
+        `;
+        
+        // Move a tabela para dentro do wrapper
+        table.parentNode.insertBefore(wrapper, table);
+        wrapper.appendChild(table);
+        scrollWrapper = wrapper;
+      }
+      
+      // Fixa o cabeçalho da tabela
+      const thead = table.querySelector('thead');
+      if (thead) {
+        thead.style.position = 'sticky';
+        thead.style.top = '0';
+        thead.style.zIndex = '10';
+        thead.style.backgroundColor = '#1a1a2e';
+      }
+    }
+    
     // Mostra loading
     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px;"><div class="spinner"></div> Carregando...</td></tr>';
     

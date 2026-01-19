@@ -7,7 +7,7 @@
     // ========================================
     // CONFIGURAÇÃO
     // ========================================
-    const TEMA_ATIVO = 'natal'; // Opções: 'natal', 'carnaval', null (desativado)
+    const TEMA_ATIVO = 'null'; // Opções: 'natal', 'carnaval', null (desativado)
     
     if (!TEMA_ATIVO) {
       console.log('[Tema] Desativado');

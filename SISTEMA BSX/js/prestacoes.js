@@ -1817,15 +1817,24 @@ const valePg = valesAplicados.reduce((sum, v) => {
     const empresaAtual = window.getCompany ? window.getCompany() : 'BSX';
 
     // ✅ Busca saldo atual do Supabase (saldo COM todas as prestações até agora)
-    let saldoDoSupabase = await window.SaldoAcumulado.getSaldo(g.id || g.uid, empresaAtual);
+    let saldoDoSupabase = await window.SaldoAcumulado.getSaldo(g.uid, empresaAtual);
     let saldoParaCalcular = saldoDoSupabase;
     
     // Se está EDITANDO uma prestação que JÁ FOI SALVA no Supabase,
     // precisamos tirar a contribuição DESSA prestação do saldo atual,
     // para recalcular como se ela ainda não existisse.
-    if (window.__prestBeingEdited?.id && window.__prestBeingEdited?.saldoInfo) {
+    // ✅ CORREÇÃO: Para gerentes com 2ª comissão, usa saldo do Supabase diretamente
+    // O saldo no Supabase representa o saldo ANTES dessa prestação
+    if (temSegundaComissao) {
+      saldoParaCalcular = saldoDoSupabase;
+      console.log('🔄 [2ª Comissão] Usando saldo do Supabase direto:', {
+        saldoDoSupabase,
+        saldoParaCalcular,
+        coletas
+      });
+    } else if (window.__prestBeingEdited?.id && window.__prestBeingEdited?.saldoInfo) {
+      // Gerentes SEM 2ª comissão: mantém lógica de estorno
       const saldoInfoAntigo = window.__prestBeingEdited.saldoInfo;
-    
       const saldoAnteriorPrestacao = Number(saldoInfoAntigo.saldoCarregarAnterior) || 0;
       const saldoNovoPrestacao    = Number(saldoInfoAntigo.saldoCarregarNovo)      || 0;
     

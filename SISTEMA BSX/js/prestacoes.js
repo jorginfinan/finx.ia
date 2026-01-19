@@ -1817,7 +1817,7 @@ const valePg = valesAplicados.reduce((sum, v) => {
     const empresaAtual = window.getCompany ? window.getCompany() : 'BSX';
 
     // ✅ Busca saldo atual do Supabase (saldo COM todas as prestações até agora)
-    let saldoDoSupabase = await window.SaldoAcumulado.getSaldo(g.uid, empresaAtual);
+    let saldoDoSupabase = await window.SaldoAcumulado.getSaldo(g.id || g.uid, empresaAtual);
     let saldoParaCalcular = saldoDoSupabase;
     
     // Se está EDITANDO uma prestação que JÁ FOI SALVA no Supabase,

@@ -2955,7 +2955,6 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
         prestacaoAtualCompleta: prestacaoAtual
       });
       
-      // ✅ Atualiza saldo para gerentes com saldo acumulado OU com 2ª comissão
       const deveAtualizarSaldo = window.SaldoAcumulado && (
         prestacaoAtual.saldoInfo?.usandoSaldoAcumulado || 
         prestacaoAtual.saldoInfo?.regraEspecial === 'SEGUNDA_COMISSAO'
@@ -2963,8 +2962,24 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
       
       if (deveAtualizarSaldo) {
         const empresaId = recPrest.empresaId || (window.getCompany ? window.getCompany() : 'BSX');
+        const saldoNovo = prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0;
         
-        if (idx > -1 && prevRec && prevRec.saldoInfo) {
+        // ✅ REGRA SIMPLIFICADA PARA 2ª COMISSÃO:
+        // O cálculo em pcCalcular() já considera o saldo anterior corretamente,
+        // então basta salvar o novo saldo calculado diretamente.
+        if (prestacaoAtual.saldoInfo?.regraEspecial === 'SEGUNDA_COMISSAO') {
+          console.log('💾 [2ª Comissão] Salvando saldo direto:', {
+            gerenteId: recPrest.gerenteId,
+            empresaId,
+            saldoNovo,
+            saldoInfo: prestacaoAtual.saldoInfo
+          });
+          
+          await window.SaldoAcumulado.setSaldo(recPrest.gerenteId, empresaId, saldoNovo);
+          console.log('✅ [2ª Comissão] Saldo salvo:', saldoNovo);
+          
+        } else if (idx > -1 && prevRec && prevRec.saldoInfo) {
+          // Edição de prestação com saldo acumulado normal
           const resultadoAnterior = Number(prevRec.saldoInfo?.resultadoSemana || 0);
           const resultadoAtual    = Number(prestacaoAtual.saldoInfo?.resultadoSemana || 0);
           const mudouResultado = Math.abs(resultadoAtual - resultadoAnterior) > 0.009;
@@ -2975,7 +2990,7 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
             const saldoAtual = await window.SaldoAcumulado.getSaldo(recPrest.gerenteId, empresaId);
             const saldoAnteriorPrestacao = prevRec.saldoInfo.saldoCarregarNovo || 0;
             const saldoCorrigido = Math.max(0, saldoAtual - saldoAnteriorPrestacao);
-            const novoSaldoFinal = saldoCorrigido + (prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0);
+            const novoSaldoFinal = saldoCorrigido + saldoNovo;
             
             await window.SaldoAcumulado.setSaldo(recPrest.gerenteId, empresaId, novoSaldoFinal);
             
@@ -2983,22 +2998,22 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
               saldoAtual,
               saldoAnteriorPrestacao,
               saldoCorrigido,
-              novoSaldoAdicionado: prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0,
+              novoSaldoAdicionado: saldoNovo,
               novoSaldoFinal
             });
           }
         } else {
-          const saldoNovo = prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0;
-          
-          console.log('💾 Salvando saldo para nova prestação:', {
+          // Nova prestação ou edição sem saldoInfo anterior
+          console.log('💾 Salvando saldo para prestação:', {
             gerenteId: recPrest.gerenteId,
             empresaId,
             saldoNovo,
-            saldoInfo: prestacaoAtual.saldoInfo
+            saldoInfo: prestacaoAtual.saldoInfo,
+            isEdit: idx > -1
           });
           
           await window.SaldoAcumulado.setSaldo(recPrest.gerenteId, empresaId, saldoNovo);
-          console.log('✅ Nova prestação - Saldo salvo:', saldoNovo);
+          console.log('✅ Saldo salvo:', saldoNovo);
         }
       }
 

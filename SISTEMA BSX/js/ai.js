@@ -484,6 +484,7 @@
         status: l.status || '',
         forma: l.forma || '',
         data: l.data,
+        info: l.info || l.descricao || l.observacao || '',
         createdAt: l.created_at || l.createdAt
       }));
       
@@ -920,13 +921,63 @@
     
     const { todasPrestacoes, lancamentosSemFiltro } = ctx;
     const nomeCompleto = `${gerente.numero || '---'} ${gerente.nome}`;
+    const gerenteId = gerente.uid || gerente.id;
     
     const prestG = todasPrestacoes
-      .filter(p => p.gerenteId === gerente.uid || p.gerenteId === gerente.id)
+      .filter(p => p.gerenteId === gerenteId || String(p.gerenteId) === String(gerenteId))
       .sort((a, b) => new Date(b.fim || b.createdAt) - new Date(a.fim || a.createdAt));
     
-    if (!prestG.length) {
-      return `📋 <strong>Análise - ${nomeCompleto}</strong><br><br>Nenhuma prestação encontrada para este gerente.`;
+    // Busca lançamentos do gerente no caixa
+    const lancamentosGerente = lancamentosSemFiltro.filter(l => {
+      const nomeL = (l.gerente || l.gerenteNome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const nomeG = gerente.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return nomeL.includes(nomeG) || nomeG.includes(nomeL.split(' ')[0]) ||
+             l.gerenteId === gerenteId || String(l.gerenteId) === String(gerenteId);
+    });
+    
+    // Filtra lançamentos do mês atual
+    const inicioMes = new Date();
+    inicioMes.setDate(1);
+    inicioMes.setHours(0, 0, 0, 0);
+    
+    const lancamentosMes = lancamentosGerente.filter(l => {
+      const dataL = new Date(l.data || l.createdAt);
+      return dataL >= inicioMes;
+    });
+    
+    // Busca adiantamentos - verifica tipo, info e se menciona o nome do gerente
+    const nomeGerenteLower = gerente.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const numeroGerente = gerente.numero || '';
+    
+    const adiantamentos = lancamentosSemFiltro.filter(l => {
+      const info = (l.info || l.descricao || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const gerenteLanc = (l.gerente || l.gerenteNome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const tipo = (l.tipo || '').toLowerCase();
+      
+      // Verifica se é adiantamento
+      const isAdiantamento = tipo.includes('adiant') || 
+                             info.includes('adiant') ||
+                             gerenteLanc.includes('adiant');
+      
+      if (!isAdiantamento) return false;
+      
+      // Verifica se é do gerente
+      const isDoGerente = info.includes(nomeGerenteLower) ||
+                          gerenteLanc.includes(nomeGerenteLower) ||
+                          (numeroGerente && (info.includes(numeroGerente) || gerenteLanc.includes(numeroGerente))) ||
+                          l.gerenteId === gerenteId ||
+                          String(l.gerenteId) === String(gerenteId);
+      
+      return isDoGerente;
+    });
+    
+    const adiantamentosMes = adiantamentos.filter(l => {
+      const dataL = new Date(l.data || l.createdAt);
+      return dataL >= inicioMes;
+    });
+    
+    if (!prestG.length && !lancamentosGerente.length) {
+      return `📋 <strong>Análise - ${nomeCompleto}</strong><br><br>Nenhuma prestação ou lançamento encontrado para este gerente.`;
     }
     
     let resp = `📋 <strong>ANÁLISE COMPLETA - ${nomeCompleto}</strong><br><br>`;
@@ -939,7 +990,152 @@
     if (gerente.temSaldoAcumulado) resp += `• ✅ Usa saldo acumulado<br>`;
     resp += `<br>`;
     
-    // ===== 2. FREQUÊNCIA DE ENVIO =====
+    // ===== 2. SALDO NO CAIXA (MÊS ATUAL) =====
+    const recebidosMes = lancamentosMes.filter(l => l.status === 'RECEBIDO');
+    const pagosMes = lancamentosMes.filter(l => l.status === 'PAGO');
+    const totalRecebidoMes = recebidosMes.reduce((s, l) => s + l.valor, 0);
+    const totalPagoMes = pagosMes.reduce((s, l) => s + l.valor, 0);
+    const totalAdiantMes = adiantamentosMes.reduce((s, l) => s + l.valor, 0);
+    const saldoMes = totalRecebidoMes - totalPagoMes;
+    
+    const mesAtual = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    resp += `💵 <strong>CAIXA DO MÊS (${mesAtual}):</strong><br>`;
+    resp += `• 💰 Recebido: ${fmt(totalRecebidoMes)} (${recebidosMes.length} lançamentos)<br>`;
+    resp += `• 💸 Pago: ${fmt(totalPagoMes)} (${pagosMes.length} lançamentos)<br>`;
+    if (totalAdiantMes > 0) {
+      resp += `• 🏷️ Adiantamentos: ${fmt(totalAdiantMes)}<br>`;
+    }
+    const saldoIcon = saldoMes >= 0 ? '✅' : '🔴';
+    resp += `• ${saldoIcon} <strong>Saldo do mês: ${fmt(saldoMes)}</strong><br><br>`;
+    
+    // ===== 3. PRESTAÇÕES - MÊS ATUAL =====
+    const prestMes = prestG.filter(p => {
+      const dataP = new Date(p.fim || p.ini || p.createdAt);
+      return dataP >= inicioMes;
+    });
+    
+    const abertas = prestMes.filter(p => !p.fechado);
+    const fechadas = prestMes.filter(p => p.fechado);
+    const fechadasQuitadas = fechadas.filter(p => p.restam <= 0);
+    const fechadasComAberto = fechadas.filter(p => p.restam > 0);
+    
+    resp += `📅 <strong>PRESTAÇÕES DO MÊS:</strong><br>`;
+    if (prestMes.length === 0) {
+      resp += `• Nenhuma prestação no mês atual<br><br>`;
+    } else {
+      resp += `• Total: ${prestMes.length} prestações<br>`;
+      if (abertas.length) resp += `• 🔓 Abertas: ${abertas.length}<br>`;
+      if (fechadasQuitadas.length) resp += `• ✅ Fechadas quitadas: ${fechadasQuitadas.length}<br>`;
+      if (fechadasComAberto.length) resp += `• ⚠️ Fechadas com saldo: ${fechadasComAberto.length}<br>`;
+      
+      // Lista prestações do mês
+      prestMes.forEach(p => {
+        const periodo = `${fmtData(p.ini)} a ${fmtData(p.fim)}`;
+        let status, icon;
+        if (!p.fechado) {
+          status = 'Aberta';
+          icon = '🔓';
+        } else if (p.restam > 0) {
+          status = 'Fechada c/ saldo';
+          icon = '⚠️';
+        } else {
+          status = 'Quitada';
+          icon = '✅';
+        }
+        resp += `<br>${icon} <strong>${periodo}</strong> - ${status}<br>`;
+        resp += `&nbsp;&nbsp;A pagar: ${fmt(p.aPagar)} | Pago: ${fmt(p.pagos)} | Resta: ${fmt(p.restam)}<br>`;
+      });
+      resp += `<br>`;
+    }
+    
+    // ===== 4. LUCRO/PREJUÍZO DO MÊS =====
+    const totalColetasMes = prestMes.reduce((s, p) => s + p.coletas, 0);
+    const totalDespesasMes = prestMes.reduce((s, p) => s + p.despesas, 0);
+    const totalComissaoMes = prestMes.reduce((s, p) => s + p.comissao, 0);
+    const totalAbertoMes = prestMes.reduce((s, p) => s + p.restam, 0);
+    
+    // Lucro = Recebido no caixa - Adiantamentos - Valores em aberto
+    const lucroReal = totalRecebidoMes - totalAdiantMes;
+    const lucroPotencial = totalColetasMes - totalDespesasMes - totalComissaoMes;
+    
+    resp += `📊 <strong>RESULTADO DO MÊS:</strong><br>`;
+    resp += `• Coletas: ${fmt(totalColetasMes)}<br>`;
+    resp += `• Despesas: ${fmt(totalDespesasMes)}<br>`;
+    resp += `• Comissões: ${fmt(totalComissaoMes)}<br>`;
+    if (totalAdiantMes > 0) {
+      resp += `• Adiantamentos: ${fmt(totalAdiantMes)}<br>`;
+    }
+    resp += `• Em aberto: ${fmt(totalAbertoMes)}<br>`;
+    
+    const lucroIcon = lucroReal >= 0 ? '✅' : '🔴';
+    const lucroTexto = lucroReal >= 0 ? 'LUCRO' : 'PREJUÍZO';
+    resp += `• ${lucroIcon} <strong>${lucroTexto} REAL: ${fmt(Math.abs(lucroReal))}</strong><br>`;
+    resp += `<em>(Recebido ${fmt(totalRecebidoMes)} - Adiantamentos ${fmt(totalAdiantMes)})</em><br><br>`;
+    
+    // ===== 5. ÚLTIMOS LANÇAMENTOS NO CAIXA =====
+    if (lancamentosGerente.length > 0) {
+      resp += `💳 <strong>ÚLTIMOS LANÇAMENTOS:</strong><br>`;
+      const ultimos = lancamentosGerente
+        .sort((a, b) => new Date(b.data || b.createdAt) - new Date(a.data || a.createdAt))
+        .slice(0, 8);
+      
+      ultimos.forEach(l => {
+        let icon = l.status === 'RECEBIDO' ? '💰' : '💸';
+        const isAdiant = (l.tipo || '').toLowerCase().includes('adiant') || 
+                        (l.info || '').toLowerCase().includes('adiant') ||
+                        (l.gerente || '').toLowerCase().includes('adiant');
+        if (isAdiant) icon = '🏷️';
+        
+        const data = fmtData(l.data || l.createdAt);
+        const forma = l.forma || l.tipo || 'N/A';
+        resp += `${icon} ${data}: ${fmt(l.valor)} (${forma})<br>`;
+      });
+      resp += `<br>`;
+    }
+    
+    // ===== 5.1 ADIANTAMENTOS TOTAIS =====
+    if (adiantamentos.length > 0) {
+      const totalAdiant = adiantamentos.reduce((s, l) => s + l.valor, 0);
+      resp += `🏷️ <strong>ADIANTAMENTOS (total histórico):</strong><br>`;
+      resp += `• Total: ${fmt(totalAdiant)} em ${adiantamentos.length} adiantamentos<br>`;
+      
+      // Últimos 3 adiantamentos
+      const ultimosAdiant = adiantamentos
+        .sort((a, b) => new Date(b.data || b.createdAt) - new Date(a.data || a.createdAt))
+        .slice(0, 3);
+      
+      if (ultimosAdiant.length) {
+        resp += `• Últimos:<br>`;
+        ultimosAdiant.forEach(l => {
+          resp += `&nbsp;&nbsp;${fmtData(l.data || l.createdAt)}: ${fmt(l.valor)}<br>`;
+        });
+      }
+      resp += `<br>`;
+    }
+    
+    // ===== 6. ESTATÍSTICAS GERAIS (HISTÓRICO COMPLETO) =====
+    const totalAPagarHist = prestG.reduce((s, p) => s + p.aPagar, 0);
+    const totalPagoHist = prestG.reduce((s, p) => s + p.pagos, 0);
+    const totalAbertoHist = prestG.reduce((s, p) => s + p.restam, 0);
+    const fechadasHist = prestG.filter(p => p.fechado);
+    const quitadasHist = fechadasHist.filter(p => p.restam <= 0);
+    const fechadasComAbertoHist = fechadasHist.filter(p => p.restam > 0);
+    const abertasHist = prestG.filter(p => !p.fechado);
+    const percPagoHist = totalAPagarHist > 0 ? (totalPagoHist / totalAPagarHist) * 100 : 0;
+    
+    resp += `📈 <strong>ESTATÍSTICAS GERAIS (histórico):</strong><br>`;
+    resp += `• Total de prestações: ${prestG.length}<br>`;
+    resp += `• 🔓 Abertas: ${abertasHist.length}<br>`;
+    resp += `• ✅ Quitadas: ${quitadasHist.length}<br>`;
+    resp += `• ⚠️ Fechadas com saldo: ${fechadasComAbertoHist.length}<br>`;
+    resp += `• Total a pagar: ${fmt(totalAPagarHist)}<br>`;
+    resp += `• Total pago: ${fmt(totalPagoHist)}<br>`;
+    resp += `• % médio de pagamento: ${fmtPerc(percPagoHist)}<br>`;
+    if (totalAbertoHist > 0) {
+      resp += `• ⚠️ <strong>Total em aberto: ${fmt(totalAbertoHist)}</strong><br>`;
+    }
+    
+    // ===== 7. SCORE GERAL =====
     const tresMesesAtras = new Date();
     tresMesesAtras.setMonth(tresMesesAtras.getMonth() - 3);
     const prestRecentes = prestG.filter(p => new Date(p.createdAt || p.fim) >= tresMesesAtras);
@@ -950,63 +1146,20 @@
       porMes[p.mesAno]++;
     });
     const mesesAtivos = Object.keys(porMes).length;
-    const mediaPorMes = mesesAtivos > 0 ? prestRecentes.length / mesesAtivos : 0;
-    const taxaEnvio = Math.min((prestRecentes.length / (mesesAtivos * 4)) * 100, 100);
+    const taxaEnvio = mesesAtivos > 0 ? Math.min((prestRecentes.length / (mesesAtivos * 4)) * 100, 100) : 0;
     
-    resp += `📊 <strong>FREQUÊNCIA DE ENVIO (3 meses):</strong><br>`;
-    resp += `• Prestações enviadas: ${prestRecentes.length}<br>`;
-    resp += `• Média por mês: ${mediaPorMes.toFixed(1)}<br>`;
-    resp += `• Taxa de envio: <strong>${fmtPerc(taxaEnvio)}</strong><br>`;
-    resp += `• Padrão: ${mediaPorMes >= 3.5 ? '✅ Semanal' : mediaPorMes >= 2 ? '🟡 Quinzenal' : '🔴 Irregular'}<br><br>`;
+    const totalColetasRecentes = prestRecentes.reduce((s, p) => s + p.coletas, 0);
+    const totalDespesasRecentes = prestRecentes.reduce((s, p) => s + p.despesas, 0);
+    const percDespesa = totalColetasRecentes > 0 ? (totalDespesasRecentes / totalColetasRecentes) * 100 : 0;
     
-    // ===== 3. RENDIMENTO =====
-    const totalColetas = prestRecentes.reduce((s, p) => s + p.coletas, 0);
-    const totalDespesas = prestRecentes.reduce((s, p) => s + p.despesas, 0);
-    const totalComissao = prestRecentes.reduce((s, p) => s + p.comissao, 0);
-    const rendimentoLiquido = totalColetas - totalDespesas - totalComissao;
-    const percDespesa = totalColetas > 0 ? (totalDespesas / totalColetas) * 100 : 0;
-    
-    resp += `💰 <strong>RENDIMENTO (3 meses):</strong><br>`;
-    resp += `• Coletas: ${fmt(totalColetas)}<br>`;
-    resp += `• Despesas: ${fmt(totalDespesas)} (${fmtPerc(percDespesa)})<br>`;
-    resp += `• Comissões: ${fmt(totalComissao)}<br>`;
-    resp += `• <strong>Rendimento líquido: ${fmt(rendimentoLiquido)}</strong><br>`;
-    resp += `• Status despesas: ${percDespesa <= 20 ? '✅ Dentro do ideal' : percDespesa <= 30 ? '🟡 Atenção' : '🔴 Acima do ideal'}<br><br>`;
-    
-    // ===== 4. SITUAÇÃO FINANCEIRA =====
-    const totalAPagar = prestRecentes.reduce((s, p) => s + p.aPagar, 0);
-    const totalPago = prestRecentes.reduce((s, p) => s + p.pagos, 0);
-    const totalAberto = prestRecentes.reduce((s, p) => s + p.restam, 0);
-    const taxaQuitacao = totalAPagar > 0 ? (totalPago / totalAPagar) * 100 : 100;
-    
-    resp += `💵 <strong>SITUAÇÃO FINANCEIRA:</strong><br>`;
-    resp += `• A pagar: ${fmt(totalAPagar)}<br>`;
-    resp += `• Pago: ${fmt(totalPago)} (${fmtPerc(taxaQuitacao)})<br>`;
-    if (totalAberto > 0) {
-      resp += `• ⚠️ <strong>Em aberto: ${fmt(totalAberto)}</strong><br>`;
-    } else {
-      resp += `• ✅ Sem valores em aberto<br>`;
-    }
-    resp += `<br>`;
-    
-    // ===== 5. ÚLTIMAS PRESTAÇÕES =====
-    resp += `📅 <strong>ÚLTIMAS 5 PRESTAÇÕES:</strong><br>`;
-    prestG.slice(0, 5).forEach(p => {
-      const periodo = `${fmtData(p.ini)} a ${fmtData(p.fim)}`;
-      const icon = p.fechado ? (p.restam > 0 ? '⚠️' : '✅') : '🔓';
-      resp += `${icon} ${periodo}: ${fmt(p.coletas)} col. | ${fmt(p.restam)} aberto<br>`;
-    });
-    resp += `<br>`;
-    
-    // ===== 6. SCORE GERAL =====
     const scoreFreq = taxaEnvio >= 80 ? 100 : taxaEnvio >= 60 ? 75 : taxaEnvio >= 40 ? 50 : 25;
     const scoreDespesa = percDespesa <= 20 ? 100 : percDespesa <= 30 ? 75 : percDespesa <= 40 ? 50 : 25;
-    const scoreQuitacao = taxaQuitacao >= 95 ? 100 : taxaQuitacao >= 80 ? 75 : taxaQuitacao >= 60 ? 50 : 25;
+    const scoreQuitacao = percPagoHist >= 95 ? 100 : percPagoHist >= 80 ? 75 : percPagoHist >= 60 ? 50 : 25;
     const scoreGeral = Math.round((scoreFreq + scoreDespesa + scoreQuitacao) / 3);
     
     const getScoreEmoji = (s) => s >= 80 ? '🌟' : s >= 60 ? '👍' : s >= 40 ? '👎' : '⚠️';
     
-    resp += `🎯 <strong>SCORE GERAL: ${scoreGeral}/100 ${getScoreEmoji(scoreGeral)}</strong><br>`;
+    resp += `<br>🎯 <strong>SCORE GERAL: ${scoreGeral}/100 ${getScoreEmoji(scoreGeral)}</strong><br>`;
     resp += `• Frequência: ${scoreFreq}/100<br>`;
     resp += `• Despesas: ${scoreDespesa}/100<br>`;
     resp += `• Quitação: ${scoreQuitacao}/100<br>`;

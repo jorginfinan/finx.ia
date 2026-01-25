@@ -472,15 +472,11 @@ function pcRender(){
 
   const rows = (prestacaoAtual.despesas||[]);
   tbody.innerHTML = rows.map(d => {
-    const area = getAreaByFicha(d.ficha);
     const isFixa = d._despesaFixaId ? '📌' : '';
     return `
       <tr>
         <td>
-          <div class="fa-cell">
-            <input data-id="${d.id}" data-field="ficha" value="${d.ficha||''}" inputmode="numeric" maxlength="5">
-            <span class="fa-badge" title="Área desta ficha">${area ? area : ''}</span>
-          </div>
+          <input data-id="${d.id}" data-field="ficha" value="${d.ficha||''}" inputmode="numeric" maxlength="5" style="width:80px">
         </td>
         <td><input data-id="${d.id}" data-field="info"  value="${d.info||''}"></td>
         <td><input data-id="${d.id}" data-field="valor" type="number" step="0.01" value="${Number(d.valor||0)}"></td>
@@ -3623,8 +3619,8 @@ window.prestToDataURL = function(rec) {
     // ✅ Calcula altura necessária baseada no número de despesas
     const qtdDespesas = (rec.despesas || []).length;
     const rowHeight = 28;
-    const headerHeight = 100;
-    const footerHeight = 120; // Aumentado para acomodar aviso da diretoria
+    const headerHeight = 110; // Aumentado para acomodar aviso da diretoria
+    const footerHeight = 60;
     const minTableHeight = 700;
     
     // ✅ CALCULA ALTURA NECESSÁRIA PARA COLUNA DIREITA
@@ -3659,7 +3655,7 @@ window.prestToDataURL = function(rec) {
     }
 
     // ===== CÁLCULO DINÂMICO DE TAMANHOS =====
-    const rightHCalc = canvasHeight - 140;
+    const rightHCalc = canvasHeight - 150; // Ajustado para novo header
     const espacoPorItemCalc = rightHCalc / Math.max(itensColunaDireita, 15);
     
     const R_GROUP = 18;
@@ -3677,7 +3673,7 @@ window.prestToDataURL = function(rec) {
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, cvs.width, cvs.height);
     ctx.fillStyle = '#ffe600';
-    ctx.fillRect(0, 0, cvs.width, 80);
+    ctx.fillRect(0, 0, cvs.width, 100); // Header amarelo
     ctx.fillStyle = '#000';
     ctx.font = 'bold 22px Arial';
 
@@ -3687,16 +3683,36 @@ window.prestToDataURL = function(rec) {
                     (window.fmtData ? window.fmtData(rec.fim) : rec.fim);
     
     if (typeof drawText === 'function') {
-      drawText(ctx, 'Gerente', 20, 50, 'left');
-      drawText(ctx, (g ? (g.nome || '') : ''), 120, 50, 'left');
-      drawText(ctx, 'Período:', cvs.width/2, 25, 'center');
-      drawText(ctx, periodo, cvs.width/2, 55, 'center');
+      drawText(ctx, 'Gerente', 20, 40, 'left');
+      drawText(ctx, (g ? (g.nome || '') : ''), 120, 40, 'left');
+      drawText(ctx, 'Período:', 420, 25, 'left');
+      drawText(ctx, periodo, 420, 55, 'left');
     }
+    
+    // ✅ AVISO DA DIRETORIA (canto superior direito - área amarela)
+    // Posicionamento: lado direito do header, alinhado à direita
+    ctx.save();
+    ctx.font = 'bold 13px Arial';
+    ctx.fillStyle = '#b91c1c'; // Vermelho escuro para destaque
+    ctx.textAlign = 'right';
+    
+    const avisoLinhas = [
+      'Lembrete: Os adiantamentos só serão pagos mediante',
+      'prestação em dias. Caso esteja com valores em aberto, será',
+      'descontado e enviado somente a diferença.',
+      'Att, Diretoria!'
+    ];
+    
+    const avisoRightMargin = cvs.width - 20;
+    avisoLinhas.forEach((linha, i) => {
+      ctx.fillText(linha, avisoRightMargin, 22 + (i * 18));
+    });
+    ctx.restore();
 
     // Layout: esquerda (despesas) / direita (resumo)
     const gap = 20;
-    const leftX = 20, leftY = 100, leftW = Math.floor(cvs.width * 0.58), leftH = cvs.height - leftY - 40;
-    const rightX = leftX + leftW + gap, rightY = 100, rightW = cvs.width - rightX - 20, rightH = cvs.height - rightY - 40;
+    const leftX = 20, leftY = 110, leftW = Math.floor(cvs.width * 0.58), leftH = cvs.height - leftY - 40;
+    const rightX = leftX + leftW + gap, rightY = 110, rightW = cvs.width - rightX - 20, rightH = cvs.height - rightY - 40;
 
     // ======= TABELA DE DESPESAS (lado esquerdo) — limite 27 linhas =======
     ctx.strokeStyle = '#000';
@@ -4119,27 +4135,6 @@ window.prestToDataURL = function(rec) {
       ctx.textAlign = 'center';
       ctx.fillText(restamTexto, rightX + rightW/2, ry + 16);
     }
-
-    // ✅ AVISO DA DIRETORIA (canto inferior direito)
-    const avisoTexto = [
-      'Lembrete: Os adiantamentos só serão enviados',
-      'mediante prestação em dias. Caso esteja com',
-      'valores em aberto, será descontado e enviado',
-      'somente a diferença, caso necessário.',
-      'Att, Diretoria.'
-    ];
-    
-    ctx.font = 'italic 11px Arial';
-    ctx.fillStyle = '#b45309'; // Cor âmbar/laranja (aviso)
-    ctx.textAlign = 'right';
-    
-    // Posiciona o aviso no canto inferior direito
-    const avisoY = cvs.height - 80;
-    const avisoX = rightX + rightW - 10;
-    
-    avisoTexto.forEach((linha, i) => {
-      ctx.fillText(linha, avisoX, avisoY + (i * 14));
-    });
 
     ctx.restore();
 

@@ -3693,10 +3693,10 @@ window.prestToDataURL = function(rec) {
     ctx.save();
     
     // Dimensões e posição da caixa de aviso
-    const avisoBoxW = 470;
-    const avisoBoxH = 82;
+    const avisoBoxW = 480;
+    const avisoBoxH = 85;
     const avisoBoxX = cvs.width - avisoBoxW - 15;
-    const avisoBoxY = 8;
+    const avisoBoxY = 6;
     const borderRadius = 8;
     
     // Fundo da caixa com gradiente simulado (cor sólida escura)
@@ -3722,9 +3722,9 @@ window.prestToDataURL = function(rec) {
     ctx.stroke();
     
     // Ícone de alerta (triângulo com !)
-    const iconX = avisoBoxX + 18;
+    const iconX = avisoBoxX + 22;
     const iconY = avisoBoxY + avisoBoxH / 2;
-    const iconSize = 22;
+    const iconSize = 24;
     
     // Triângulo amarelo
     ctx.fillStyle = '#fbbf24';
@@ -3742,27 +3742,14 @@ window.prestToDataURL = function(rec) {
     
     // Exclamação no triângulo
     ctx.fillStyle = '#7f1d1d';
-    ctx.font = 'bold 18px Arial';
+    ctx.font = 'bold 20px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('!', iconX, iconY + 8);
+    ctx.fillText('!', iconX, iconY + 9);
     
-    // Título "ATENÇÃO"
-    ctx.fillStyle = '#fef2f2'; // Branco rosado
-    ctx.font = 'bold 14px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillText('ATENÇÃO', avisoBoxX + 48, avisoBoxY + 20);
-    
-    // Linha separadora
-    ctx.strokeStyle = '#fca5a5';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(avisoBoxX + 48, avisoBoxY + 26);
-    ctx.lineTo(avisoBoxX + avisoBoxW - 15, avisoBoxY + 26);
-    ctx.stroke();
-    
-    // Texto do aviso
+    // Texto do aviso - MAIOR para WhatsApp
     ctx.fillStyle = '#fef2f2';
-    ctx.font = '11px Arial';
+    ctx.font = '13px Arial';
+    ctx.textAlign = 'left';
     
     const avisoLinhas = [
       'Os adiantamentos só serão pagos mediante prestação em dias.',
@@ -3771,14 +3758,14 @@ window.prestToDataURL = function(rec) {
     ];
     
     avisoLinhas.forEach((linha, i) => {
-      ctx.fillText(linha, avisoBoxX + 48, avisoBoxY + 42 + (i * 14));
+      ctx.fillText(linha, avisoBoxX + 52, avisoBoxY + 24 + (i * 18));
     });
     
     // Assinatura
-    ctx.font = 'bold 11px Arial';
+    ctx.font = 'bold 12px Arial';
     ctx.fillStyle = '#fcd34d'; // Amarelo dourado
     ctx.textAlign = 'right';
-    ctx.fillText('— Diretoria', avisoBoxX + avisoBoxW - 15, avisoBoxY + avisoBoxH - 10);
+    ctx.fillText('— Diretoria', avisoBoxX + avisoBoxW - 12, avisoBoxY + avisoBoxH - 8);
     
     ctx.restore();
 

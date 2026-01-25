@@ -473,6 +473,7 @@ function pcRender(){
   const rows = (prestacaoAtual.despesas||[]);
   tbody.innerHTML = rows.map(d => {
     const area = getAreaByFicha(d.ficha);
+    const isFixa = d._despesaFixaId ? '📌' : '';
     return `
       <tr>
         <td>
@@ -483,7 +484,10 @@ function pcRender(){
         </td>
         <td><input data-id="${d.id}" data-field="info"  value="${d.info||''}"></td>
         <td><input data-id="${d.id}" data-field="valor" type="number" step="0.01" value="${Number(d.valor||0)}"></td>
-        <td><button class="btn danger" data-del-id="${d.id}">Excluir</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn danger" data-del-id="${d.id}" title="Excluir">✕</button>
+          <button class="btn" data-fixar-id="${d.id}" title="Fixar como despesa semanal">${isFixa || '📌'}</button>
+        </td>
       </tr>
     `;
   }).join('') || '<tr><td colspan="4">Nenhuma despesa.</td></tr>';
@@ -983,6 +987,178 @@ async function salvarDespesaNoSupabase(despesa) {
   pcSchedule({ render:true });
 });
 })();
+
+// ===== DESPESAS FIXAS (Recorrentes Semanais) =====
+const DB_DESPESAS_FIXAS = 'despesas_fixas';
+
+// Obtém despesas fixas do localStorage
+function getDespesasFixas() {
+  return JSON.parse(localStorage.getItem(DB_DESPESAS_FIXAS) || '[]');
+}
+
+// Salva despesas fixas no localStorage
+function setDespesasFixas(arr) {
+  localStorage.setItem(DB_DESPESAS_FIXAS, JSON.stringify(arr));
+}
+
+// Adiciona uma despesa como fixa para um gerente
+function adicionarDespesaFixa(gerenteId, despesa) {
+  const fixas = getDespesasFixas();
+  const empresa = window.getCompany ? window.getCompany() : 'BSX';
+  
+  // Verifica se já existe uma despesa fixa igual
+  const existe = fixas.some(f => 
+    f.gerenteId === gerenteId && 
+    f.empresa === empresa &&
+    f.ficha === despesa.ficha && 
+    f.info === despesa.info
+  );
+  
+  if (existe) {
+    alert('Esta despesa já está fixada para este gerente.');
+    return false;
+  }
+  
+  fixas.push({
+    id: 'df_' + Math.random().toString(36).slice(2, 10),
+    gerenteId,
+    empresa,
+    ficha: despesa.ficha || '',
+    info: despesa.info || '',
+    valor: Number(despesa.valor) || 0,
+    createdAt: new Date().toISOString()
+  });
+  
+  setDespesasFixas(fixas);
+  alert('✅ Despesa fixada! Ela aparecerá automaticamente nas próximas prestações deste gerente.');
+  return true;
+}
+
+// Remove uma despesa fixa
+function removerDespesaFixa(id) {
+  const fixas = getDespesasFixas();
+  const novas = fixas.filter(f => f.id !== id);
+  setDespesasFixas(novas);
+}
+
+// Carrega despesas fixas do gerente para a prestação atual
+function carregarDespesasFixas(gerenteId) {
+  const fixas = getDespesasFixas();
+  const empresa = window.getCompany ? window.getCompany() : 'BSX';
+  
+  const doGerente = fixas.filter(f => 
+    f.gerenteId === gerenteId && 
+    f.empresa === empresa
+  );
+  
+  if (!doGerente.length) return;
+  
+  // Adiciona cada despesa fixa que ainda não existe na prestação
+  doGerente.forEach(df => {
+    // Verifica se já existe uma despesa com mesma ficha e info
+    const existe = (prestacaoAtual.despesas || []).some(d =>
+      d.ficha === df.ficha && d.info === df.info
+    );
+    
+    if (!existe) {
+      const id = (typeof uid === 'function' ? uid() : __uidFallback());
+      prestacaoAtual.despesas = prestacaoAtual.despesas || [];
+      prestacaoAtual.despesas.push({
+        id,
+        ficha: df.ficha,
+        info: df.info,
+        valor: df.valor,
+        _despesaFixaId: df.id // Marca como vindo de despesa fixa
+      });
+    }
+  });
+  
+  pcRender();
+  pcSchedule({ render: true });
+}
+
+// ✅ Carregar despesas fixas quando mudar o gerente
+document.getElementById('pcGerente')?.addEventListener('change', function() {
+  const gid = this.value;
+  if (gid) {
+    // Só carrega se a prestação estiver "limpa" (nova)
+    const despesasAtuais = (prestacaoAtual.despesas || []).length;
+    if (despesasAtuais === 0) {
+      carregarDespesasFixas(gid);
+    }
+  }
+});
+
+// Evento para fixar despesa (delegação de eventos)
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-fixar-id]');
+  if (!btn) return;
+  
+  const despId = btn.getAttribute('data-fixar-id');
+  const gerenteId = document.getElementById('pcGerente')?.value;
+  
+  if (!gerenteId) {
+    alert('Selecione um gerente primeiro.');
+    return;
+  }
+  
+  const despesa = (prestacaoAtual.despesas || []).find(d => d.id === despId);
+  if (!despesa) {
+    alert('Despesa não encontrada.');
+    return;
+  }
+  
+  if (!despesa.ficha && !despesa.info) {
+    alert('Preencha pelo menos a ficha ou a informação da despesa antes de fixar.');
+    return;
+  }
+  
+  adicionarDespesaFixa(gerenteId, despesa);
+});
+
+// Menu para gerenciar despesas fixas
+function abrirGerenciadorDespesasFixas() {
+  const fixas = getDespesasFixas();
+  const empresa = window.getCompany ? window.getCompany() : 'BSX';
+  const empresaFixas = fixas.filter(f => f.empresa === empresa);
+  
+  if (!empresaFixas.length) {
+    alert('Nenhuma despesa fixa cadastrada para ' + empresa + '.\n\nPara fixar uma despesa, adicione-a em uma prestação e clique no botão 📌.');
+    return;
+  }
+  
+  // Agrupa por gerente
+  const porGerente = {};
+  empresaFixas.forEach(f => {
+    const g = (window.gerentes || []).find(x => x.uid === f.gerenteId);
+    const nome = g ? g.nome : 'Gerente desconhecido';
+    if (!porGerente[f.gerenteId]) {
+      porGerente[f.gerenteId] = { nome, despesas: [] };
+    }
+    porGerente[f.gerenteId].despesas.push(f);
+  });
+  
+  let msg = '📌 DESPESAS FIXAS CADASTRADAS (' + empresa + ')\n\n';
+  
+  Object.values(porGerente).forEach(grupo => {
+    msg += '👤 ' + grupo.nome + ':\n';
+    grupo.despesas.forEach((d, i) => {
+      msg += `   ${i+1}. ${d.ficha || '---'} - ${d.info || '(sem descrição)'} - R$ ${(d.valor || 0).toFixed(2)}\n`;
+    });
+    msg += '\n';
+  });
+  
+  msg += 'Para remover uma despesa fixa, use o console:\nremoverDespesaFixa("ID_DA_DESPESA")';
+  
+  alert(msg);
+}
+
+// Expõe funções globalmente
+window.getDespesasFixas = getDespesasFixas;
+window.adicionarDespesaFixa = adicionarDespesaFixa;
+window.removerDespesaFixa = removerDespesaFixa;
+window.carregarDespesasFixas = carregarDespesasFixas;
+window.abrirGerenciadorDespesasFixas = abrirGerenciadorDespesasFixas;
 
 // Campos que recalculam (debounce)
 let __pcDebouncedTimer = null;
@@ -3448,7 +3624,7 @@ window.prestToDataURL = function(rec) {
     const qtdDespesas = (rec.despesas || []).length;
     const rowHeight = 28;
     const headerHeight = 100;
-    const footerHeight = 60;
+    const footerHeight = 120; // Aumentado para acomodar aviso da diretoria
     const minTableHeight = 700;
     
     // ✅ CALCULA ALTURA NECESSÁRIA PARA COLUNA DIREITA
@@ -3943,6 +4119,27 @@ window.prestToDataURL = function(rec) {
       ctx.textAlign = 'center';
       ctx.fillText(restamTexto, rightX + rightW/2, ry + 16);
     }
+
+    // ✅ AVISO DA DIRETORIA (canto inferior direito)
+    const avisoTexto = [
+      'Lembrete: Os adiantamentos só serão enviados',
+      'mediante prestação em dias. Caso esteja com',
+      'valores em aberto, será descontado e enviado',
+      'somente a diferença, caso necessário.',
+      'Att, Diretoria.'
+    ];
+    
+    ctx.font = 'italic 11px Arial';
+    ctx.fillStyle = '#b45309'; // Cor âmbar/laranja (aviso)
+    ctx.textAlign = 'right';
+    
+    // Posiciona o aviso no canto inferior direito
+    const avisoY = cvs.height - 80;
+    const avisoX = rightX + rightW - 10;
+    
+    avisoTexto.forEach((linha, i) => {
+      ctx.fillText(linha, avisoX, avisoY + (i * 14));
+    });
 
     ctx.restore();
 

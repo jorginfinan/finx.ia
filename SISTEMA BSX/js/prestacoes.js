@@ -3693,10 +3693,10 @@ window.prestToDataURL = function(rec) {
     ctx.save();
     
     // Dimensões e posição da caixa de aviso
-    const avisoBoxW = 480;
-    const avisoBoxH = 85;
+    const avisoBoxW = 500;
+    const avisoBoxH = 88;
     const avisoBoxX = cvs.width - avisoBoxW - 15;
-    const avisoBoxY = 6;
+    const avisoBoxY = 5;
     const borderRadius = 8;
     
     // Fundo da caixa com gradiente simulado (cor sólida escura)
@@ -3721,10 +3721,10 @@ window.prestToDataURL = function(rec) {
     ctx.lineWidth = 2;
     ctx.stroke();
     
-    // Ícone de alerta (triângulo com !)
-    const iconX = avisoBoxX + 22;
+    // Ícone de alerta (triângulo com !) - MAIS PARA DENTRO
+    const iconX = avisoBoxX + 35;
     const iconY = avisoBoxY + avisoBoxH / 2;
-    const iconSize = 24;
+    const iconSize = 26;
     
     // Triângulo amarelo
     ctx.fillStyle = '#fbbf24';
@@ -3742,13 +3742,13 @@ window.prestToDataURL = function(rec) {
     
     // Exclamação no triângulo
     ctx.fillStyle = '#7f1d1d';
-    ctx.font = 'bold 20px Arial';
+    ctx.font = 'bold 22px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('!', iconX, iconY + 9);
+    ctx.fillText('!', iconX, iconY + 10);
     
     // Texto do aviso - MAIOR para WhatsApp
     ctx.fillStyle = '#fef2f2';
-    ctx.font = '13px Arial';
+    ctx.font = '14px Arial';
     ctx.textAlign = 'left';
     
     const avisoLinhas = [
@@ -3758,11 +3758,11 @@ window.prestToDataURL = function(rec) {
     ];
     
     avisoLinhas.forEach((linha, i) => {
-      ctx.fillText(linha, avisoBoxX + 52, avisoBoxY + 24 + (i * 18));
+      ctx.fillText(linha, avisoBoxX + 68, avisoBoxY + 26 + (i * 19));
     });
     
     // Assinatura
-    ctx.font = 'bold 12px Arial';
+    ctx.font = 'bold 13px Arial';
     ctx.fillStyle = '#fcd34d'; // Amarelo dourado
     ctx.textAlign = 'right';
     ctx.fillText('— Diretoria', avisoBoxX + avisoBoxW - 12, avisoBoxY + avisoBoxH - 8);

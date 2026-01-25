@@ -3689,24 +3689,97 @@ window.prestToDataURL = function(rec) {
       drawText(ctx, periodo, 420, 55, 'left');
     }
     
-    // ✅ AVISO DA DIRETORIA (canto superior direito - área amarela)
-    // Posicionamento: lado direito do header, alinhado à direita
+    // ✅ AVISO DA DIRETORIA - Design Profissional
     ctx.save();
-    ctx.font = 'bold 13px Arial';
-    ctx.fillStyle = '#b91c1c'; // Vermelho escuro para destaque
-    ctx.textAlign = 'right';
+    
+    // Dimensões e posição da caixa de aviso
+    const avisoBoxW = 470;
+    const avisoBoxH = 82;
+    const avisoBoxX = cvs.width - avisoBoxW - 15;
+    const avisoBoxY = 8;
+    const borderRadius = 8;
+    
+    // Fundo da caixa com gradiente simulado (cor sólida escura)
+    ctx.fillStyle = '#7f1d1d'; // Vermelho escuro (bg)
+    
+    // Desenha retângulo com bordas arredondadas
+    ctx.beginPath();
+    ctx.moveTo(avisoBoxX + borderRadius, avisoBoxY);
+    ctx.lineTo(avisoBoxX + avisoBoxW - borderRadius, avisoBoxY);
+    ctx.quadraticCurveTo(avisoBoxX + avisoBoxW, avisoBoxY, avisoBoxX + avisoBoxW, avisoBoxY + borderRadius);
+    ctx.lineTo(avisoBoxX + avisoBoxW, avisoBoxY + avisoBoxH - borderRadius);
+    ctx.quadraticCurveTo(avisoBoxX + avisoBoxW, avisoBoxY + avisoBoxH, avisoBoxX + avisoBoxW - borderRadius, avisoBoxY + avisoBoxH);
+    ctx.lineTo(avisoBoxX + borderRadius, avisoBoxY + avisoBoxH);
+    ctx.quadraticCurveTo(avisoBoxX, avisoBoxY + avisoBoxH, avisoBoxX, avisoBoxY + avisoBoxH - borderRadius);
+    ctx.lineTo(avisoBoxX, avisoBoxY + borderRadius);
+    ctx.quadraticCurveTo(avisoBoxX, avisoBoxY, avisoBoxX + borderRadius, avisoBoxY);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Borda da caixa
+    ctx.strokeStyle = '#fca5a5'; // Vermelho claro para borda
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Ícone de alerta (triângulo com !)
+    const iconX = avisoBoxX + 18;
+    const iconY = avisoBoxY + avisoBoxH / 2;
+    const iconSize = 22;
+    
+    // Triângulo amarelo
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.moveTo(iconX, iconY - iconSize/2);
+    ctx.lineTo(iconX + iconSize, iconY + iconSize/2);
+    ctx.lineTo(iconX - iconSize, iconY + iconSize/2);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Borda do triângulo
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Exclamação no triângulo
+    ctx.fillStyle = '#7f1d1d';
+    ctx.font = 'bold 18px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('!', iconX, iconY + 8);
+    
+    // Título "ATENÇÃO"
+    ctx.fillStyle = '#fef2f2'; // Branco rosado
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('ATENÇÃO', avisoBoxX + 48, avisoBoxY + 20);
+    
+    // Linha separadora
+    ctx.strokeStyle = '#fca5a5';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(avisoBoxX + 48, avisoBoxY + 26);
+    ctx.lineTo(avisoBoxX + avisoBoxW - 15, avisoBoxY + 26);
+    ctx.stroke();
+    
+    // Texto do aviso
+    ctx.fillStyle = '#fef2f2';
+    ctx.font = '11px Arial';
     
     const avisoLinhas = [
-      'Lembrete: Os adiantamentos só serão pagos mediante',
-      'prestação em dias. Caso esteja com valores em aberto, será',
-      'descontado e enviado somente a diferença.',
-      'Att, Diretoria!'
+      'Os adiantamentos só serão pagos mediante prestação em dias.',
+      'Caso esteja com valores em aberto, será descontado e enviado',
+      'somente a diferença, caso necessário.'
     ];
     
-    const avisoRightMargin = cvs.width - 20;
     avisoLinhas.forEach((linha, i) => {
-      ctx.fillText(linha, avisoRightMargin, 22 + (i * 18));
+      ctx.fillText(linha, avisoBoxX + 48, avisoBoxY + 42 + (i * 14));
     });
+    
+    // Assinatura
+    ctx.font = 'bold 11px Arial';
+    ctx.fillStyle = '#fcd34d'; // Amarelo dourado
+    ctx.textAlign = 'right';
+    ctx.fillText('— Diretoria', avisoBoxX + avisoBoxW - 15, avisoBoxY + avisoBoxH - 10);
+    
     ctx.restore();
 
     // Layout: esquerda (despesas) / direita (resumo)

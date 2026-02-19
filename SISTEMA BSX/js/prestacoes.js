@@ -984,6 +984,191 @@ async function salvarDespesaNoSupabase(despesa) {
 });
 })();
 
+// ===== IMPORTAR DESPESAS DO EXCEL =====
+(function() {
+  // Cria o input file oculto se não existir
+  let inputFile = document.getElementById('inputImportDespesas');
+  if (!inputFile) {
+    inputFile = document.createElement('input');
+    inputFile.type = 'file';
+    inputFile.id = 'inputImportDespesas';
+    inputFile.accept = '.xlsx,.xls,.csv';
+    inputFile.style.display = 'none';
+    document.body.appendChild(inputFile);
+  }
+  
+  // Cria o botão de importar se não existir
+  const btnAdd = document.getElementById('btnPcAddDespesa');
+  if (btnAdd && !document.getElementById('btnPcImportDespesa')) {
+    const btnImport = document.createElement('button');
+    btnImport.type = 'button';
+    btnImport.id = 'btnPcImportDespesa';
+    btnImport.className = 'btn ghost';
+    btnImport.innerHTML = '📥 Importar Excel';
+    btnImport.title = 'Importar despesas de arquivo Excel (colunas: Ficha, Info, Valor)';
+    btnImport.style.marginLeft = '8px';
+    
+    // Insere o botão após o botão de adicionar
+    btnAdd.parentNode.insertBefore(btnImport, btnAdd.nextSibling);
+    
+    // Evento de clique no botão
+    btnImport.addEventListener('click', function(e) {
+      e.preventDefault();
+      inputFile.click();
+    });
+  }
+  
+  // Processa o arquivo selecionado
+  inputFile.addEventListener('change', async function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    try {
+      const despesasImportadas = await processarExcelDespesas(file);
+      
+      if (despesasImportadas.length === 0) {
+        window.showNotification('Nenhuma despesa encontrada no arquivo', 'error');
+        return;
+      }
+      
+      // Confirma a importação
+      const confirma = confirm(
+        `Foram encontradas ${despesasImportadas.length} despesas.\n\n` +
+        `Deseja importar?\n\n` +
+        `Primeiras 3:\n` +
+        despesasImportadas.slice(0, 3).map(d => 
+          `• ${d.ficha || '-'} | ${d.info || '-'} | R$ ${Number(d.valor || 0).toFixed(2)}`
+        ).join('\n')
+      );
+      
+      if (!confirma) {
+        inputFile.value = '';
+        return;
+      }
+      
+      // Adiciona cada despesa
+      for (const desp of despesasImportadas) {
+        await pcAddDespesa({
+          ficha: String(desp.ficha || '').trim(),
+          info: String(desp.info || '').trim(),
+          valor: Number(desp.valor) || 0
+        });
+      }
+      
+      pcRender();
+      pcSchedule({ render: true });
+      
+      window.showNotification(`✅ ${despesasImportadas.length} despesas importadas!`, 'success');
+      
+    } catch (error) {
+      console.error('[ImportDespesas] Erro:', error);
+      window.showNotification('Erro ao importar: ' + error.message, 'error');
+    }
+    
+    // Limpa o input para permitir reimportar o mesmo arquivo
+    inputFile.value = '';
+  });
+})();
+
+// Função para processar o arquivo Excel/CSV
+async function processarExcelDespesas(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        // Pega a primeira planilha
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        
+        // Converte para JSON
+        const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+        
+        if (rows.length < 2) {
+          reject(new Error('Arquivo vazio ou sem dados'));
+          return;
+        }
+        
+        // Detecta os índices das colunas baseado no header
+        const header = rows[0].map(h => String(h || '').toLowerCase().trim());
+        
+        // Mapeia possíveis nomes de colunas
+        const fichaIdx = header.findIndex(h => 
+          h.includes('ficha') || h === 'cod' || h === 'código' || h === 'codigo'
+        );
+        const infoIdx = header.findIndex(h => 
+          h.includes('info') || h.includes('desc') || h.includes('obs') || 
+          h === 'informação' || h === 'informacao' || h === 'descrição' || h === 'descricao'
+        );
+        const valorIdx = header.findIndex(h => 
+          h.includes('valor') || h.includes('total') || h === 'r$' || h === 'preço' || h === 'preco'
+        );
+        
+        console.log('[ImportDespesas] Colunas detectadas:', { 
+          header, 
+          fichaIdx, 
+          infoIdx, 
+          valorIdx 
+        });
+        
+        // Se não encontrou colunas pelo header, assume ordem padrão: Ficha, Info, Valor
+        const useFichaIdx = fichaIdx >= 0 ? fichaIdx : 0;
+        const useInfoIdx = infoIdx >= 0 ? infoIdx : 1;
+        const useValorIdx = valorIdx >= 0 ? valorIdx : 2;
+        
+        // Processa as linhas de dados (ignora header)
+        const despesas = [];
+        
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row || row.length === 0) continue;
+          
+          // Extrai os valores
+          let ficha = row[useFichaIdx];
+          let info = row[useInfoIdx];
+          let valor = row[useValorIdx];
+          
+          // Limpa e converte os valores
+          ficha = String(ficha || '').trim();
+          info = String(info || '').trim();
+          
+          // Converte valor para número
+          if (typeof valor === 'string') {
+            // Remove R$, pontos de milhar e converte vírgula para ponto
+            valor = valor.replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.');
+          }
+          valor = parseFloat(valor) || 0;
+          
+          // Só adiciona se tiver pelo menos info ou valor
+          if (info || valor > 0) {
+            despesas.push({ ficha, info, valor });
+          }
+        }
+        
+        console.log('[ImportDespesas] Despesas processadas:', despesas.length);
+        resolve(despesas);
+        
+      } catch (error) {
+        console.error('[ImportDespesas] Erro ao processar:', error);
+        reject(error);
+      }
+    };
+    
+    reader.onerror = function() {
+      reject(new Error('Erro ao ler o arquivo'));
+    };
+    
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// Expõe função globalmente para debug
+window.importarDespesasExcel = function() {
+  document.getElementById('inputImportDespesas')?.click();
+};
+
 // ===== DESPESAS FIXAS (Recorrentes Semanais) =====
 const DB_DESPESAS_FIXAS = 'despesas_fixas';
 

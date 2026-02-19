@@ -332,6 +332,8 @@
   // INICIALIZAÇÃO
   // ============================================
   function init(){
+    console.log('[Gerentes] 🚀 Iniciando módulo...');
+    
     const form = document.getElementById('formGerente');
     if (form && !form.__wired_gerentes){
       form.__wired_gerentes = true;
@@ -346,14 +348,94 @@
       console.log('[Gerentes] ✅ Click registrado');
     }
 
-    document.addEventListener('empresa:change', render);
-
-    // ✅ Aguarda SupabaseAPI estar pronto antes de renderizar
-    waitForSupabaseAndRender();
+    document.addEventListener('empresa:change', function() {
+      console.log('[Gerentes] 🔄 Empresa mudou, re-renderizando...');
+      render();
+    });
+    
+    // ✅ Escuta evento do gerente-loader.js
+    document.addEventListener('gerentes:loaded', function(e) {
+      console.log('[Gerentes] 📡 Evento gerentes:loaded recebido!');
+      if (isGerentesPageVisible()) {
+        render();
+      }
+    });
+    
+    // ✅ CRÍTICO: Usa MutationObserver para detectar quando a tabela aparecer
+    setupMutationObserver();
+    
+    // ✅ Tenta renderizar agora se já estiver na página
+    if (isGerentesPageVisible()) {
+      console.log('[Gerentes] 📍 Página de gerentes já visível!');
+      waitForSupabaseAndRender();
+    } else {
+      console.log('[Gerentes] ⏳ Página de gerentes não visível, aguardando navegação...');
+    }
   }
   
-  // ✅ NOVO: Aguarda Supabase estar disponível
-  function waitForSupabaseAndRender(retries = 50) {
+  // ✅ Verifica se a página de gerentes está visível
+  function isGerentesPageVisible() {
+    const tb = document.getElementById('tbodyGerentes');
+    if (!tb) return false;
+    
+    // Verifica se a tabela está visível (não está em display:none)
+    const section = tb.closest('section, .page, [data-page]');
+    if (section) {
+      const style = window.getComputedStyle(section);
+      return style.display !== 'none' && style.visibility !== 'hidden';
+    }
+    
+    return true;
+  }
+  
+  // ✅ MutationObserver para detectar quando a página de gerentes aparecer
+  function setupMutationObserver() {
+    if (window.__gerentesMutationObserver) return;
+    
+    const observer = new MutationObserver(function(mutations) {
+      const tb = document.getElementById('tbodyGerentes');
+      if (tb && isGerentesPageVisible()) {
+        console.log('[Gerentes] 👁️ Tabela de gerentes detectada via MutationObserver!');
+        
+        // Registra click handler se ainda não foi
+        if (!tb.__wired_gerentes) {
+          tb.__wired_gerentes = true;
+          tb.addEventListener('click', onTableClick, true);
+          console.log('[Gerentes] ✅ Click registrado (via observer)');
+        }
+        
+        // Renderiza
+        waitForSupabaseAndRender();
+      }
+    });
+    
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['style', 'class']
+    });
+    
+    window.__gerentesMutationObserver = observer;
+    console.log('[Gerentes] 👁️ MutationObserver configurado');
+  }
+  
+  // ✅ Aguarda Supabase estar disponível
+  function waitForSupabaseAndRender(retries = 30) {
+    // Verifica se a tabela existe
+    const tb = document.getElementById('tbodyGerentes');
+    if (!tb) {
+      console.log('[Gerentes] ⏳ Tabela #tbodyGerentes não encontrada');
+      return;
+    }
+    
+    // Tenta usar window.gerentes primeiro (carregado pelo loader)
+    if (window.gerentes?.length > 0) {
+      console.log('[Gerentes] ✅ Usando window.gerentes:', window.gerentes.length, 'gerentes');
+      renderFromArray(window.gerentes);
+      return;
+    }
+    
     if (window.SupabaseAPI?.gerentes) {
       console.log('[Gerentes] ✅ SupabaseAPI disponível, renderizando...');
       render();
@@ -361,13 +443,56 @@
     }
     
     if (retries <= 0) {
-      console.error('[Gerentes] ❌ SupabaseAPI não ficou pronto após timeout');
+      console.error('[Gerentes] ❌ Timeout aguardando dados');
       return;
     }
     
-    console.log('[Gerentes] ⏳ Aguardando SupabaseAPI... (' + retries + ')');
     setTimeout(function() { waitForSupabaseAndRender(retries - 1); }, 100);
   }
+  
+  // ✅ Renderiza a partir de um array (usado com window.gerentes)
+  function renderFromArray(arr) {
+    if (!Array.isArray(arr)) return;
+    
+    console.log('[Gerentes] 🔄 Renderizando', arr.length, 'gerentes do array...');
+    
+    arr.sort(function(a,b) {
+      return String(a.nome||'').localeCompare(String(b.nome||''));
+    });
+  
+    const tb = document.getElementById('tbodyGerentes');
+    if (tb){
+      tb.innerHTML = arr.length ? arr.map(function(g) {
+        const com = (Number(g.comissao)||0).toFixed(0);
+        const com2 = g.tem_segunda_comissao ? (' + ' + (Number(g.comissao2)||0).toFixed(0) + '%') : '';
+        return '<tr data-context="gerentes" data-uid="' + g.uid + '">' +
+          '<td>' + esc(g.nome) + '</td>' +
+          '<td>' + esc(g.numero||'') + '</td>' +
+          '<td>' + esc(g.endereco||'') + '</td>' +
+          '<td>' + esc(g.telefone||'') + '</td>' +
+          '<td>' + esc(g.email||'') + '</td>' +
+          '<td>' + com + '%' + com2 + '</td>' +
+          '<td>' + esc(g.obs||'') + '</td>' +
+          '<td class="tv-right">' +
+            '<button type="button" class="btn btn-gerente-edit" data-edit-gerente="' + g.uid + '">EDITAR</button> ' +
+            '<button type="button" class="btn danger btn-gerente-del" data-del-gerente="' + g.uid + '">EXCLUIR</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('') : '<tr><td colspan="8">Nenhum gerente cadastrado.</td></tr>';
+      
+      console.log('[Gerentes] ✅ Tabela atualizada com', arr.length, 'registros');
+    }
+    
+    const dl = document.getElementById('listGerentes');
+    if (dl){
+      dl.innerHTML = arr.map(function(g) { 
+        return '<option value="' + esc(g.nome) + '"></option>'; 
+      }).join('');
+    }
+  }
+  
+  // ✅ Expõe render globalmente para debug
+  window.renderGerentes = render;
 
   const btnLimpar = document.getElementById('btnLimparGerente');
   if (btnLimpar && !btnLimpar.__wired) {

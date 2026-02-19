@@ -13,30 +13,33 @@
   let __saving = false;
   let __savingTimeout = null;
   let __submitting = false;
+  let __lastRenderTime = 0;
 
   const uidFn = (typeof window.uid === 'function')
     ? window.uid
     : function() { return 'g_'+Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); };
 
   // ============================================
-  // LEITURA - Apenas Supabase
+  // LEITURA - Usa window.gerentes (já carregado pelo supabase-init.js)
   // ============================================
   async function read() {
     try {
-      if (!window.SupabaseAPI?.gerentes) {
-        console.warn('[Gerentes] ⚠️ SupabaseAPI não disponível ainda');
-        return [];
+      // Primeiro tenta usar window.gerentes (carregado pelo loader)
+      if (window.gerentes?.length > 0) {
+        console.log('[Gerentes] ✅ Usando window.gerentes:', window.gerentes.length);
+        return window.gerentes;
       }
       
-      console.log('[Gerentes] 🔄 Buscando gerentes do Supabase...');
-      const arr = await window.SupabaseAPI.gerentes.getAll();
-      console.log('[Gerentes] ✅ Carregados:', arr?.length || 0, 'gerentes');
-      
-      if (arr?.length > 0) {
-        console.log('[Gerentes] Primeiro:', arr[0]?.nome, '| Último:', arr[arr.length-1]?.nome);
+      // Fallback para API
+      if (window.SupabaseAPI?.gerentes) {
+        console.log('[Gerentes] 🔄 Buscando do Supabase...');
+        const arr = await window.SupabaseAPI.gerentes.getAll();
+        console.log('[Gerentes] ✅ Carregados:', arr?.length || 0);
+        return Array.isArray(arr) ? arr : [];
       }
       
-      return Array.isArray(arr) ? arr : [];
+      console.warn('[Gerentes] ⚠️ Nenhuma fonte de dados disponível');
+      return [];
     } catch (error) {
       console.error('[Gerentes] ❌ Erro ao carregar:', error);
       return [];
@@ -144,7 +147,14 @@
   // RENDER
   // ============================================
   async function render() {
-    console.log('[Gerentes] 🔄 Iniciando render...');
+    // Evita render duplicado muito rápido
+    const now = Date.now();
+    if (now - __lastRenderTime < 500) {
+      return;
+    }
+    __lastRenderTime = now;
+    
+    console.log('[Gerentes] 🔄 Renderizando...');
     let arr = [];
   
     try {
@@ -332,8 +342,6 @@
   // INICIALIZAÇÃO
   // ============================================
   function init(){
-    console.log('[Gerentes] 🚀 Iniciando módulo...');
-    
     const form = document.getElementById('formGerente');
     if (form && !form.__wired_gerentes){
       form.__wired_gerentes = true;
@@ -348,150 +356,49 @@
       console.log('[Gerentes] ✅ Click registrado');
     }
 
-    document.addEventListener('empresa:change', function() {
-      console.log('[Gerentes] 🔄 Empresa mudou, re-renderizando...');
-      render();
-    });
+    document.addEventListener('empresa:change', render);
     
     // ✅ Escuta evento do gerente-loader.js
-    document.addEventListener('gerentes:loaded', function(e) {
-      console.log('[Gerentes] 📡 Evento gerentes:loaded recebido!');
-      if (isGerentesPageVisible()) {
+    document.addEventListener('gerentes:loaded', render);
+    
+    // ✅ Intercepta cliques em links para página de gerentes
+    document.addEventListener('click', function(e) {
+      const link = e.target.closest('a[href="#gerentes"], [onclick*="gerentes"], [data-page="gerentes"]');
+      if (link) {
+        setTimeout(render, 150);
+      }
+    });
+
+    // ✅ Verificação periódica (a cada 2 segundos) - para quando navegar via showPage
+    setInterval(function() {
+      const tb = document.getElementById('tbodyGerentes');
+      // Se tabela existe, está visível, e tem poucos registros
+      if (tb && tb.offsetParent !== null) {
+        const rows = tb.querySelectorAll('tr[data-uid]').length;
+        const temDados = window.gerentes?.length > 0;
+        
+        // Se tem dados mas tabela vazia ou desatualizada
+        if (temDados && rows === 0) {
+          const now = Date.now();
+          // Evita re-render muito frequente
+          if (now - __lastRenderTime > 1000) {
+            console.log('[Gerentes] 🔄 Auto-render: tabela vazia mas tem dados');
+            __lastRenderTime = now;
+            render();
+          }
+        }
+      }
+    }, 2000);
+
+    // ✅ Renderiza agora se tiver dados
+    setTimeout(function() {
+      if (window.gerentes?.length > 0 || window.SupabaseAPI?.gerentes) {
         render();
       }
-    });
-    
-    // ✅ CRÍTICO: Usa MutationObserver para detectar quando a tabela aparecer
-    setupMutationObserver();
-    
-    // ✅ Tenta renderizar agora se já estiver na página
-    if (isGerentesPageVisible()) {
-      console.log('[Gerentes] 📍 Página de gerentes já visível!');
-      waitForSupabaseAndRender();
-    } else {
-      console.log('[Gerentes] ⏳ Página de gerentes não visível, aguardando navegação...');
-    }
+    }, 500);
   }
   
-  // ✅ Verifica se a página de gerentes está visível
-  function isGerentesPageVisible() {
-    const tb = document.getElementById('tbodyGerentes');
-    if (!tb) return false;
-    
-    // Verifica se a tabela está visível (não está em display:none)
-    const section = tb.closest('section, .page, [data-page]');
-    if (section) {
-      const style = window.getComputedStyle(section);
-      return style.display !== 'none' && style.visibility !== 'hidden';
-    }
-    
-    return true;
-  }
-  
-  // ✅ MutationObserver para detectar quando a página de gerentes aparecer
-  function setupMutationObserver() {
-    if (window.__gerentesMutationObserver) return;
-    
-    const observer = new MutationObserver(function(mutations) {
-      const tb = document.getElementById('tbodyGerentes');
-      if (tb && isGerentesPageVisible()) {
-        console.log('[Gerentes] 👁️ Tabela de gerentes detectada via MutationObserver!');
-        
-        // Registra click handler se ainda não foi
-        if (!tb.__wired_gerentes) {
-          tb.__wired_gerentes = true;
-          tb.addEventListener('click', onTableClick, true);
-          console.log('[Gerentes] ✅ Click registrado (via observer)');
-        }
-        
-        // Renderiza
-        waitForSupabaseAndRender();
-      }
-    });
-    
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['style', 'class']
-    });
-    
-    window.__gerentesMutationObserver = observer;
-    console.log('[Gerentes] 👁️ MutationObserver configurado');
-  }
-  
-  // ✅ Aguarda Supabase estar disponível
-  function waitForSupabaseAndRender(retries = 30) {
-    // Verifica se a tabela existe
-    const tb = document.getElementById('tbodyGerentes');
-    if (!tb) {
-      console.log('[Gerentes] ⏳ Tabela #tbodyGerentes não encontrada');
-      return;
-    }
-    
-    // Tenta usar window.gerentes primeiro (carregado pelo loader)
-    if (window.gerentes?.length > 0) {
-      console.log('[Gerentes] ✅ Usando window.gerentes:', window.gerentes.length, 'gerentes');
-      renderFromArray(window.gerentes);
-      return;
-    }
-    
-    if (window.SupabaseAPI?.gerentes) {
-      console.log('[Gerentes] ✅ SupabaseAPI disponível, renderizando...');
-      render();
-      return;
-    }
-    
-    if (retries <= 0) {
-      console.error('[Gerentes] ❌ Timeout aguardando dados');
-      return;
-    }
-    
-    setTimeout(function() { waitForSupabaseAndRender(retries - 1); }, 100);
-  }
-  
-  // ✅ Renderiza a partir de um array (usado com window.gerentes)
-  function renderFromArray(arr) {
-    if (!Array.isArray(arr)) return;
-    
-    console.log('[Gerentes] 🔄 Renderizando', arr.length, 'gerentes do array...');
-    
-    arr.sort(function(a,b) {
-      return String(a.nome||'').localeCompare(String(b.nome||''));
-    });
-  
-    const tb = document.getElementById('tbodyGerentes');
-    if (tb){
-      tb.innerHTML = arr.length ? arr.map(function(g) {
-        const com = (Number(g.comissao)||0).toFixed(0);
-        const com2 = g.tem_segunda_comissao ? (' + ' + (Number(g.comissao2)||0).toFixed(0) + '%') : '';
-        return '<tr data-context="gerentes" data-uid="' + g.uid + '">' +
-          '<td>' + esc(g.nome) + '</td>' +
-          '<td>' + esc(g.numero||'') + '</td>' +
-          '<td>' + esc(g.endereco||'') + '</td>' +
-          '<td>' + esc(g.telefone||'') + '</td>' +
-          '<td>' + esc(g.email||'') + '</td>' +
-          '<td>' + com + '%' + com2 + '</td>' +
-          '<td>' + esc(g.obs||'') + '</td>' +
-          '<td class="tv-right">' +
-            '<button type="button" class="btn btn-gerente-edit" data-edit-gerente="' + g.uid + '">EDITAR</button> ' +
-            '<button type="button" class="btn danger btn-gerente-del" data-del-gerente="' + g.uid + '">EXCLUIR</button>' +
-          '</td>' +
-        '</tr>';
-      }).join('') : '<tr><td colspan="8">Nenhum gerente cadastrado.</td></tr>';
-      
-      console.log('[Gerentes] ✅ Tabela atualizada com', arr.length, 'registros');
-    }
-    
-    const dl = document.getElementById('listGerentes');
-    if (dl){
-      dl.innerHTML = arr.map(function(g) { 
-        return '<option value="' + esc(g.nome) + '"></option>'; 
-      }).join('');
-    }
-  }
-  
-  // ✅ Expõe render globalmente para debug
+  // ✅ Expõe render globalmente para ser chamado pelo nav.js
   window.renderGerentes = render;
 
   const btnLimpar = document.getElementById('btnLimparGerente');

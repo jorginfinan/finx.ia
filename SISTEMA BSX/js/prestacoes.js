@@ -2215,19 +2215,28 @@ const valePg = valesAplicados.reduce((sum, v) => {
       
       valorComissao2 = 0; // Gerente 50% não tem 2ª comissão
       
+      // Calcula quanto foi descontado do saldo
+      const descontoSaldo = saldoAnterior > 0 ? Math.min(saldoAnterior, Math.max(0, resultadoSemComissao)) : 0;
+      
       // ✅ IMPORTANTE: Define saldoInfo para que o salvamento atualize o Supabase
       prestacaoAtual.saldoInfo = {
         saldoCarregarAnterior: saldoAnterior,
         saldoCarregarNovo: novoSaldo,
         usandoSaldoAcumulado: true,
         regraEspecial: 'GERENTE_50_SALDO',
-        baseComissaoCalculada: baseComissao
+        baseComissaoCalculada: baseComissao,
+        resultadoSemComissao: resultadoSemComissao,
+        descontoSaldo: descontoSaldo
       };
       
       prestacaoAtual.resumo = {
         ...(prestacaoAtual.resumo || {}),
         saldoNegAcarreado: novoSaldo,
-        baseComissao: baseComissao
+        saldoAnterior: saldoAnterior,
+        baseComissao: baseComissao,
+        resultadoSemComissao: resultadoSemComissao,
+        descontoSaldo: descontoSaldo,
+        usandoSaldo50: true  // Flag para renderização
       };
       
       console.log('📊 [Gerente50%] Resumo final:', {
@@ -2926,6 +2935,13 @@ else {
   const _resColetas2 = coletas2 - despesas2;
   const showNeg2 = perc2 > 0 && perc2 < 50;  // ✅ CORREÇÃO: definir showNeg2 neste bloco
   
+  // ✅ VERIFICA SE É GERENTE 50% COM SALDO ACUMULADO
+  const usandoSaldo50 = r.usandoSaldo50 === true;
+  const saldoAnterior50 = Number(r.saldoAnterior || 0);
+  const descontoSaldo50 = Number(r.descontoSaldo || 0);
+  const saldoNovo50 = Number(r.saldoNegAcarreado || 0);
+  const baseComissao50 = Number(r.baseComissao || 0);
+  
   ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', fmtBRL(coletas2),
                { bold:true, size:R_BOLD });
   
@@ -2935,8 +2951,44 @@ else {
   ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Total (Coletas - Despesas)', 
                fmtBRL(_resColetas2), { bold:true, size:R_BOLD });
 
+  // ========================================
+  // GERENTE 50% COM SALDO ACUMULADO
+  // ========================================
+  if (usandoSaldo50) {
+    // Saldo Anterior (do banco)
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo Anterior (banco)', fmtBRL(saldoAnterior50), 
+                 { valueColor:'#b91c1c', size:R_LINE });
+    
+    // Desconto do Saldo (se aplicável)
+    if (descontoSaldo50 > 0) {
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Desconto do Saldo', '- ' + fmtBRL(descontoSaldo50), 
+                   { valueColor:'#16a34a', size:R_LINE });
+    }
+    
+    // Base para Comissão
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Base p/ Comissão', fmtBRL(baseComissao50), 
+                 { color:'#16a34a', valueColor:'#16a34a', size:R_LINE });
+    
+    // Comissão 50%
+    if (c1 > 0) {
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+        'Comissão (' + (Number(r.perc)||0) + '%)',
+        fmtBRL(c1),
+        { valueColor:'#16a34a', size: R_LINE }
+      );
+    }
+    
+    // Novo Saldo (no banco)
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Novo Saldo (banco)', fmtBRL(saldoNovo50), 
+                 { valueColor:'#b91c1c', bold: true, size:R_LINE });
+    
+    // Resultado = (Coletas - Despesas) - Comissão
+    const resultadoFinal = _resColetas2 - c1;
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', fmtBRL(resultadoFinal),
+                 { bold:true, size:R_BOLD });
+  }
   // Se tem modo antigo (com carry de negativo)
-  if (showNeg2) {
+  else if (showNeg2) {
     const baseComissao2 = Number(r.baseComissao || r.comissaoBase || 0);
     const saldoCarry2   = Number(r.saldoNegAcarreado || 0);
 
@@ -2944,21 +2996,37 @@ else {
                  { color:'#16a34a', valueColor:'#16a34a', size:R_LINE });
     ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo a Carregar', fmtBRL(saldoCarry2), 
                  { valueColor:'#b91c1c', size:R_LINE });
-  }
 
-  // Se tem comissão (mesmo sem ser 2ª)
-  if (c1 > 0) {
-    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
-      'Comissão 1 (' + (Number(r.perc)||0) + '%)',
-      fmtBRL(c1),
-      { valueColor:'#16a34a', size: R_LINE }
-    );
-  }
+    // Se tem comissão (mesmo sem ser 2ª)
+    if (c1 > 0) {
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+        'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+        fmtBRL(c1),
+        { valueColor:'#16a34a', size: R_LINE }
+      );
+    }
 
-  // Resultado = (Coletas - Despesas) - Comissão (SEM deve anterior)
-  const resultadoFinal = _resColetas2 - c1;
-  ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', fmtBRL(resultadoFinal),
-               { bold:true, size:R_BOLD });
+    // Resultado = (Coletas - Despesas) - Comissão (SEM deve anterior)
+    const resultadoFinal = _resColetas2 - c1;
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', fmtBRL(resultadoFinal),
+                 { bold:true, size:R_BOLD });
+  }
+  else {
+    // Modelo padrão sem saldo acumulado
+    // Se tem comissão (mesmo sem ser 2ª)
+    if (c1 > 0) {
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+        'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+        fmtBRL(c1),
+        { valueColor:'#16a34a', size: R_LINE }
+      );
+    }
+
+    // Resultado = (Coletas - Despesas) - Comissão (SEM deve anterior)
+    const resultadoFinal = _resColetas2 - c1;
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', fmtBRL(resultadoFinal),
+                 { bold:true, size:R_BOLD });
+  }
 }
 
 // ---- ACRÉSCIMOS ---- (PARA TODOS OS MODELOS)
@@ -4119,6 +4187,13 @@ window.prestToDataURL = function(rec) {
     else if (typeof drawKV2 === 'function') {
       // Modelo padrão ou por rota positiva
       
+      // ✅ VERIFICA SE É GERENTE 50% COM SALDO ACUMULADO
+      const usandoSaldo50 = r.usandoSaldo50 === true;
+      const saldoAnterior50 = Number(r.saldoAnterior || 0);
+      const descontoSaldo50 = Number(r.descontoSaldo || 0);
+      const saldoNovo50 = Number(r.saldoNegAcarreado || 0);
+      const baseComissao50 = Number(r.baseComissao || 0);
+      
       ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', 
                    window.fmtBRL ? window.fmtBRL(coletas2) : String(coletas2), 
                    { bold:true, size:R_BOLD });
@@ -4131,8 +4206,49 @@ window.prestToDataURL = function(rec) {
                    window.fmtBRL ? window.fmtBRL(_resColetas2) : String(_resColetas2), 
                    { bold:true, size:R_BOLD });
 
+      // ========================================
+      // GERENTE 50% COM SALDO ACUMULADO
+      // ========================================
+      if (usandoSaldo50) {
+        // Saldo Anterior (do banco)
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo Anterior (banco)', 
+                     window.fmtBRL ? window.fmtBRL(saldoAnterior50) : String(saldoAnterior50), 
+                     { valueColor:'#b91c1c', size:R_LINE });
+        
+        // Desconto do Saldo (se aplicável)
+        if (descontoSaldo50 > 0) {
+          ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Desconto do Saldo', 
+                       '- ' + (window.fmtBRL ? window.fmtBRL(descontoSaldo50) : String(descontoSaldo50)), 
+                       { valueColor:'#16a34a', size:R_LINE });
+        }
+        
+        // Base para Comissão
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Base p/ Comissão', 
+                     window.fmtBRL ? window.fmtBRL(baseComissao50) : String(baseComissao50), 
+                     { color:'#16a34a', valueColor:'#16a34a', size:R_LINE });
+        
+        // Comissão 50%
+        if (c1 > 0) {
+          ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+            'Comissão (' + (Number(r.perc)||0) + '%)',
+            window.fmtBRL ? window.fmtBRL(c1) : String(c1),
+            { valueColor:'#16a34a', size: R_LINE }
+          );
+        }
+        
+        // Novo Saldo (no banco)
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Novo Saldo (banco)', 
+                     window.fmtBRL ? window.fmtBRL(saldoNovo50) : String(saldoNovo50), 
+                     { valueColor:'#b91c1c', bold: true, size:R_LINE });
+        
+        // Resultado = (Coletas - Despesas) - Comissão
+        const resultadoFinal = _resColetas2 - c1;
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', 
+                     window.fmtBRL ? window.fmtBRL(resultadoFinal) : String(resultadoFinal),
+                     { bold:true, size:R_BOLD });
+      }
       // Se tem modo antigo (com carry de negativo)
-      if (showNeg2) {
+      else if (showNeg2) {
         const baseComissao2 = Number(r.baseComissao || r.comissaoBase || 0);
         const saldoCarry2   = Number(r.saldoNegAcarreado || 0);
 
@@ -4142,22 +4258,39 @@ window.prestToDataURL = function(rec) {
         ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo a Carregar', 
                      window.fmtBRL ? window.fmtBRL(saldoCarry2) : String(saldoCarry2), 
                      { valueColor:'#b91c1c', size:R_LINE });
-      }
 
-      // Se tem comissão (mesmo sem ser 2ª)
-      if (c1 > 0) {
-        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
-          'Comissão 1 (' + (Number(r.perc)||0) + '%)',
-          window.fmtBRL ? window.fmtBRL(c1) : String(c1),
-          { valueColor:'#16a34a', size: R_LINE }
-        );
-      }
+        // Se tem comissão (mesmo sem ser 2ª)
+        if (c1 > 0) {
+          ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+            'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+            window.fmtBRL ? window.fmtBRL(c1) : String(c1),
+            { valueColor:'#16a34a', size: R_LINE }
+          );
+        }
 
-      // Resultado = (Coletas - Despesas) - Comissão (SEM deve anterior)
-      const resultadoFinal = _resColetas2 - c1;
-      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', 
-                   window.fmtBRL ? window.fmtBRL(resultadoFinal) : String(resultadoFinal),
-                   { bold:true, size:R_BOLD });
+        // Resultado = (Coletas - Despesas) - Comissão (SEM deve anterior)
+        const resultadoFinal = _resColetas2 - c1;
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', 
+                     window.fmtBRL ? window.fmtBRL(resultadoFinal) : String(resultadoFinal),
+                     { bold:true, size:R_BOLD });
+      }
+      else {
+        // Modelo padrão sem saldo acumulado
+        // Se tem comissão (mesmo sem ser 2ª)
+        if (c1 > 0) {
+          ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+            'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+            window.fmtBRL ? window.fmtBRL(c1) : String(c1),
+            { valueColor:'#16a34a', size: R_LINE }
+          );
+        }
+
+        // Resultado = (Coletas - Despesas) - Comissão (SEM deve anterior)
+        const resultadoFinal = _resColetas2 - c1;
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', 
+                     window.fmtBRL ? window.fmtBRL(resultadoFinal) : String(resultadoFinal),
+                     { bold:true, size:R_BOLD });
+      }
     }
 
     // ---- ACRÉSCIMOS ---- (PARA TODOS OS MODELOS)

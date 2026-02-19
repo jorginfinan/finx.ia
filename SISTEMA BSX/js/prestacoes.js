@@ -1978,9 +1978,17 @@ const valePg = valesAplicados.reduce((sum, v) => {
         const empresaAtualCheck = window.getCompany ? window.getCompany() : 'BSX';
         const empresaSemSaldoAcumulado = empresaAtualCheck === 'EMANUEL';
         
+        // ✅ NOVA REGRA: Saldo acumulado funciona para:
+        // 1. Gerentes com temSaldoAcumulado = true (qualquer %, incluindo 50%)
+        // 2. Gerentes com 2ª comissão (perc1 < 50)
+        const temSaldoAcumuladoConfig = g.temSaldoAcumulado === true || g.tem_saldo_acumulado === true;
+        
         const usaSaldoAcumulado = !empresaSemSaldoAcumulado && 
-        window.SaldoAcumulado && g && perc1 > 0 && perc1 < 50 && 
-        (g.temSaldoAcumulado === true || temSegundaComissao);  // ← INCLUI 2ª COMISSÃO
+        window.SaldoAcumulado && g && perc1 > 0 && 
+        (temSaldoAcumuladoConfig || (perc1 < 50 && temSegundaComissao));
+        
+        // Verifica se é gerente 50% com saldo acumulado (sem 2ª comissão)
+        const isGerente50ComSaldo = !temSegundaComissao && perc1 >= 50 && temSaldoAcumuladoConfig;
 
   if (usaSaldoAcumulado) {
     console.log('📊 [SaldoAcumulado] Condições atendidas! Calculando...');
@@ -2122,6 +2130,116 @@ const valePg = valesAplicados.reduce((sum, v) => {
       
       console.log('📊 [SaldoAcumulado] saldoInfo definido:', prestacaoAtual.saldoInfo);
       console.log('📊 [SaldoAcumulado] resumo.saldoNegAcarreado:', novoSaldo);
+      
+    } else if (isGerente50ComSaldo) {
+      // ============================================
+      // REGRA ESPECIAL PARA GERENTES 50% COM SALDO ACUMULADO:
+      // - Resultado NEGATIVO: Não paga comissão, METADE do negativo vai para o banco
+      // - Resultado POSITIVO: 
+      //   - Se saldo > 0: desconta do saldo, paga 50% sobre o que sobrar
+      //   - Se saldo = 0: paga 50% normal
+      // ============================================
+      
+      const saldoAnterior = saldoParaCalcular || 0;
+      let novoSaldo = 0;
+      
+      // Resultado SEM comissão (coletas - despesas)
+      const resultadoSemComissao = coletas - despesasTot;
+      
+      if (resultadoSemComissao <= 0) {
+        // RESULTADO NEGATIVO: Não paga comissão, metade do negativo vai para o banco
+        valorComissao1 = 0;
+        valorComissao2 = 0;
+        baseComissao = 0;
+        resultado = resultadoSemComissao; // Mantém o negativo
+        
+        // METADE do valor negativo vai para o banco
+        novoSaldo = saldoAnterior + Math.abs(resultadoSemComissao) / 2;
+        
+        console.log('📊 [Gerente50%] Resultado NEGATIVO:', {
+          resultadoSemComissao,
+          metadeParaBanco: Math.abs(resultadoSemComissao) / 2,
+          saldoAnterior,
+          novoSaldo
+        });
+        
+      } else {
+        // RESULTADO POSITIVO: Verifica saldo e paga comissão
+        
+        if (saldoAnterior > 0) {
+          // Tem saldo anterior: desconta primeiro
+          if (resultadoSemComissao > saldoAnterior) {
+            // Resultado maior que saldo: desconta saldo, paga 50% sobre o restante
+            const baseParaComissao = resultadoSemComissao - saldoAnterior;
+            baseComissao = baseParaComissao;
+            valorComissao1 = baseParaComissao * (perc1 / 100);
+            resultado = resultadoSemComissao - valorComissao1;
+            novoSaldo = 0;
+            
+            console.log('📊 [Gerente50%] Resultado > Saldo: paga 50% sobre diferença:', {
+              resultadoSemComissao,
+              saldoAnterior,
+              baseParaComissao,
+              valorComissao1,
+              novoSaldo
+            });
+            
+          } else {
+            // Resultado menor ou igual ao saldo: não paga comissão, reduz saldo
+            baseComissao = 0;
+            valorComissao1 = 0;
+            resultado = resultadoSemComissao;
+            novoSaldo = saldoAnterior - resultadoSemComissao;
+            
+            console.log('📊 [Gerente50%] Resultado <= Saldo: não paga comissão:', {
+              resultadoSemComissao,
+              saldoAnterior,
+              novoSaldo
+            });
+          }
+          
+        } else {
+          // Sem saldo anterior: paga 50% normal
+          baseComissao = resultadoSemComissao;
+          valorComissao1 = resultadoSemComissao * (perc1 / 100);
+          resultado = resultadoSemComissao - valorComissao1;
+          novoSaldo = 0;
+          
+          console.log('📊 [Gerente50%] Sem saldo: paga 50% normal:', {
+            resultadoSemComissao,
+            valorComissao1,
+            resultado
+          });
+        }
+      }
+      
+      valorComissao2 = 0; // Gerente 50% não tem 2ª comissão
+      
+      // ✅ IMPORTANTE: Define saldoInfo para que o salvamento atualize o Supabase
+      prestacaoAtual.saldoInfo = {
+        saldoCarregarAnterior: saldoAnterior,
+        saldoCarregarNovo: novoSaldo,
+        usandoSaldoAcumulado: true,
+        regraEspecial: 'GERENTE_50_SALDO',
+        baseComissaoCalculada: baseComissao
+      };
+      
+      prestacaoAtual.resumo = {
+        ...(prestacaoAtual.resumo || {}),
+        saldoNegAcarreado: novoSaldo,
+        baseComissao: baseComissao
+      };
+      
+      console.log('📊 [Gerente50%] Resumo final:', {
+        coletas,
+        despesasTot,
+        resultadoSemComissao,
+        saldoAnterior,
+        novoSaldo,
+        baseComissao,
+        valorComissao1,
+        resultado
+      });
       
     } else {
       // Gerentes SEM 2ª comissão: usa o módulo SaldoAcumulado normalmente

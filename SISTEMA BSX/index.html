@@ -526,6 +526,15 @@
                   <input name="comissao2" id="pcPerc2" type="number" min="0" max="100" step="0.01" placeholder="Ex: 5">
                 </label>
               </div>
+              
+              <!-- Saldo Acumulado para gerentes 50% -->
+              <label style="display:flex; align-items:center; gap:8px; margin-bottom:5px; margin-top:10px;">
+                <input type="checkbox" name="temSaldoAcumulado" id="temSaldoAcumulado">
+                <span>Habilitar Saldo Acumulado (50%)</span>
+              </label>
+              <small style="display:block; color:#6b7280; margin-bottom:10px; font-size:11px; padding-left:24px;">
+                Negativo: metade vai p/ banco. Positivo: desconta do banco antes de pagar comissão.
+              </small>
             </div>
             
             <label style="grid-column:1/-1">Observações

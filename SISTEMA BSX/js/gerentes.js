@@ -23,10 +23,22 @@
   // ============================================
   async function read() {
     try {
-      const arr = await window.SupabaseAPI.gerentes.getAtivos();
+      if (!window.SupabaseAPI?.gerentes) {
+        console.warn('[Gerentes] ⚠️ SupabaseAPI não disponível ainda');
+        return [];
+      }
+      
+      console.log('[Gerentes] 🔄 Buscando gerentes do Supabase...');
+      const arr = await window.SupabaseAPI.gerentes.getAll();
+      console.log('[Gerentes] ✅ Carregados:', arr?.length || 0, 'gerentes');
+      
+      if (arr?.length > 0) {
+        console.log('[Gerentes] Primeiro:', arr[0]?.nome, '| Último:', arr[arr.length-1]?.nome);
+      }
+      
       return Array.isArray(arr) ? arr : [];
     } catch (error) {
-      console.error('[Gerentes] Erro ao carregar:', error);
+      console.error('[Gerentes] ❌ Erro ao carregar:', error);
       return [];
     }
   }
@@ -70,6 +82,9 @@
       
       const comissaoPorRotaPositiva = !!fd.get('comissaoPorRotaPositiva');
       
+      // ✅ NOVO: Saldo acumulado para gerentes 50%
+      const temSaldoAcumulado = !!fd.get('temSaldoAcumulado');
+      
       const g = {
         nome,
         comissao: Number(fd.get('comissao')||0) || 0,
@@ -82,7 +97,9 @@
         base_calculo: comissaoPorRotaPositiva ? 'COLETAS' : String(fd.get('baseCalculo') || 'COLETAS_MENOS_DESPESAS').toUpperCase().replace(/-/g, '_'),
         comissao_por_rota_positiva: comissaoPorRotaPositiva,
         tem_segunda_comissao: temSegundaComissao,
-        comissao2: temSegundaComissao ? comissao2Value : 0
+        comissao2: temSegundaComissao ? comissao2Value : 0,
+        tem_saldo_acumulado: temSaldoAcumulado,
+        ativo: true
       };
       
       console.log('[Gerentes] Salvando:', uidEditing ? 'EDIÇÃO' : 'NOVO');
@@ -127,6 +144,7 @@
   // RENDER
   // ============================================
   async function render() {
+    console.log('[Gerentes] 🔄 Iniciando render...');
     let arr = [];
   
     try {
@@ -164,6 +182,8 @@
           '</td>' +
         '</tr>';
       }).join('') : '<tr><td colspan="8">Nenhum gerente cadastrado.</td></tr>';
+      
+      console.log('[Gerentes] ✅ Tabela atualizada com', arr.length, 'registros');
     }
   
     const dl = document.getElementById('listGerentes');
@@ -172,6 +192,8 @@
         return '<option value="' + esc(g.nome) + '"></option>'; 
       }).join('');
     }
+    
+    console.log('[Gerentes] ✅ Render concluído');
   }
 
   function esc(s) {
@@ -288,6 +310,14 @@
 
       const com2El = f.querySelector('[name="comissao2"]');
       if (com2El) com2El.value = String(Number(g.comissao2) || 0);
+      
+      // ✅ Mostrar div da 2ª comissão se estiver marcado
+      const div2Com = document.getElementById('segundaComissaoDiv');
+      if (div2Com) div2Com.style.display = g.tem_segunda_comissao ? 'block' : 'none';
+
+      // ✅ NOVO: Carregar checkbox de saldo acumulado
+      const temSaldoEl = f.querySelector('[name="temSaldoAcumulado"]');
+      if (temSaldoEl) temSaldoEl.checked = !!g.tem_saldo_acumulado;
 
       f.scrollIntoView({ behavior:'smooth', block:'center' });
       
@@ -318,7 +348,25 @@
 
     document.addEventListener('empresa:change', render);
 
-    render();
+    // ✅ Aguarda SupabaseAPI estar pronto antes de renderizar
+    waitForSupabaseAndRender();
+  }
+  
+  // ✅ NOVO: Aguarda Supabase estar disponível
+  function waitForSupabaseAndRender(retries = 50) {
+    if (window.SupabaseAPI?.gerentes) {
+      console.log('[Gerentes] ✅ SupabaseAPI disponível, renderizando...');
+      render();
+      return;
+    }
+    
+    if (retries <= 0) {
+      console.error('[Gerentes] ❌ SupabaseAPI não ficou pronto após timeout');
+      return;
+    }
+    
+    console.log('[Gerentes] ⏳ Aguardando SupabaseAPI... (' + retries + ')');
+    setTimeout(function() { waitForSupabaseAndRender(retries - 1); }, 100);
   }
 
   const btnLimpar = document.getElementById('btnLimparGerente');

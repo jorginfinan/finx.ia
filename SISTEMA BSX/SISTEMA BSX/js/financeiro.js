@@ -23,9 +23,12 @@ function initFinanceiro() {
   const LS_KEY = 'bsx_fin_lanc';
 
   const load = () => {
+    // Carrega do localStorage inicialmente (síncrono)
+    // O Supabase será carregado depois de forma assíncrona
     try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]') || []; }
     catch { return []; }
   };
+
   const persist = (arr) => {
     try {
       const json = JSON.stringify(arr || []);
@@ -110,17 +113,16 @@ window.getFinanceiro = window.getFinanceiro || function() {
   });
 
 
-  // garante que saveLanc continue funcionando
-// salva SEMPRE o conteúdo atual de window.lanc
-window.saveLanc = function () {
-  try {
-    const arr = Array.isArray(window.lanc) ? window.lanc : [];
-    const json = JSON.stringify(arr);
-    localStorage.setItem('bsx_fin_lanc', json); // chave oficial
-    localStorage.setItem('lanc', json);         // espelho p/ compat.
-    if (arr.length) localStorage.setItem('bsx_fin_lanc_bak', json);
-  } catch (_) {}
-};
+  window.saveLanc = function () {
+    try {
+      const arr = Array.isArray(window.lanc) ? window.lanc : [];
+      const json = JSON.stringify(arr);
+      // Mantém localStorage como backup
+      localStorage.setItem('bsx_fin_lanc', json);
+      localStorage.setItem('lanc', json);
+      if (arr.length) localStorage.setItem('bsx_fin_lanc_bak', json);
+    } catch (_) {}
+  };
 
 })();
 
@@ -181,6 +183,27 @@ window.saveLanc = window.saveLanc || function () {
 const LSK_FIN_SORT   = 'bsx_fin_sort_v1';
 const LSK_FIN_FILTER = 'bsx_fin_filter_v1';
 
+// ===== FUNÇÃO PARA RECARREGAR DO SUPABASE =====
+window.carregarFinanceiroSupabase = async function() {
+  try {
+    if (window.SupabaseAPI?.lancamentos) {
+      const data = await window.SupabaseAPI.lancamentos.getAll();
+      if (Array.isArray(data)) {
+        window.lanc = data;
+        try {
+          localStorage.setItem('bsx_fin_lanc', JSON.stringify(data));
+          localStorage.setItem('lanc', JSON.stringify(data));
+        } catch(_) {}
+        window.renderFin?.();
+        console.log('[Financeiro] ✅ Recarregado do Supabase:', data.length);
+        return data;
+      }
+    }
+  } catch(e) {
+    console.error('[Financeiro] Erro ao recarregar:', e);
+  }
+  return window.lanc || [];
+};
 // === Helpers globais de UID (deixe no ESCOPO GLOBAL)
 // ===== Helpers globais e robustos para UID =====
 window.__fin_getUidFromClick = function(el){
@@ -295,7 +318,7 @@ window.__fin_openDialog = function(src){
 
 
 // ====== Salvar (edita por uid/id/key de forma segura) ======
-window.__fin_saveFromForm = function(){
+window.__fin_saveFromForm = async function(){
   const dlg  = document.getElementById('dlgLanc');
   const form = document.getElementById('formLanc');
   const btn  = document.getElementById('salvarLanc');
@@ -329,12 +352,20 @@ window.__fin_saveFromForm = function(){
     if (!canEditLanc()){ alert('Você não tem permissão para editar.'); if (btn) btn.dataset.busy='0'; return; }
     const { idx, row } = window.__fin_findByUid(editing);
     if (idx > -1){
+      // ✅ Atualiza no Supabase
+      if (window.SupabaseAPI?.lancamentos) {
+        try {
+          await window.SupabaseAPI.lancamentos.update(editing, reg);
+        } catch(e) {
+          console.error('[Financeiro] Erro ao atualizar no Supabase:', e);
+        }
+      }
       window.lanc[idx] = {
         ...(row||{}),
         ...reg,
         uid: row?.uid || row?.id || row?.key || editing,
         editedAt: new Date().toISOString(),
-        editedBy: (window.currentUser?.nome || window.currentUser?.username || window.UserAuth?.currentUser()?.username || 'Usuário')
+        editedBy: (window.currentUser?.nome || window.UserAuth?.currentUser()?.username || 'Usuário')
       };
       
       // ✅ AUDITORIA - Lançamento editado
@@ -352,6 +383,14 @@ window.__fin_saveFromForm = function(){
     const newId = (typeof uid === 'function' ? uid()
                     : (crypto?.randomUUID?.() || String(Date.now())));
     window.lanc.push({ uid: newId, ...reg });
+    // ✅ Cria no Supabase
+    if (window.SupabaseAPI?.lancamentos) {
+      try {
+        await window.SupabaseAPI.lancamentos.create({ uid: newId, ...reg });
+      } catch(e) {
+        console.error('[Financeiro] Erro ao criar no Supabase:', e);
+      }
+    }
     
     // ✅ AUDITORIA - Lançamento criado
     if (typeof window.AuditLog !== 'undefined' && typeof window.AuditLog.log === 'function') {
@@ -371,7 +410,7 @@ window.__fin_saveFromForm = function(){
 };
 
 // ====== Excluir robusto (procura por uid/id/key) ======
-window.__fin_deleteRow = function(uid, el){
+window.__fin_deleteRow = async function(uid, el){
   const key = uid || '';
   if (!key) return;
   if (!canDeleteLanc()) { alert('Apenas ADMIN pode deletar.'); return; }
@@ -393,6 +432,15 @@ window.__fin_deleteRow = function(uid, el){
   // Salva dados para auditoria antes de excluir
   const lancExcluido = window.lanc[idx];
 
+  // ✅ Deleta do Supabase
+  const uidToDelete = window.lanc[idx]?.uid || window.lanc[idx]?.id || key;
+  if (window.SupabaseAPI?.lancamentos) {
+    try {
+      await window.SupabaseAPI.lancamentos.delete(uidToDelete);
+    } catch(e) {
+      console.error('[Financeiro] Erro ao deletar do Supabase:', e);
+    }
+  }
   window.lanc.splice(idx, 1);
   window.saveLanc?.();
   window.renderFin?.();
@@ -712,204 +760,388 @@ function formatDate(date) {
 
 // ====================== FINANCEIRO: Confirmação de valores vindos de Prestações ======================
 
-// ✅ CONSTANTES E FUNÇÕES GLOBAIS (declaradas UMA ÚNICA VEZ)
+// ============================================
+// PENDÊNCIAS - INTEGRAÇÃO SUPABASE
+// ============================================
 (function initFinanceiroPendencias() {
-  // Só inicializa se ainda não foi feito
   if (window.__FIN_PEND_INITIALIZED) return;
   window.__FIN_PEND_INITIALIZED = true;
 
-  // Constantes globais
+  // Constantes (compatibilidade)
   window.DB_CAIXA_PEND = 'DB_CAIXA_PEND';
   window.DB_CAIXA_CONF_OK = 'DB_CAIXA_CONF_OK';
 
-  // Funções auxiliares internas
-  function getJSON(key, fallback) {
-    try { 
-      return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; 
-    } catch(_) { 
-      return fallback; 
+  // ===== API SUPABASE =====
+  const PendenciasAPI = {
+    get client() { return window.SupabaseAPI?.client; },
+
+    async getAll(empresa) {
+      try {
+        if (!this.client) {
+          // Fallback localStorage
+          try { return JSON.parse(localStorage.getItem('DB_CAIXA_PEND') || '[]'); } catch { return []; }
+        }
+        const company = empresa || window.getCompany?.() || 'BSX';
+        const { data, error } = await this.client
+          .from('pendencias')
+          .select('*')
+          .eq('company', company)
+          .eq('status', 'PENDENTE')
+          .order('data', { ascending: false });
+        
+        if (error) { console.error('[Pendencias] Erro:', error); return []; }
+        
+        return (data || []).map(r => ({
+          id: r.id, uid: r.uid, altUID: r.alt_uid,
+          gerenteId: r.gerente_id, gerenteNome: r.gerente,
+          valorOriginal: Number(r.valor_original) || 0,
+          valorConfirm: Number(r.valor_confirm) || 0,
+          forma: r.forma || 'PIX', data: r.data || '',
+          info: r.info || '', prestId: r.prestacao_id,
+          tipoCaixa: r.tipo_caixa || 'RECEBIDO',
+          status: r.status || 'PENDENTE', edited: r.edited || false
+        }));
+      } catch(e) { console.error('[Pendencias] Erro:', e); return []; }
+    },
+
+    async create(item) {
+      try {
+        if (!this.client) {
+          // Fallback localStorage
+          const arr = JSON.parse(localStorage.getItem('DB_CAIXA_PEND') || '[]');
+          arr.push(item);
+          localStorage.setItem('DB_CAIXA_PEND', JSON.stringify(arr));
+          return item.uid;
+        }
+        const company = window.getCompany?.() || 'BSX';
+        const uid = item.uid || window.uid?.() || crypto.randomUUID();
+        
+        await this.client.from('pendencias').insert([{
+          uid, alt_uid: item.altUID || null,
+          gerente: item.gerenteNome || '', gerente_id: item.gerenteId || null,
+          valor_original: Number(item.valorOriginal) || 0,
+          valor_confirm: Number(item.valorConfirm || item.valorOriginal) || 0,
+          forma: item.forma || 'PIX',
+          data: item.data || new Date().toISOString().slice(0,10),
+          info: item.info || '', prestacao_id: item.prestId || null,
+          tipo_caixa: item.tipoCaixa || 'RECEBIDO',
+          status: 'PENDENTE', edited: false, company
+        }]);
+        console.log('[Pendencias] ✅ Criada:', uid);
+        return uid;
+      } catch(e) { console.error('[Pendencias] Erro ao criar:', e); throw e; }
+    },
+
+    async update(uid, dados) {
+      try {
+        if (!this.client) return;
+        const dbRow = {};
+        if (dados.valorConfirm !== undefined) dbRow.valor_confirm = Number(dados.valorConfirm);
+        if (dados.edited !== undefined) dbRow.edited = dados.edited;
+        if (dados.status !== undefined) dbRow.status = dados.status;
+        
+        await this.client.from('pendencias').update(dbRow).eq('uid', uid);
+        console.log('[Pendencias] ✅ Atualizada:', uid);
+      } catch(e) { console.error('[Pendencias] Erro ao atualizar:', e); }
+    },
+
+    async delete(uid) {
+      try {
+        if (!this.client) {
+          let arr = JSON.parse(localStorage.getItem('DB_CAIXA_PEND') || '[]');
+          arr = arr.filter(p => p.uid !== uid);
+          localStorage.setItem('DB_CAIXA_PEND', JSON.stringify(arr));
+          return;
+        }
+        await this.client.from('pendencias').delete().eq('uid', uid);
+        console.log('[Pendencias] ✅ Deletada:', uid);
+      } catch(e) { console.error('[Pendencias] Erro ao deletar:', e); }
+    },
+
+    async confirm(uid) {
+      try {
+        if (!this.client) {
+          const s = new Set(JSON.parse(localStorage.getItem('DB_CAIXA_CONF_OK') || '[]'));
+          s.add(uid);
+          localStorage.setItem('DB_CAIXA_CONF_OK', JSON.stringify([...s]));
+          return;
+        }
+        const company = window.getCompany?.() || 'BSX';
+        await this.client.from('pendencias_confirmadas').upsert([{
+          uid, company, confirmed_by: window.currentUser?.nome || ''
+        }], { onConflict: 'uid' });
+        await this.delete(uid);
+        console.log('[Pendencias] ✅ Confirmada:', uid);
+      } catch(e) { console.error('[Pendencias] Erro ao confirmar:', e); }
+    },
+
+    async isConfirmed(uid) {
+      try {
+        if (!this.client) {
+          const s = new Set(JSON.parse(localStorage.getItem('DB_CAIXA_CONF_OK') || '[]'));
+          return s.has(uid);
+        }
+        const { data } = await this.client
+          .from('pendencias_confirmadas')
+          .select('uid').eq('uid', uid).maybeSingle();
+        return !!data;
+      } catch { return false; }
+    },
+
+    async getConfirmedSet() {
+      try {
+        if (!this.client) {
+          return new Set(JSON.parse(localStorage.getItem('DB_CAIXA_CONF_OK') || '[]'));
+        }
+        const company = window.getCompany?.() || 'BSX';
+        const { data } = await this.client
+          .from('pendencias_confirmadas')
+          .select('uid').eq('company', company);
+        return new Set((data || []).map(r => r.uid));
+      } catch { return new Set(); }
+    },
+
+    async migrate() {
+      try {
+        const raw = localStorage.getItem('DB_CAIXA_PEND');
+        if (!raw) { console.log('[Pendencias] Nada para migrar'); return { migrated: 0 }; }
+        
+        const local = JSON.parse(raw);
+        if (!Array.isArray(local) || !local.length) return { migrated: 0 };
+        
+        console.log(`[Pendencias] 🔄 Migrando ${local.length} pendências...`);
+        let migrated = 0;
+        
+        for (const item of local) {
+          try {
+            const { data: existing } = await this.client
+              .from('pendencias').select('uid').eq('uid', item.uid).maybeSingle();
+            if (existing) continue;
+            
+            await this.create(item);
+            migrated++;
+          } catch(e) { console.warn('Erro ao migrar:', e); }
+        }
+        
+        // Migra confirmações
+        const confRaw = localStorage.getItem('DB_CAIXA_CONF_OK');
+        if (confRaw) {
+          const confs = JSON.parse(confRaw);
+          for (const uid of confs) {
+            try {
+              await this.client.from('pendencias_confirmadas')
+                .upsert([{ uid, company: window.getCompany?.() || 'BSX' }], { onConflict: 'uid' });
+            } catch {}
+          }
+          console.log(`[Pendencias] ✅ ${confs.length} confirmações migradas`);
+        }
+        
+        console.log(`[Pendencias] ✅ Migradas: ${migrated}`);
+        localStorage.setItem('DB_CAIXA_PEND_backup', raw);
+        return { migrated };
+      } catch(e) { console.error('[Pendencias] Erro:', e); return { migrated: 0 }; }
     }
-  }
+  };
 
-  function setJSON(key, val) {
-    try {
-      localStorage.setItem(key, JSON.stringify(val));
-    } catch(e) {
-      console.error('Erro ao salvar no localStorage:', e);
+// Expor globalmente
+window.PendenciasAPI = PendenciasAPI;
+window.SupabaseAPI = window.SupabaseAPI || {};
+window.SupabaseAPI.pendencias = PendenciasAPI;  // ✅ ADICIONE ESTA LINHA
+window.migrarPendenciasParaSupabase = () => PendenciasAPI.migrate();
+
+
+// ===== FUNÇÕES DE COMPATIBILIDADE - SOMENTE SUPABASE =====
+let _pendCache = null;
+
+window.__getPendencias = function() {
+  // Retorna o cache se existir, senão array vazio
+  // O cache é preenchido pelo __getPendenciasAsync
+  return _pendCache || [];
+};
+
+window.__getPendenciasAsync = async function() {
+  _pendCache = await PendenciasAPI.getAll();
+  console.log('[Pendencias] ✅ Carregado do Supabase:', _pendCache.length);
+  return _pendCache;
+};
+
+window.__setPendencias = function(arr) {
+  _pendCache = arr;
+  // NÃO salva no localStorage - o Supabase é a fonte única
+};
+
+window.__addPendencia = async function(item) {
+  await PendenciasAPI.create(item);
+  _pendCache = await PendenciasAPI.getAll(); // Recarrega do Supabase
+};
+
+window.__removePendencia = async function(uid) {
+  await PendenciasAPI.delete(uid);
+  _pendCache = await PendenciasAPI.getAll(); // Recarrega do Supabase
+};
+
+window.__getConfSet = async function() {
+  return await PendenciasAPI.getConfirmedSet();
+};
+
+window.__getConfSetAsync = async function() {
+  return await PendenciasAPI.getConfirmedSet();
+};
+
+window.__addConf = async function(uid) {
+  if (!uid) return;
+  await PendenciasAPI.confirm(uid);
+};
+
+window.__getLanc = function() {
+  return Array.isArray(window.lanc) ? window.lanc : (window.lanc = []);
+};
+
+window.__setLanc = function(novo) {
+  try {
+    if (Array.isArray(novo)) window.lanc = novo;
+    window.saveLanc?.();
+  } catch {}
+};
+
+// ✅ CARREGA DO SUPABASE NA INICIALIZAÇÃO
+(async function initPendenciasFromSupabase() {
+  try {
+    // Aguarda o client estar pronto
+    let tentativas = 0;
+    while (!PendenciasAPI.client && tentativas < 50) {
+      await new Promise(r => setTimeout(r, 100));
+      tentativas++;
     }
-  }
-
-  // ===== FUNÇÕES GLOBAIS DE PENDÊNCIAS =====
-  
-  window.__getPendencias = function() { 
-    return getJSON(window.DB_CAIXA_PEND, []); 
-  };
-
-  window.__setPendencias = function(arr) { 
-    setJSON(window.DB_CAIXA_PEND, arr); 
-  };
-
-  window.__getLanc = function() {
-    return Array.isArray(window.lanc) ? window.lanc : (window.lanc = []);
-  };
-
-  window.__setLanc = function(novo) {
-    try {
-      if (Array.isArray(novo)) window.lanc = novo; 
-      else if (Array.isArray(window.lanc)) {
-        window.lanc.splice(0, window.lanc.length, ...(novo||[]));
+    
+    if (PendenciasAPI.client) {
+      _pendCache = await PendenciasAPI.getAll();
+      console.log('[Pendencias] ✅ Inicializado do Supabase:', _pendCache.length, 'pendências');
+      
+      // Re-renderiza se a tela de pendências estiver aberta
+      if (typeof renderFinPendencias === 'function') {
+        renderFinPendencias();
       }
-      window.saveLanc?.();
-    } catch(_) {}
-  };
-
-  window.__getConfSet = function() {
-    try { 
-      return new Set(JSON.parse(localStorage.getItem(window.DB_CAIXA_CONF_OK)||'[]')); 
-    } catch(_) { 
-      return new Set(); 
     }
-  };
-
-  window.__addConf = function(uid) {
-    if (!uid) return;
-    const s = window.__getConfSet(); 
-    s.add(uid);
-    try { 
-      localStorage.setItem(window.DB_CAIXA_CONF_OK, JSON.stringify([...s])); 
-    } catch(_) {}
-  };
+  } catch(e) {
+    console.error('[Pendencias] Erro ao inicializar:', e);
+  }
+})();
 
   // ===== FUNÇÕES DE UID =====
-
   window.__pgMakeUIDs = function(prest, pg) {
-    const pid   = prest?.id ?? 'prest';
-    const data  = pg?.data || prest?.fim || prest?.ini || '';
-    const v     = Number(pg?.valor)||0;
+    const pid = prest?.id ?? 'prest';
+    const data = pg?.data || prest?.fim || prest?.ini || '';
+    const v = Number(pg?.valor) || 0;
     const forma = String(pg?.forma || pg?.tipo || '').trim().toUpperCase();
-
     const stable = `P:${pid}|D:${data}|V:${v.toFixed(2)}|F:${forma}`;
     const legacy = `prest:${pid}:${pg?.id ?? ''}:${data}:${v}`;
-
     return { stable, legacy };
   };
 
   window.__negMakeUID = function(prest, valorAbs) {
-    const pid  = prest?.id ?? 'prest';
+    const pid = prest?.id ?? 'prest';
     const data = prest?.fim || prest?.ini || '';
-    const v    = Number(valorAbs)||0;
-    
-    const stable = `NEG:${pid}|D:${data}|V:${v.toFixed(2)}`;
-    const legacy = `prest:saida:${pid}:${data}:${v}`;
-    
-    return { stable, legacy };
+    const v = Number(valorAbs) || 0;
+    return { stable: `NEG:${pid}|D:${data}|V:${v.toFixed(2)}`, legacy: `prest:saida:${pid}:${data}:${v}` };
   };
 
-  // ===== SINCRONIZAÇÃO DE PENDÊNCIAS =====
-
-  window.syncPendenciasFromPrest = function() {
+  // ===== SINCRONIZAÇÃO =====
+  window.syncPendenciasFromPrest = async function() {
     try {
-      const DB_PREST_KEY = window.DB_PREST || 'bsx_prestacoes_v1';
-      
+      // ✅ CORREÇÃO: Carrega prestações do Supabase (fonte principal)
       let prests = [];
       try {
-        const raw = localStorage.getItem(DB_PREST_KEY);
-        prests = raw ? JSON.parse(raw) : [];
+        if (window.carregarPrestacoesGlobal) {
+          prests = await window.carregarPrestacoesGlobal();
+        } else {
+          // Fallback para localStorage
+          const DB_PREST_KEY = window.DB_PREST || 'bsx_prestacoes_v1';
+          const raw = localStorage.getItem(DB_PREST_KEY);
+          prests = raw ? JSON.parse(raw) : [];
+        }
         if (!Array.isArray(prests)) prests = [];
-      } catch(e) {
-        console.error('Erro ao ler prestações:', e);
-        return 0;
-      }
-      
-      const pend = window.__getPendencias();
+      } catch { return 0; }
+
+      // Carrega pendências do Supabase
+      const pend = await window.__getPendenciasAsync();
       const pendUIDs = new Set(pend.map(p => p.uid).filter(Boolean));
       const pendAlt = new Set(pend.map(p => p.altUID).filter(Boolean));
 
       const lancs = window.__getLanc();
-      const confirmadosFromUID = new Set(
-        [].concat(
-          (lancs||[]).map(x => x?.meta?.fromUID).filter(Boolean),
-          Array.from(window.__getConfSet())
-        )
-      );
+      const confirmados = await window.__getConfSetAsync();
+      const confirmadosFromUID = new Set([
+        ...(lancs || []).map(x => x?.meta?.fromUID).filter(Boolean),
+        ...confirmados
+      ]);
 
       let novos = 0;
 
-      for (let idx = 0; idx < prests.length; idx++) {
-        const p = prests[idx];
-        
-        const gerenteNome = (window.gerentes||[]).find(g => 
+      for (const p of prests) {
+        const gerenteNome = (window.gerentes || []).find(g =>
           String(g.uid) === String(p.gerenteId)
         )?.nome || p?.gerenteNome || '(excluído)';
 
-// 1) Pagamentos normais (ENTRADA) - EXCETO DIVIDA_PAGA
-const pagamentos = []
-  .concat(Array.isArray(p.pagamentos) ? p.pagamentos : [])
-  .concat(Array.isArray(p.pagamentosNormais) ? p.pagamentosNormais : [])
-  .filter(x => {
-    const f = String((x.forma||x.tipo||'')+'').trim().toUpperCase();
-    // ✅ EXCLUI DIVIDA_PAGA (já tratado em criarPendenciaPagamento)
-    return !x?.cancelado && 
-           f !== 'ADIANTAMENTO' && 
-           f !== 'VALE' && 
-           f !== 'DIVIDA_PAGA';
-  });
+        const pagamentos = []
+          .concat(Array.isArray(p.pagamentos) ? p.pagamentos : [])
+          .concat(Array.isArray(p.pagamentosNormais) ? p.pagamentosNormais : [])
+          .filter(x => {
+            const f = String((x.forma || x.tipo || '') + '').trim().toUpperCase();
+            return !x?.cancelado && f !== 'ADIANTAMENTO' && f !== 'VALE' && f !== 'DIVIDA_PAGA';
+          });
 
-        // ✅ ADICIONA APENAS OS PAGAMENTOS LANÇADOS
-        // NÃO cria pendência automática para prestação negativa
-        for (let j = 0; j < pagamentos.length; j++) {
-          const pg = pagamentos[j];
+        for (const pg of pagamentos) {
           const uids = window.__pgMakeUIDs(p, pg);
-          
-          // ✅ VERIFICA SE JÁ EXISTE OU JÁ FOI CONFIRMADO
+
           if (pendUIDs.has(uids.stable) || pendUIDs.has(uids.legacy) ||
               pendAlt.has(uids.stable) || pendAlt.has(uids.legacy) ||
               confirmadosFromUID.has(uids.stable) || confirmadosFromUID.has(uids.legacy)) {
-            console.log('⚠️ Pagamento já existe ou foi confirmado, não recria:', uids.stable);
             continue;
           }
-          
-          pend.push({
-            id: (crypto?.randomUUID ? crypto.randomUUID() : 'pend_'+Date.now()+'_'+Math.random()),
-            uid: uids.stable,
-            altUID: uids.legacy,
-            prestId: p.id,
-            gerenteId: p.gerenteId,
-            gerenteNome: gerenteNome,
+
+          // ✅ CORREÇÃO: Verificação extra no Supabase antes de criar
+          const jaConfirmado = await PendenciasAPI.isConfirmed(uids.stable) || 
+                               await PendenciasAPI.isConfirmed(uids.legacy);
+          if (jaConfirmado) {
+            console.log('⚠️ Pendência já confirmada no Supabase, ignorando:', uids.stable);
+            confirmadosFromUID.add(uids.stable);
+            continue;
+          }
+
+          await PendenciasAPI.create({
+            uid: uids.stable, altUID: uids.legacy,
+            prestId: p.id, gerenteId: p.gerenteId, gerenteNome,
             data: pg.data || p.fim || p.ini || '',
-            valorOriginal: Number(pg.valor)||0,
-            valorConfirm: Number(pg.valor)||0,
-            info: 'Prest. ' + (p.ini||p.periodoIni||'').slice(5).split('-').reverse().join('/') + 
-                  '–' + (p.fim||p.periodoFim||'').slice(5).split('-').reverse().join('/'),
+            valorOriginal: Number(pg.valor) || 0,
+            valorConfirm: Number(pg.valor) || 0,
+            info: 'Prest. ' + (p.ini || '').slice(5).split('-').reverse().join('/') +
+                  '–' + (p.fim || '').slice(5).split('-').reverse().join('/'),
             forma: pg.forma || pg.tipo || 'PRESTAÇÃO',
-            status: 'PENDENTE',
-            edited: false,
-            createdAt: new Date().toISOString(),
             tipoCaixa: 'RECEBIDO'
           });
-          
+
           pendUIDs.add(uids.stable);
-          pendAlt.add(uids.legacy);
           novos++;
         }
-
-        // ❌ REMOVIDO: Não cria mais pendência automática para prestação negativa (restam)
-        // Só vai para confirmação o que for lançado explicitamente como pagamento
       }
 
       if (novos > 0) {
-        window.__setPendencias(pend);
-        console.log('✅ Sincronizadas', novos, 'novas pendências (não confirmadas)');
+        _pendCache = null; // Invalida cache
+        console.log('✅ Sincronizadas', novos, 'novas pendências');
       }
-      
       return novos;
-    } catch(e) {
-      console.error('Erro em syncPendenciasFromPrest:', e);
-      return 0;
-    }
+    } catch (e) { console.error('Erro em syncPendenciasFromPrest:', e); return 0; }
   };
 
-  console.log('✅ Funções do Financeiro inicializadas e disponíveis globalmente');
+  // Carrega pendências do Supabase no início
+  setTimeout(async () => {
+    if (window.SupabaseAPI?.client) {
+      await window.__getPendenciasAsync();
+      console.log('[Pendencias] ✅ Cache carregado do Supabase');
+    }
+  }, 2000);
+
+  console.log('✅ [Pendencias] API Supabase inicializada. Use migrarPendenciasParaSupabase() para migrar.');
 })();
 
 // ===== HELPER PARA FORMATAÇÃO DE DATA =====
@@ -1072,12 +1304,13 @@ function renderFinPendencias(){
 }
 
 // Delegação de eventos da área de pendências
+// Delegação de eventos da área de pendências
 (function bindFinPendEvents(){
   if (window.__finPendBound) return; 
   window.__finPendBound = true;
 
   // Event listener para inputs
-  document.addEventListener('input', function(e) {
+  document.addEventListener('input', async function(e) {
     const inp = e.target.closest('#finPendenciasBox [data-pend-edit]');
     if (!inp) return;
 
@@ -1111,7 +1344,7 @@ function renderFinPendencias(){
   }, true);
 
   // Event listener para cliques
-  document.addEventListener('click', function(e) {
+  document.addEventListener('click', async function(e) {
     const target = e.target;
     
     const btnC = target.closest('#finPendenciasBox [data-pend-confirm]');
@@ -1128,7 +1361,7 @@ function renderFinPendencias(){
       }
       
       const pend = __getPendencias();
-      const i = pend.findIndex(function(x) { return x.id === id; });
+      const i = pend.findIndex(function(x) { return x.id == id; });
       
       if (i < 0) {
         alert('Pendência não encontrada.');
@@ -1181,18 +1414,22 @@ function renderFinPendencias(){
         // Se o valor foi editado, marca como editado
         if (p.edited) {
           novoLanc.editedAt = new Date().toISOString();
-          novoLanc.editedBy = (window.currentUser?.nome || window.currentUser?.username || 
-                              window.UserAuth?.currentUser()?.username || 'Usuário');
+          novoLanc.editedBy = (window.currentUser?.nome || window.UserAuth?.currentUser()?.username || 'Usuário');
         }
     
-        // Adiciona ao array de lançamentos
-        lancs.push(novoLanc);
+// Adiciona ao array de lançamentos
+lancs.push(novoLanc);
         
-        // Salva
-        __setLanc(lancs);
-        if (typeof window.saveLanc === 'function') {
-          window.saveLanc();
-        }
+// ✅ SALVA NO SUPABASE
+if (window.SupabaseAPI?.lancamentos?.create) {
+  await window.SupabaseAPI.lancamentos.create(novoLanc);
+}
+
+// Salva localmente como backup
+__setLanc(lancs);
+if (typeof window.saveLanc === 'function') {
+  window.saveLanc();
+}
         
         // ✅ AUDITORIA - Registra confirmação
         if (typeof window.AuditLog !== 'undefined' && typeof window.AuditLog.log === 'function') {
@@ -1258,7 +1495,9 @@ function renderFinPendencias(){
     if (btnD) {
       e.preventDefault();
       e.stopPropagation();
-
+      
+      // ✅ Executa como async
+      (async () => {
       // Só ADMIN pode descartar
       if (!(window.canDeleteLanc && window.canDeleteLanc())) {
         alert('Apenas ADMIN pode descartar pendências.');
@@ -1273,11 +1512,26 @@ function renderFinPendencias(){
       }
 
       const pendencias = __getPendencias();
-      const pendenciaDescartada = pendencias.find(function(x) { return x.id === id; });
+      const pendenciaDescartada = pendencias.find(function(x) { return x.id == id; });
       
-      const pend = pendencias.filter(function(x) { return x.id !== id; });
-      __setPendencias(pend);
-      
+// ✅ DELETA DO SUPABASE (não apenas do cache local)
+if (pendenciaDescartada) {
+  // Usa o uid ou id para deletar
+  const uidToDelete = pendenciaDescartada.uid || pendenciaDescartada.id;
+  await window.__removePendencia(uidToDelete);
+  
+  // ✅ CORREÇÃO: Marca como "processada" para não recriar
+  // Adiciona em pendencias_confirmadas para evitar que seja recriada
+  if (window.PendenciasAPI?.confirm) {
+    await window.PendenciasAPI.confirm(uidToDelete);
+  }
+  // Se tiver altUID, marca também
+  if (pendenciaDescartada.altUID) {
+    await window.PendenciasAPI?.confirm(pendenciaDescartada.altUID);
+  }
+  
+  console.log('[Pendencias] ✅ Descartada e marcada como processada:', uidToDelete);
+}
       // ✅ AUDITORIA - Registra descarte
       if (pendenciaDescartada && typeof window.AuditLog !== 'undefined' && typeof window.AuditLog.log === 'function') {
         const ehSaida = (pendenciaDescartada.tipoCaixa === 'PAGO') || (pendenciaDescartada.tipo === 'PAGAR');
@@ -1293,6 +1547,7 @@ function renderFinPendencias(){
         renderFinPendencias();
       }
       
+      })(); // ✅ Fecha a função async
       return;
     }
   }, true);
@@ -1370,58 +1625,103 @@ function renderFinPendencias(){
 // impressão A4
 function imprimirFinanceiroA4(){
   const rows = sortRows(applyFilters(window.lanc));
-  const totR = rows.filter(r=>r.status==='RECEBIDO').reduce((a,b)=>a+numSafe(b.valor),0);
-  const totP = rows.filter(r=>r.status==='PAGO').reduce((a,b)=>a+numSafe(b.valor),0);
-  const saldo= totR - totP;
-
+  const empresa = window.getCompany?.() || 'BSX';
+  const dataAtual = new Date().toLocaleDateString('pt-BR');
+  
   const linhas = rows.map(r => `
     <tr>
       <td>${esc(r.gerente||'')}</td>
-      <td style="text-align:right">${fmtBRL(numSafe(r.valor))}</td>
-      <td>${esc(r.status||'')}</td>
+      <td class="valor">${fmtBRL(numSafe(r.valor))}</td>
+      <td class="status ${r.status==='RECEBIDO'?'recebido':'pago'}">${esc(r.status||'')}</td>
       <td>${esc(r.forma||'')}</td>
       <td>${esc(r.categoria||'')}</td>
-      <td>${(r.data||'').split('-').reverse().join('/')}</td>
+      <td class="data">${(r.data||'').split('-').reverse().join('/')}</td>
     </tr>`).join('');
 
   const html = `
 <!doctype html><html>
 <head>
 <meta charset="utf-8">
-<title>Financeiro - Impressão</title>
+<title>Financeiro - ${empresa}</title>
 <style>
-  @page{size:A4 portrait;margin:10mm}
-  body{font-family:Arial;color:#111}
-  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}
-  .card{padding:10px;border-radius:8px;color:#fff;font-weight:700}
-  .r{background:#0b3d0b}.p{background:#212121}.s{background:#4caf50}
-  .title{font-size:12px;opacity:.9}.big{font-size:18px;margin-top:6px}
-  table{width:100%;border-collapse:collapse;font-size:11px}
-  th,td{padding:6px 8px;border-bottom:1px solid #e5e7eb}
-  thead th{background:#222;color:#fff}
-  td:nth-child(2){white-space:nowrap}
+  @page {
+    size: A4 portrait;
+    margin: 3mm 8mm;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Arial, sans-serif;
+    color: #111;
+    margin: 0;
+    padding: 0;
+    font-size: 9px;
+    line-height: 1.2;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    border-bottom: 2px solid #222;
+    margin-bottom: 4px;
+    page-break-after: avoid;
+  }
+  .header-left { font-weight: bold; font-size: 12px; }
+  .header-right { font-size: 8px; color: #666; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8px;
+  }
+  th, td {
+    padding: 3px 4px;
+    border-bottom: 1px solid #ddd;
+    text-align: left;
+  }
+  thead th {
+    background: #222;
+    color: #fff;
+    font-size: 8px;
+    font-weight: bold;
+  }
+  thead { display: table-header-group; }
+  tbody tr { page-break-inside: avoid; }
+  tbody tr:nth-child(even) { background: #f9f9f9; }
+  .valor { text-align: right; white-space: nowrap; font-family: monospace; }
+  .data { white-space: nowrap; text-align: center; }
+  .status { text-align: center; font-weight: bold; font-size: 7px; }
+  .status.recebido { color: #0b6b0b; }
+  .status.pago { color: #b00; }
+  .total-rows {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid #222;
+    font-size: 8px;
+    text-align: right;
+    color: #666;
+  }
 </style>
 </head>
 <body>
-  <div class="grid">
-    <div class="card r"><div class="title">TOTAL RECEBIMENTOS</div><div class="big">${fmtBRL(totR)}</div></div>
-    <div class="card p"><div class="title">TOTAL PAGAMENTOS</div><div class="big">${fmtBRL(totP)}</div></div>
-    <div class="card s"><div class="title">SALDO</div><div class="big">${fmtBRL(saldo)}</div></div>
+  <div class="header">
+    <div class="header-left">FINANCEIRO - ${esc(empresa)}</div>
+    <div class="header-right">Impresso em ${dataAtual} | ${rows.length} registros</div>
   </div>
   <table>
     <thead>
       <tr>
-        <th>GERENTE/ROTA</th>
-        <th style="min-width:90px">VALOR</th>
-        <th>RECEBIDO/PAGO</th>
-        <th>FORMA</th>
-        <th>CATEGORIA</th>
-        <th style="min-width:80px">DATA</th>
+        <th style="width:25%">GERENTE/ROTA</th>
+        <th style="width:12%">VALOR</th>
+        <th style="width:12%">STATUS</th>
+        <th style="width:12%">FORMA</th>
+        <th style="width:25%">CATEGORIA</th>
+        <th style="width:14%">DATA</th>
       </tr>
     </thead>
-    <tbody>${linhas || '<tr><td colspan="6">Sem lançamentos.</td></tr>'}</tbody>
+    <tbody>${linhas || '<tr><td colspan="6" style="text-align:center">Sem lançamentos.</td></tr>'}</tbody>
   </table>
-  <script>window.print(); setTimeout(()=>window.close(), 300);<\/script>
+  <div class="total-rows">Total: ${rows.length} lançamentos</div>
+  <script>window.print(); setTimeout(()=>window.close(), 500);<\/script>
 </body></html>`.trim();
 
   let w = null;
@@ -1821,4 +2121,137 @@ console.log('[Financeiro] Módulo carregado e pronto');
     }
   `;
   document.head.appendChild(style);
+
+  
+})();
+// ============================================
+// API DE LANÇAMENTOS PARA SUPABASE
+// ============================================
+(function initLancamentosAPI() {
+  
+  function waitForSupabase(callback, retries = 100) {
+    if (window.SupabaseAPI?.client) {
+      callback();
+    } else if (retries > 0) {
+      setTimeout(() => waitForSupabase(callback, retries - 1), 100);
+    }
+  }
+
+  waitForSupabase(() => {
+    
+    window.SupabaseAPI.lancamentos = {
+      
+      async getAll(empresa) {
+        const company = empresa || window.getCompany?.() || 'BSX';
+        const { data, error } = await window.SupabaseAPI.client
+          .from('lancamentos')
+          .select('*')
+          .eq('company', company)
+          .order('data', { ascending: false });
+        
+        if (error) { console.error('[Lancamentos] Erro:', error); return []; }
+        
+        return (data || []).map(r => ({
+          id: r.id, uid: r.uid, key: r.uid,
+          gerente: r.gerente || '', valor: Number(r.valor) || 0,
+          status: r.status || 'RECEBIDO', forma: r.forma || 'PIX',
+          categoria: r.categoria || '', data: r.data || '',
+          editedAt: r.edited_at, editedBy: r.edited_by || ''
+        }));
+      },
+
+      async create(item) {
+        const company = item.company || window.getCompany?.() || 'BSX';
+        const uid = item.uid || window.uid?.() || crypto.randomUUID();
+        
+        const { data, error } = await window.SupabaseAPI.client
+          .from('lancamentos')
+          .insert([{
+            uid, gerente: item.gerente || '', valor: Number(item.valor) || 0,
+            status: item.status || 'RECEBIDO', forma: item.forma || 'PIX',
+            categoria: item.categoria || '', data: item.data || new Date().toISOString().slice(0,10),
+            company, created_by: window.currentUser?.nome || ''
+          }])
+          .select().single();
+        
+        if (error) throw error;
+        console.log('[Lancamentos] ✅ Criado:', uid);
+        return data;
+      },
+
+      async update(uid, dados) {
+        const dbRow = { edited_at: new Date().toISOString(), edited_by: window.currentUser?.nome || window.UserAuth?.currentUser()?.username || '' };
+        if (dados.gerente !== undefined) dbRow.gerente = dados.gerente;
+        if (dados.valor !== undefined) dbRow.valor = Number(dados.valor);
+        if (dados.status !== undefined) dbRow.status = dados.status;
+        if (dados.forma !== undefined) dbRow.forma = dados.forma;
+        if (dados.categoria !== undefined) dbRow.categoria = dados.categoria;
+        if (dados.data !== undefined) dbRow.data = dados.data;
+
+        const { error } = await window.SupabaseAPI.client
+          .from('lancamentos').update(dbRow).eq('uid', uid);
+        
+        if (error) throw error;
+        console.log('[Lancamentos] ✅ Atualizado:', uid);
+      },
+
+      async delete(uid) {
+        const { error } = await window.SupabaseAPI.client
+          .from('lancamentos').delete().eq('uid', uid);
+        
+        if (error) throw error;
+        console.log('[Lancamentos] ✅ Deletado:', uid);
+      },
+
+      async migrate() {
+        const raw = localStorage.getItem('bsx_fin_lanc');
+        if (!raw) { console.log('[Lancamentos] Nada para migrar'); return { migrated: 0 }; }
+        
+        const local = JSON.parse(raw);
+        if (!Array.isArray(local) || !local.length) return { migrated: 0 };
+        
+        console.log(`[Lancamentos] 🔄 Migrando ${local.length} itens...`);
+        let migrated = 0;
+        
+        for (const item of local) {
+          try {
+            const uid = item.uid || item.id || item.key;
+            // Verifica se já existe
+            const { data: existing } = await window.SupabaseAPI.client
+              .from('lancamentos').select('uid').eq('uid', uid).maybeSingle();
+            
+            if (existing) { console.log('Já existe:', uid); continue; }
+            
+            await this.create(item);
+            migrated++;
+          } catch(e) { console.warn('Erro ao migrar:', e); }
+        }
+        
+        console.log(`[Lancamentos] ✅ Migrados: ${migrated}`);
+        localStorage.setItem('bsx_fin_lanc_backup_pre_supabase', raw);
+        return { migrated };
+      }
+    };
+
+    // Função global para migrar
+    window.migrarLancamentosParaSupabase = () => window.SupabaseAPI.lancamentos.migrate();
+
+// ✅ Carrega do Supabase e SUBSTITUI o localStorage
+window.SupabaseAPI.lancamentos.getAll().then(data => {
+  if (Array.isArray(data)) {
+    window.lanc = data;
+    // Atualiza localStorage como cache
+    try {
+      localStorage.setItem('bsx_fin_lanc', JSON.stringify(data));
+      localStorage.setItem('lanc', JSON.stringify(data));
+    } catch(_) {}
+    window.renderFin?.();
+    console.log('[Financeiro] ✅ Carregado do Supabase:', data.length, 'lançamentos');
+  }
+}).catch(e => {
+  console.error('[Financeiro] Erro ao carregar do Supabase:', e);
+});
+
+    console.log('✅ [Lancamentos API] Pronta! Use migrarLancamentosParaSupabase() para migrar.');
+  });
 })();

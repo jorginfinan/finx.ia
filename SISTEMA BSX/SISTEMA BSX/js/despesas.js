@@ -1,84 +1,136 @@
 // ==== DESPESAS ====
+// VERSÃO: 2025-11-26-v2-SUPABASE
 // ===== INICIALIZAÇÃO GLOBAL DE DESPESAS =====
+
+console.log('🟣🟣🟣 [despesas.js] VERSÃO SUPABASE 2025-11-26-v2 CARREGADA! 🟣🟣🟣');
+
 // ✅ CARREGAR DESPESAS DO SUPABASE
+// ✅ CARREGAR DESPESAS DO SUPABASE (com proteção de dependência)
 async function loadDespesas() {
+  // Se a API ainda não estiver pronta, não lança erro nem zera os dados
+  if (!window.SupabaseAPI?.despesas) {
+    console.warn('[Despesas] SupabaseAPI.despesas ainda não está pronto; usando cache atual.');
+    return Array.isArray(window.despesas) ? window.despesas : [];
+  }
+
   try {
-    window.despesas = await window.SupabaseAPI.despesas.getAll();
+    const despesas = await window.SupabaseAPI.despesas.getAll();
+    window.despesas = despesas.map(d => ({
+      // Mapear campos do Supabase para JS
+      id: d.id,
+      uid: d.uid || d.id,
+      ficha: d.ficha || '',
+      gerenteId: d.gerente_id || '',
+      gerenteNome: d.gerente_nome || '', // gerente_nome → gerenteNome
+      info: d.descricao || '', // descricao → info
+      valor: Number(d.valor) || 0,
+      data: d.data || '',
+      periodoIni: d.periodo_ini || '', // periodo_ini → periodoIni
+      periodoFim: d.periodo_fim || '', // periodo_fim → periodoFim
+      isHidden: d.oculta === true, // oculta → isHidden (boolean correto)
+      rota: d.rota || '',
+      categoria: d.categoria || '',
+      obs: d.obs || '',
+      editada: d.editada || false
+    }));
+    
+    const ocultasCount = window.despesas.filter(d => d.isHidden).length;
     console.log('[Despesas] Carregadas do Supabase:', window.despesas.length);
+    console.log('[Despesas] 🚫 Despesas com isHidden=true:', ocultasCount);
+    
+    // Log de amostra das ocultas
+    if (ocultasCount > 0) {
+      const amostraOcultas = window.despesas.filter(d => d.isHidden).slice(0, 3);
+      console.log('[Despesas] 📋 Amostra de ocultas:', amostraOcultas.map(d => ({
+        info: d.info,
+        isHidden: d.isHidden
+      })));
+    }
+    
+    return window.despesas;
   } catch (error) {
     console.error('[Despesas] Erro ao carregar:', error);
     window.despesas = [];
+    return [];
   }
 }
 
+
+// ✅ SALVAR DESPESA NO SUPABASE
 // ✅ SALVAR DESPESA NO SUPABASE
 async function saveDespesa(despesa) {
   try {
+    console.log('[Despesas] Enviando para API:', despesa);
+    
     if (despesa.id) {
-      // Atualizar existente
+      // Atualizar existente - API cuida do mapeamento
       await window.SupabaseAPI.despesas.updateByUid(despesa.uid, despesa);
     } else {
-      // Criar nova
+      // Criar nova - API cuida do mapeamento
       despesa.uid = window.uid();
       await window.SupabaseAPI.despesas.create(despesa);
     }
     
-    // Recarrega lista
-    await loadDespesas();
-    
-    console.log('[Despesas] Salva com sucesso');
+    console.log('[Despesas] ✅ Salva com sucesso');
   } catch (error) {
-    console.error('[Despesas] Erro ao salvar:', error);
+    console.error('[Despesas] ❌ Erro ao salvar:', error);
     throw error;
   }
 }
 
-// Substituir window.saveDesp
-window.saveDesp = saveDespesas;
+// Compatibilidade: se chamado sem argumento, não faz nada (Supabase já salvou individualmente)
+// Se chamado com argumento, salva a despesa específica
+window.saveDesp = function(despesa) {
+  if (despesa) {
+    return saveDespesa(despesa);
+  }
+  // Chamada legada sem argumento - ignora (dados já estão no Supabase)
+  console.log('[Despesas] saveDesp() chamado sem argumento - ignorando (Supabase já sincronizado)');
+};
 
-(function initDespesasGlobal() {
-  const KEY = 'bsx_despesas_v1';
-  
-  // Inicializa array global
-  if (!Array.isArray(window.despesas)) {
-    try {
-      const raw = localStorage.getItem(KEY);
-      window.despesas = raw ? JSON.parse(raw) : [];
-      
-      // Garante que é array
-      if (!Array.isArray(window.despesas)) {
-        window.despesas = [];
-      }
-      
-      console.log('[Despesas] Inicializado:', window.despesas.length, 'itens');
-    } catch(e) {
-      console.error('[Despesas] Erro ao carregar:', e);
-      window.despesas = [];
+// Helper functions para compatibilidade
+function __getDespesas() {
+  return window.despesas || [];
+}
+
+function __setDespesas(arr) {
+  window.despesas = arr;
+}
+
+// Inicialização: só roda depois que SupabaseAPI.despesas existir
+function initDespesasWhenReady(retries = 50) {
+  if (!window.SupabaseAPI?.despesas) {
+    if (retries <= 0) {
+      console.error('[Despesas] SupabaseAPI.despesas não ficou pronto; exibindo apenas dados em memória.');
+      if (typeof renderDespesas === 'function') renderDespesas();
+      return;
     }
+    console.warn('[Despesas] Aguardando SupabaseAPI.despesas...', retries);
+    setTimeout(() => initDespesasWhenReady(retries - 1), 200);
+    return;
   }
-  
-  // Função de salvar global
-  if (typeof window.saveDesp !== 'function') {
-    window.saveDesp = function() {
-      try {
-        const arr = Array.isArray(window.despesas) ? window.despesas : [];
-        localStorage.setItem(KEY, JSON.stringify(arr));
-        console.log('[Despesas] Salvou:', arr.length, 'itens');
-        
-        // Notifica outras abas
-        try {
-          if (window.BroadcastChannel) {
-            const bc = new BroadcastChannel('bsx-sync');
-            bc.postMessage({ key: KEY });
-          }
-        } catch(e) {}
-      } catch(e) {
-        console.error('[Despesas] Erro ao salvar:', e);
-      }
-    };
-  }
-  
-})();
+
+  (async () => {
+    await loadDespesas();
+    // Preenche selects se a função existir
+    if (typeof buildDespesasFilterOptions === 'function') {
+      buildDespesasFilterOptions();
+    }
+    if (typeof renderDespesas === 'function') {
+      renderDespesas();
+    }
+  })();
+}
+
+// Garante que o boot rode depois do DOM pronto
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => initDespesasWhenReady());
+} else {
+  initDespesasWhenReady();
+}
+
+// continua expondo a função para uso externo
+window.loadDespesas = loadDespesas;
 
 (function  ()  {
     'use strict';
@@ -106,9 +158,9 @@ window.saveDesp = saveDespesas;
   };
 });
 
-// Helpers
+// Helpers - ✅ USA window.fichas e window.vendas (Supabase)
 function getRotaByFicha(ficha) {
-    const rec = (fichas || []).find(f => String(f.ficha) === String(ficha));
+    const rec = (window.fichas || []).find(f => String(f.ficha) === String(ficha));
     return rec ? rec.area : '';
   }
   function getVendaMesByDespesa(ficha, dataISO, periodoIni, periodoFim) {
@@ -118,17 +170,24 @@ function getRotaByFicha(ficha) {
     let prevY = yyyy, prevM = mm - 1;
     if (prevM === 0) { prevM = 12; prevY = yyyy - 1; }
     const prevYM = `${prevY}-${String(prevM).padStart(2,'0')}`;
-    return (vendas || []).find(v => String(v.ficha) === String(ficha) && v.ym === prevYM) || null;
+    return (window.vendas || []).find(v => String(v.ficha) === String(ficha) && v.ym === prevYM) || null;
   }
 
   function renderDespesas(){
     const tb = document.getElementById('tbodyDespesas');
-    const buscaG = (document.getElementById('despBuscaGerente').value||'').toLowerCase();
-    const buscaF = (document.getElementById('despBuscaFicha').value||'').toLowerCase();
+    if (!tb) {
+      console.warn('[Despesas] tbody não encontrado');
+      return;
+    }
+    
+    const buscaG = (document.getElementById('despBuscaGerente')?.value||'').toLowerCase();
+    const buscaF = (document.getElementById('despBuscaFicha')?.value||'').toLowerCase();
     const buscaR = (document.getElementById('despBuscaRota')?.value||'').toLowerCase();
-    const de = document.getElementById('despDe').value || '0000-00-00';
-    const ate = document.getElementById('despAte').value || '9999-12-31';
+    const de = document.getElementById('despDe')?.value || '0000-00-00';
+    const ate = document.getElementById('despAte')?.value || '9999-12-31';
     const showHidden = !!document.getElementById('despMostrarOcultas')?.checked;
+    
+    const IDEAL_RATE = typeof window.IDEAL_RATE === 'number' ? window.IDEAL_RATE : 0.06;
 
 
     // Permissões por perfil
@@ -173,9 +232,17 @@ function makeDespActionsMenu({ id, isHidden }, { canDelete }){
     const colCount = tb?.closest('table')?.querySelectorAll('thead th').length || 12;
   
 // 1) Filtra
-const list = __getDespesas().filter(r=>{
+const allDespesas = __getDespesas();
+console.log('[renderDespesas] 📊 Total de despesas:', allDespesas.length);
+console.log('[renderDespesas] 🔍 Despesas ocultas:', allDespesas.filter(d => d.isHidden).length);
+console.log('[renderDespesas] 👁️ showHidden (checkbox marcado)?', showHidden);
+
+const list = allDespesas.filter(r=>{
   if(r.data < de || r.data > ate) return false;
-  if(!showHidden && r.isHidden)   return false;
+  if(!showHidden && r.isHidden) {
+    console.log('[renderDespesas] ⚠️ Filtrando despesa oculta:', r.info, 'isHidden:', r.isHidden);
+    return false;
+  }
 
   const nomeG = (r.gerenteNome||'').toLowerCase();
   if (buscaG && nomeG !== buscaG) return false;
@@ -188,6 +255,8 @@ const list = __getDespesas().filter(r=>{
 
   return true;
 });
+
+console.log('[renderDespesas] ✅ Após filtrar:', list.length, 'despesas');
 
   
     // 2) Agrupa por ficha
@@ -231,21 +300,19 @@ const list = __getDespesas().filter(r=>{
         const valorAj = Number(r.valor)||0;
         const dif     = valorAj - ideal;
         const status  = Math.abs(dif) < 0.005 ? 'IDEAL' : (dif > 0 ? 'ACIMA' : 'ABAIXO');
-        const toggleBtn = canToggleHide
-  ? `<button type="button" class="btn ${r.isHidden?'secondary':''}" data-toggle-hide="${r.id}">
-       ${r.isHidden?'Desocultar':'Ocultar'}
-     </button>`
-  : '';
 
-const del = canDelete
-  ? `<button type="button" class="btn danger" data-del-desp="${r.id}">Excluir</button>`
-  : 'n';
-
+        // Sistema unificado: apenas dropdown "Opções ▾"
       
         const selo = r.isHidden ? '<span class="pill-oculta" title="Esta despesa está oculta">ocultada</span>' : '';
         const difColor = status==='ACIMA' ? '#b91c1c' : (status==='ABAIXO' ? '#2563eb' : '#16a34a');
   
         const infoTxt = `${esc(r.info||'')} — <small class="muted">${fmtDiaMes(r.data)}</small>${selo}`;
+        
+        // Debug: Log do ID sendo renderizado
+        if (!r.id) {
+          console.error('[DESPESAS] Renderizando linha SEM ID!', r);
+        }
+        
         const actions = makeDespActionsMenu({ id:r.id, isHidden:!!r.isHidden }, { canDelete });
         
         linhas.push(`
@@ -332,10 +399,13 @@ for (const it of itens){
     </tr>
   `);
 }
-
-        }       
+      
+    
+        } 
+      }
   
     tb.innerHTML = linhas.join('');
+    console.log('[renderDespesas] ✅ Renderizadas', linhas.length, 'linhas de', list.length, 'despesas');
   
     // Aviso de ocultas (mesma lógica)
     atualizaAvisoOcultas();
@@ -369,195 +439,80 @@ for (const it of itens){
         avisoEl.textContent = '';
       }
     }    
-    }}
+    }
+    window.renderDespesas = renderDespesas;
 
-    (function bindDespUIFloating(){
-      if (window.__despUIFloatingBound) return;
-      window.__despUIFloatingBound = true;
-    
-      const root = document.getElementById('pageDespesas') || document;
-    
-      function clearOpenFlags(){
-        document.querySelectorAll('[data-desp-dd-toggle][data-menu-open="1"]')
-          .forEach(b => b.removeAttribute('data-menu-open'));
-      }
-    
-      // Abre/fecha o menu via PORTAL no <body> (sobre a tabela)
-      root.addEventListener('click', (e)=>{
-        const btn = e.target.closest('[data-desp-dd-toggle]');
-        if (!btn) return;
-        e.preventDefault();
-    
-        // toggle: se já está aberto, fecha
-        if (btn.getAttribute('data-menu-open') === '1'){
-          if (typeof closeFloatingMenu === 'function') closeFloatingMenu();
-          btn.removeAttribute('data-menu-open');
-          return;
-        }
-    
-        // fecha qualquer outro aberto
-        clearOpenFlags();
-        if (typeof closeFloatingMenu === 'function') closeFloatingMenu();
-    
-        const id  = btn.getAttribute('data-id');
-        const arr = (typeof __getDespesas==='function') ? __getDespesas() : (window.despesas||[]);
-        const r   = arr.find(x => [x.id,x.uid,x.key].some(v => String(v)===String(id))) || {};
-        const canDelete = !!(window.currentUser?.isAdmin);
-        const hideLbl   = (r.isHidden || r.oculto || r.hidden) ? 'Desocultar' : 'Ocultar';
-    
-        const html = `
-          <div>
-            <button class="mi" data-desp-act="toggle-hide" data-id="${id}">${hideLbl}</button>
-            <button class="mi" data-desp-act="editar" data-id="${id}">Editar</button>
-            ${canDelete ? `<button class="mi danger" data-desp-act="excluir" data-id="${id}">Excluir</button>` : ``}
-          </div>
-        `;
-    
-        if (window.openFloatingMenu) {
-          openFloatingMenu(btn, html);
-          btn.setAttribute('data-menu-open','1'); // marca como aberto para o toggle
-        } else {
-          // fallback antigo (se não tiver o helper carregado)
-          btn.closest('[data-desp-dd]')?.classList.toggle('open');
-        }
-      }, true);
-    
-      // Clicar fora fecha o menu (e limpa a marca do botão)
-      document.addEventListener('click', (e)=>{
-        const isToggle = !!e.target.closest('[data-desp-dd-toggle]');
-        const inMenu   = !!e.target.closest('.floating-menu');
-        if (isToggle || inMenu) return; // não é "fora"
-        clearOpenFlags();
-        if (typeof closeFloatingMenu==='function') closeFloatingMenu();
-      }, true);
-    
-      // AÇÕES do menu (funciona com o portal)
-      document.addEventListener('click', (e)=>{
-        const btn = e.target.closest('[data-desp-act]');
-        if (!btn) return;
-        e.preventDefault();
-    
-        const act = btn.getAttribute('data-desp-act');
-        const id  = btn.getAttribute('data-id');
-    
-        // fecha o menu e limpa marcações
-        clearOpenFlags();
-        if (typeof closeFloatingMenu==='function') closeFloatingMenu();
-    
-        if (act === 'toggle-hide'){
-          const arr = __getDespesas();
-          const i   = arr.findIndex(x => [x.id,x.uid,x.key].some(v => String(v)===String(id)));
-          if (i<0) return alert('Despesa não encontrada.');
-          const novo = !(arr[i].isHidden || arr[i].oculto || arr[i].hidden);
-          arr[i].isHidden = novo; arr[i].oculto = novo; arr[i].hidden = novo;
-          __setDespesas(arr);
-          if (typeof saveDesp==='function') saveDesp();
-          if (typeof renderDespesas==='function') renderDespesas();
-          return;
-        }
-    
-        if (act === 'editar'){
-          const fns = ['editDespesa','openDespesaDialog','__desp_openDialog','editarDespesa'];
-          for (const fn of fns){ if (typeof window[fn]==='function'){ window[fn](id); break; } }
-          return;
-        }
-    
-        if (act === 'excluir'){
-          if (!window.currentUser?.isAdmin) { alert('Apenas ADMIN pode excluir.'); return; }
-          if (!confirm('Excluir esta despesa?')) return;
-          const arr  = __getDespesas();
-          const novo = arr.filter(x => ![x.id,x.uid,x.key].some(v => String(v)===String(id)));
-          __setDespesas(novo);
-          if (typeof saveDesp==='function') saveDesp();
-          if (typeof renderDespesas==='function') renderDespesas();
-          return;
-        }
-      }, true);
-    
-      // Escape também fecha
-      document.addEventListener('keydown', (e)=>{
-        if (e.key !== 'Escape') return;
-        clearOpenFlags();
-        if (typeof closeFloatingMenu==='function') closeFloatingMenu();
-      }, true);
-    })();
-    
-    
     
   /* ================== DESPESAS: listas de opções dos filtros (encadeadas) ================== */
-  function buildDespesasFilterOptions() {
-    // Garante que os 3 filtros sejam <select>
-    const selG = ensureSelect('despBuscaGerente'); // Gerente
-    const selR = ensureSelect('despBuscaRota');    // Rota
-    const selF = ensureSelect('despBuscaFicha');   // Ficha
-    if (!selG || !selR || !selF) return;
-  
-    const de  = document.getElementById('despDe').value || '0000-00-00';
-    const ate = document.getElementById('despAte').value || '9999-12-31';
-  
-    // Base: considera despesas no período (visíveis e ocultas)
-    const base = (despesas || []).filter(d =>
-      d.data >= de && d.data <= ate
-    );
-    
-  
-    // Valores atuais (para tentar manter seleção ao recriar opções)
-    const curG = selG.value;
-    const curR = selR.value;
-    const curF = selF.value;
-  
-    // --- Opções de GERENTE: só quem tem despesa no período ---
-    const gerentes = Array.from(new Set(
-      base.map(d => (d.gerenteNome || '').trim()).filter(Boolean)
-    )).sort((a,b)=> a.localeCompare(b));
-  
-    selG.innerHTML = [
-      `<option value="">Selecione o gerente</option>`,
-      ...gerentes.map(n => `<option value="${esc(n)}"${n===curG?' selected':''}>${esc(n)}</option>`)
-    ].join('');
-  
-    // Reaplica seleção se existir; senão, vazio
-    if (selG.value && !gerentes.includes(selG.value)) selG.value = '';
-  
-    // --- Opções de ROTA: dependem do gerente selecionado ---
-    const baseR = selG.value
-      ? base.filter(d => (d.gerenteNome||'').trim() === selG.value)
-      : base;
-  
-    const rotas = Array.from(new Set(
-      baseR.map(d => String(getRotaByFicha(d.ficha) || '').trim()).filter(Boolean)
-    )).sort((a,b)=> a.localeCompare(b));
-  
-    selR.innerHTML = [
-      `<option value="">Selecione a rota</option>`,
-      ...rotas.map(r => `<option value="${esc(r)}"${r===curR?' selected':''}>${esc(r)}</option>`)
-    ].join('');
-  
-    if (selR.value && !rotas.includes(selR.value)) selR.value = '';
-  
-    // --- Opções de FICHA: dependem de gerente e rota selecionados ---
-    const baseF = baseR.filter(d => {
-      if (!selR.value) return true;
-      const rota = String(getRotaByFicha(d.ficha) || '').trim();
-      return rota === selR.value;
-    });
-  
-    const fichas = Array.from(new Set(
-      baseF.map(d => String(d.ficha||'').trim()).filter(Boolean)
-    )).sort((a,b)=> a.localeCompare(b, 'pt-BR', { numeric:true }));
-  
-    selF.innerHTML = [
-      `<option value="">Selecione a ficha</option>`,
-      ...fichas.map(f => `<option value="${esc(f)}"${f===curF?' selected':''}>${esc(f)}</option>`)
-    ].join('');
-  
-    if (selF.value && !fichas.includes(selF.value)) selF.value = '';
-  
-    // Handlers (encadeados)
-    selG.onchange = ()=>{ buildDespesasFilterOptions(); renderDespesas(); };
-    selR.onchange = ()=>{ buildDespesasFilterOptions(); renderDespesas(); };
-    selF.onchange = ()=>{ renderDespesas(); };
-  }
+function buildDespesasFilterOptions() {
+  // Garante que os 3 filtros sejam <select>
+  const selG = ensureSelect('despBuscaGerente'); // Gerente
+  const selR = ensureSelect('despBuscaRota');    // Rota
+  const selF = ensureSelect('despBuscaFicha');   // Ficha
+  if (!selG || !selR || !selF) return;
+
+  const de  = document.getElementById('despDe').value  || '0000-00-00';
+  const ate = document.getElementById('despAte').value || '9999-12-31';
+
+  // Base: considera despesas no período (visíveis e ocultas)
+  const base = __getDespesas().filter(d =>
+    d.data >= de && d.data <= ate
+  );
+
+  // Valores atuais (para tentar manter seleção ao recriar opções)
+  const curG = selG.value;
+  const curR = selR.value;
+  const curF = selF.value;
+
+  // --- Opções de GERENTE: só quem tem despesa no período ---
+  const gerentes = Array.from(new Set(
+    base.map(d => (d.gerenteNome || '').trim()).filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b));
+
+  selG.innerHTML = [
+    `<option value="">Selecione o gerente</option>`,
+    ...gerentes.map(n => `<option value="${esc(n)}"${n === curG ? ' selected' : ''}>${esc(n)}</option>`)
+  ].join('');
+
+  // Reaplica seleção se existir; senão, zera
+  if (selG.value && !gerentes.includes(selG.value)) selG.value = '';
+
+  // --- Opções de ROTA: dependem do gerente selecionado ---
+  const baseR = selG.value
+    ? base.filter(d => (d.gerenteNome || '').trim() === selG.value)
+    : base;
+
+  const rotas = Array.from(new Set(
+    baseR.map(d => String(getRotaByFicha(d.ficha) || '').trim()).filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b));
+
+  selR.innerHTML = [
+    `<option value="">Selecione a rota</option>`,
+    ...rotas.map(r => `<option value="${esc(r)}"${r === curR ? ' selected' : ''}>${esc(r)}</option>`)
+  ].join('');
+
+  if (selR.value && !rotas.includes(selR.value)) selR.value = '';
+
+  // --- Opções de FICHA: dependem de gerente e rota selecionados ---
+  const baseF = baseR.filter(d => {
+    if (!selR.value) return true;
+    const rota = String(getRotaByFicha(d.ficha) || '').trim();
+    return rota === selR.value;
+  });
+
+  const fichas = Array.from(new Set(
+    baseF.map(d => String(d.ficha || '').trim()).filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }));
+
+  selF.innerHTML = [
+    `<option value="">Selecione a ficha</option>`,
+    ...fichas.map(f => `<option value="${esc(f)}"${f === curF ? ' selected' : ''}>${esc(f)}</option>`)
+  ].join('');
+
+  if (selF.value && !fichas.includes(selF.value)) selF.value = '';
+}
+window.buildDespesasFilterOptions = buildDespesasFilterOptions;
+
       // --- BOTÕES DE IMPRESSÃO (substitui o "Exportar CSV" se existir) ---
       (function injectPrintButtons(){
         const csvBtn = document.getElementById('despExport');
@@ -858,7 +813,7 @@ function __buildPrintHTML({ titulo, sub, rows, modo }) {
     </div>
   `;
 
-  const thead = isCom
+ const thead = isCom
     ? `
       <thead>
         <tr>
@@ -866,7 +821,6 @@ function __buildPrintHTML({ titulo, sub, rows, modo }) {
           <th class="col-ficha">Ficha</th>
           <th class="col-info">Informações</th>
           <th class="col-num">Valor Ajuda</th>
-          <th class="col-num">Venda Bruta</th>
         </tr>
       </thead>
     `
@@ -897,14 +851,13 @@ function __buildPrintHTML({ titulo, sub, rows, modo }) {
           const vBrutaTd = showCalc ? fmtBRL(r.vBruta||0) : '—';
           const vLiqTd   = showCalc ? fmtBRL(r.vLiq  ||0) : '—';
           const trCls    = isTotal ? 'class="group-total"' : '';
-    if (isCom){
+ if (isCom){
       return `
         <tr ${trCls}>
           <td>${esc(r.rota)}</td>
           <td>${esc(r.ficha)}</td>
           <td>${esc(r.info)}</td>
           <td class="num">${fmtBRL(r.valorAj)}</td>
-          <td class="num">${vBrutaTd}</td>
         </tr>
       `;
     }
@@ -923,13 +876,12 @@ function __buildPrintHTML({ titulo, sub, rows, modo }) {
     `;
   }).join('');
 
-  const tfoot = isCom
+ const tfoot = isCom
     ? `
       <tfoot>
         <tr>
           <td colspan="3" class="num">Totais:</td>
           <td class="num">${fmtBRL(totais.ajuda)}</td>
-          <td class="num">${fmtBRL(totais.bruta)}</td>
         </tr>
       </tfoot>
     `
@@ -1009,19 +961,6 @@ function fmtDMY(iso){
   return `${d.padStart(2,'0')}/${m.padStart(2,'0')}/${y}`;
 }
 
-function __getDespesas(){
-  try { if (typeof despesas !== 'undefined' && Array.isArray(despesas)) return despesas; } catch(_) {}
-  return Array.isArray(window.despesas) ? window.despesas : [];
-}
-function __setDespesas(novo){
-  try { if (typeof despesas !== 'undefined') { despesas = novo; return; } } catch(_) {}
-  window.despesas = novo;
-  try {
-       if (typeof DB_DESPESAS !== 'undefined') {
-         localStorage.setItem(DB_DESPESAS, JSON.stringify(novo));
-       }
-     } catch(e){}
-    }
 
 function ensureSelect(id, placeholder){
   const el = document.getElementById(id);
@@ -1036,6 +975,59 @@ function ensureSelect(id, placeholder){
   return sel;
 }
 
+
+// ============================================
+// ✅ EVENT LISTENERS PARA MENU DROPDOWN
+// ============================================
+
+// 1️⃣ Abrir/Fechar Menu Dropdown "Opções"
+if (!window.__despDropdownBound) {
+  document.addEventListener('click', (e) => {
+    const toggle = e.target.closest('[data-desp-dd-toggle]');
+    
+    if (toggle) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const dropdown = toggle.closest('[data-desp-dd]');
+      const menu = dropdown?.querySelector('[data-desp-dd-menu]');
+      
+      if (menu) {
+        const isOpen = menu.classList.contains('show');
+        
+        // Fecha todos os menus abertos
+        document.querySelectorAll('[data-desp-dd-menu].show').forEach(m => {
+          m.classList.remove('show');
+          const btn = m.closest('[data-desp-dd]')?.querySelector('[data-desp-dd-toggle]');
+          if (btn) btn.setAttribute('aria-expanded', 'false');
+        });
+        
+        // Abre/fecha o menu clicado
+        if (!isOpen) {
+          menu.classList.add('show');
+          toggle.setAttribute('aria-expanded', 'true');
+        }
+      }
+      return;
+    }
+    
+    // Fecha menus ao clicar fora
+    if (!e.target.closest('[data-desp-dd]')) {
+      document.querySelectorAll('[data-desp-dd-menu].show').forEach(m => {
+        m.classList.remove('show');
+        const btn = m.closest('[data-desp-dd]')?.querySelector('[data-desp-dd-toggle]');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
+      });
+    }
+  }, true);
+  
+  window.__despDropdownBound = true;
+}
+
+// 2️⃣ Processar Ações do Menu (Toggle Hide, Editar, Excluir)
+// ====== SISTEMA UNIFICADO DE AÇÕES (DROPDOWN) ======
+// Único sistema mantido - dropdown "Opções ▾"
+// Remove duplicatas e mantém apenas o sistema mais completo
 
 // Delegação global para expandir/contrair grupos (não depende do render)
 if (!window.__despInlineGroupBound) {
@@ -1057,57 +1049,194 @@ if (!window.__despInlineGroupBound) {
   window.__despInlineGroupBound = true;
 }
 
-// Ações admin: Ocultar/Desocultar e Excluir
-if (!window.__despAdminActionsBound) {
-  document.addEventListener('click', (e)=>{
-    // Toggle ocultar/desocultar
-    const hideBtn = e.target.closest('button[data-toggle-hide]');
-    if (hideBtn) {
+// ====== NOVO SISTEMA DE DROPDOWN DE AÇÕES ======
+if (!window.__despDropdownBound) {
+  // Toggle do dropdown
+  document.addEventListener('click', (e) => {
+    const toggle = e.target.closest('[data-desp-dd-toggle]');
+    
+    if (toggle) {
       e.preventDefault();
       e.stopPropagation();
-
-      const id  = hideBtn.getAttribute('data-toggle-hide');
-      const arr = __getDespesas();
-      const idx = arr.findIndex(x => String(x.id) === String(id));
-
-      if (idx === -1) {
-        console.warn('[DESPESAS] id não encontrado para ocultar:', id, arr.map(x=>x.id));
-        alert('Não foi possível localizar esta despesa para ocultar/exibir.');
-        return;
+      
+      // Fecha todos os outros dropdowns
+      document.querySelectorAll('.desp-menu.show').forEach(menu => {
+        if (menu !== toggle.nextElementSibling) {
+          menu.classList.remove('show');
+          const otherToggle = menu.previousElementSibling;
+          if (otherToggle) otherToggle.setAttribute('aria-expanded', 'false');
+        }
+      });
+      
+      // Toggle do menu atual
+      const menu = toggle.nextElementSibling;
+      if (menu && menu.classList.contains('desp-menu')) {
+        const isOpen = menu.classList.contains('show');
+        menu.classList.toggle('show');
+        toggle.setAttribute('aria-expanded', !isOpen);
       }
-
-      arr[idx].isHidden = !arr[idx].isHidden;
-      __setDespesas(arr);
-      if (typeof saveDesp === 'function') saveDesp();
-      if (typeof renderDespesas === 'function') renderDespesas();
       return;
     }
-
-    // Excluir
-    const delBtn = e.target.closest('button[data-del-desp]');
-    if (delBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const id  = delBtn.getAttribute('data-del-desp');
-      if (!confirm('Excluir despesa?')) return;
-
-      const arr  = __getDespesas();
-      const novo = arr.filter(x => String(x.id) !== String(id));
-
-      if (novo.length === arr.length) {
-        console.warn('[DESPESAS] id não encontrado para excluir:', id, arr.map(x=>x.id));
-        alert('Não foi possível localizar esta despesa para excluir.');
-        return;
-      }
-
-      __setDespesas(novo);
-      if (typeof saveDesp === 'function') saveDesp();
-      if (typeof renderDespesas === 'function') renderDespesas();
+    
+    // Fecha dropdowns ao clicar fora
+    if (!e.target.closest('.desp-dd')) {
+      document.querySelectorAll('.desp-menu.show').forEach(menu => {
+        menu.classList.remove('show');
+        const toggle = menu.previousElementSibling;
+        if (toggle) toggle.setAttribute('aria-expanded', 'false');
+      });
     }
-  }, true);
-  window.__despAdminActionsBound = true;
+  });
+  
+  window.__despDropdownBound = true;
 }
+
+// ====== AÇÕES DO MENU (EDITAR, OCULTAR, EXCLUIR) ======
+if (!window.__despMenuActionsBound) {
+  document.addEventListener('click', async (e) => {
+    const actionBtn = e.target.closest('[data-desp-act]');
+    if (!actionBtn) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const action = actionBtn.getAttribute('data-desp-act');
+    const id = actionBtn.getAttribute('data-id');
+    
+    console.log('[DESPESAS] Ação clicada:', action, 'ID:', id, 'Tipo:', typeof id);
+    
+    // Fecha o dropdown
+    const menu = actionBtn.closest('.desp-menu');
+    if (menu) {
+      menu.classList.remove('show');
+      const toggle = menu.previousElementSibling;
+      if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    }
+    
+    const arr = __getDespesas();
+    const idx = arr.findIndex(x => String(x.id) === String(id));
+    
+    if (idx === -1) {
+      console.warn('[DESPESAS] Despesa não encontrada!');
+      console.warn('ID procurado:', id, 'Tipo:', typeof id);
+      console.warn('IDs disponíveis:', arr.map(x => ({ id: x.id, tipo: typeof x.id })));
+      console.warn('Total de despesas no array:', arr.length);
+      alert('Não foi possível localizar esta despesa. Verifique o console (F12) para mais detalhes.');
+      return;
+    }
+    
+    // Executar a ação
+    switch(action) {
+      case 'toggle-hide':
+        const antigoEstado = arr[idx].isHidden;
+        arr[idx].isHidden = !arr[idx].isHidden;
+        __setDespesas(arr);
+        
+        console.log('[DROPDOWN] 1️⃣ Alterando despesa:', {
+          uid: arr[idx].uid,
+          info: arr[idx].info,
+          'isHidden ANTES': antigoEstado,
+          'isHidden AGORA': arr[idx].isHidden
+        });
+        
+        try {
+          // Salva no Supabase
+          console.log('[DROPDOWN] 2️⃣ Salvando...');
+          await saveDespesa(arr[idx]);
+          
+          // Aguarda um pouco para garantir que o Supabase processou
+          console.log('[DROPDOWN] 3️⃣ Aguardando 100ms...');
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Recarrega do Supabase
+          console.log('[DROPDOWN] 4️⃣ Recarregando do Supabase...');
+          const uidAlterado = arr[idx].uid;
+          const infoAlterado = arr[idx].info;
+          const novoEstado = arr[idx].isHidden;
+          
+          await loadDespesas();
+          
+          // Verifica se a mudança persistiu
+          const arrDepois = __getDespesas();
+          const despesaDepois = arrDepois.find(d => d.uid === uidAlterado);
+          console.log('[DROPDOWN] 🔍 Verificando se mudança persistiu:', {
+            uid: uidAlterado,
+            info: infoAlterado,
+            'enviamos isHidden': novoEstado,
+            'veio do Supabase': despesaDepois?.isHidden,
+            'PERSISTIU?': despesaDepois?.isHidden === novoEstado ? '✅ SIM' : '❌ NÃO'
+          });
+          
+          // Renderiza
+          console.log('[DROPDOWN] 5️⃣ Renderizando...');
+          renderDespesas();
+          
+          console.log('[DROPDOWN] ✅ Concluído!');
+        } catch (error) {
+          console.error('[DESPESAS] Erro ao ocultar/desocultar:', error);
+          alert('Erro ao salvar: ' + error.message);
+          // Reverte mudança local em caso de erro
+          arr[idx].isHidden = !arr[idx].isHidden;
+          __setDespesas(arr);
+          renderDespesas();
+        }
+        break;
+        
+      case 'editar':
+        // Abre modal de edição se existir a função
+        if (typeof openEditDespesaModal === 'function') {
+          openEditDespesaModal(arr[idx]);
+        } else {
+          // Fallback: edição inline simples
+          const novaInfo = prompt('Editar descrição:', arr[idx].info || '');
+          if (novaInfo !== null && novaInfo !== arr[idx].info) {
+            arr[idx].info = novaInfo;
+            arr[idx].editada = true;
+            __setDespesas(arr);
+            
+            try {
+              await saveDespesa(arr[idx]);
+              await new Promise(resolve => setTimeout(resolve, 100));
+              await loadDespesas();
+              renderDespesas();
+            } catch (error) {
+              console.error('[DESPESAS] Erro ao editar:', error);
+              alert('Erro ao salvar: ' + error.message);
+            }
+          }
+        }
+        break;
+        
+      case 'excluir':
+        if (!confirm('Excluir esta despesa?')) return;
+        
+        try {
+          const uid = arr[idx].uid || arr[idx].id;
+          
+          // Remove do Supabase primeiro
+          await window.SupabaseAPI.despesas.deleteByUid(uid);
+          
+          // Aguarda confirmação
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Remove do array local
+          const novo = arr.filter(x => String(x.id) !== String(id));
+          __setDespesas(novo);
+          
+          // Recarrega do Supabase
+          await loadDespesas();
+          renderDespesas();
+        } catch (error) {
+          console.error('[DESPESAS] Erro ao excluir:', error);
+          alert('Erro ao excluir: ' + error.message);
+        }
+        break;
+    }
+  });
+  
+  window.__despMenuActionsBound = true;
+}
+
 // ====== Modo seleção de ocultar por grupo (Total Despesas) ======
 if (!window.__despGroupHideBound) {
   // guarda grupos que estão em "modo seleção"
@@ -1168,7 +1297,7 @@ if (!window.__despGroupHideBound) {
     }
   }
 
-  document.addEventListener('click', (e)=>{
+  document.addEventListener('click', async (e)=>{
     // 3.1 — Entrar no modo seleção
     const btnGroup = e.target.closest('[data-ocultar-grupo]');
     if (btnGroup){
@@ -1214,18 +1343,31 @@ if (!window.__despGroupHideBound) {
 
       const arr = __getDespesas();
       let changed = 0;
-      ids.forEach(id=>{
+      
+      for (const id of ids) {
         const i = arr.findIndex(x => String(x.id) === String(id));
-        if (i > -1 && !arr[i].isHidden){ arr[i].isHidden = true; changed++; }
-      });
+        if (i > -1 && !arr[i].isHidden) { 
+          arr[i].isHidden = true; 
+          changed++;
+          
+          // Salva no Supabase
+          try {
+            await saveDespesa(arr[i]);
+          } catch (error) {
+            console.error('[Despesas] Erro ao ocultar:', error);
+          }
+        }
+      }
 
       if (changed > 0){
         __setDespesas(arr);
-        if (typeof saveDesp === 'function') saveDesp();
+        // Aguarda e recarrega apenas uma vez no final
+        await new Promise(resolve => setTimeout(resolve, 200));
+        await loadDespesas();
       }
 
       // re-render e volta ao modo normal
-      if (typeof renderDespesas === 'function') renderDespesas();
+      renderDespesas();
       setTimeout(()=> setSelectionMode(groupId, false), 0);
     }
   }, true);
@@ -1239,18 +1381,89 @@ if (!window.__despGroupHideBound) {
     renderDespesas();
   });
 });
-buildDespesasFilterOptions();
-renderDespesas();
+
+// Event listeners para filtros (delegados, funcionam mesmo se o <select> for recriado)
+document.addEventListener('change', (e) => {
+  const target = e.target;
+  if (!target || !target.id) return;
+
+  // Quando troca o GERENTE:
+  // - Recalcula opções de rota/ficha com base nesse gerente
+  // - Re-renderiza a tabela
+  if (target.id === 'despBuscaGerente') {
+    if (typeof buildDespesasFilterOptions === 'function') {
+      buildDespesasFilterOptions();
+    }
+    renderDespesas();
+  }
+
+  // Quando troca ROTA ou FICHA: só precisa redesenhar a tabela
+  if (target.id === 'despBuscaRota' || target.id === 'despBuscaFicha') {
+    renderDespesas();
+  }
+});
+
+
 document.getElementById('despMostrarOcultas')?.addEventListener('change', ()=>{
-  // Se quiser que as opções de Gerente/Rota/Ficha também considerem as ocultas quando ligar o checkbox,
-  // descomente a próxima linha:
-  // buildDespesasFilterOptions();
   renderDespesas();
 });
+
 document.addEventListener('DOMContentLoaded', () => {
   const tbl = document.querySelector('#pageDespesas table');
   if (tbl && tbl.parentElement) {
     tbl.parentElement.classList.add('desp-table-wrap');
   }
+  
+  buildDespesasFilterOptions();
+  renderDespesas();
 });
 
+// ✅ Re-renderiza quando fichas/vendas forem carregadas do Supabase
+(function initDespesasSupabaseSync() {
+  let fichasLoaded = false;
+  let vendasLoaded = false;
+  
+  // Observa mudanças em window.fichas e window.vendas
+  const checkAndRender = () => {
+    const nowFichas = Array.isArray(window.fichas) && window.fichas.length > 0;
+    const nowVendas = Array.isArray(window.vendas);
+    
+    if (nowFichas && !fichasLoaded) {
+      fichasLoaded = true;
+      console.log('[Despesas] ✅ Fichas carregadas, atualizando filtros...');
+      if (typeof buildDespesasFilterOptions === 'function') {
+        buildDespesasFilterOptions();
+      }
+      if (typeof renderDespesas === 'function') {
+        renderDespesas();
+      }
+    }
+    
+    if (nowVendas && !vendasLoaded) {
+      vendasLoaded = true;
+      console.log('[Despesas] ✅ Vendas carregadas, atualizando...');
+      if (typeof renderDespesas === 'function') {
+        renderDespesas();
+      }
+    }
+  };
+  
+  // Verifica periodicamente até que os dados estejam carregados
+  const interval = setInterval(() => {
+    checkAndRender();
+    if (fichasLoaded && vendasLoaded) {
+      clearInterval(interval);
+      console.log('[Despesas] ✅ Sincronização com Supabase completa');
+    }
+  }, 500);
+  
+  // Para após 30 segundos se não carregar
+  setTimeout(() => clearInterval(interval), 30000);
+  
+  // Escuta evento de mudança de empresa
+  document.addEventListener('empresa:change', () => {
+    fichasLoaded = false;
+    vendasLoaded = false;
+    console.log('[Despesas] 🔄 Empresa mudou, aguardando novos dados...');
+  });
+})();

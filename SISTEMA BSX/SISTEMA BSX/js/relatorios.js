@@ -1,9 +1,22 @@
+// === HELPER: Carregar prestações do Supabase ===
+async function carregarPrestacoes() {
+  if (typeof window.carregarPrestacoesGlobal === 'function') {
+    try {
+      return await window.carregarPrestacoesGlobal();
+    } catch(e) {
+      console.warn('[Relatórios] Erro ao carregar do Supabase, usando localStorage:', e);
+    }
+  }
+  // Fallback para localStorage
+  return JSON.parse(localStorage.getItem(DB_PREST)||'[]')||[];
+}
+
 // === PRESTAÇÕES SALVAS (com filtro De/Até) ===
-function renderRelPrestacoes(){
+async function renderRelPrestacoes(){
   const de  = document.getElementById('relDe')?.value || '';
   const ate = document.getElementById('relAte')?.value || '';
 
-  const arr = (JSON.parse(localStorage.getItem(DB_PREST)||'[]')||[])
+  const arr = (await carregarPrestacoes())
     .filter(p=>{
       // REMOVIDO: filtro por empresa
       if (p.fechado) return false;
@@ -66,11 +79,11 @@ if (typeof window.canDeletePrest !== 'function') {
   };
 }
 
-function renderPrestFechadas(){
+async function renderPrestFechadas(){
   const de  = document.getElementById('fechDe')?.value || '';
   const ate = document.getElementById('fechAte')?.value || '';
 
-  const arr = (JSON.parse(localStorage.getItem(DB_PREST)||'[]')||[])
+  const arr = (await carregarPrestacoes())
     .filter(p=>{
       // REMOVIDO: filtro por empresa
       if (!p.fechado) return false;
@@ -126,8 +139,8 @@ window.renderPrestFechadas = renderPrestFechadas;
 // Colocar ANTES de qualquer chamada a esta função
 window.viewPrestImage = viewPrestImage;
 
-function viewPrestImage(id){
-  const arr = JSON.parse(localStorage.getItem(DB_PREST) || '[]');
+async function viewPrestImage(id){
+  const arr = await carregarPrestacoes();
   const r = arr.find(x => x.id === id);
   if(!r){ alert("Prestação não encontrada."); return; }
 
@@ -208,8 +221,8 @@ document.getElementById('btnFechAplicar')?.addEventListener('click', renderPrest
 
   // EDITAR: carrega TUDO na tela de prestações (ordem segura)
 // EDITAR: carrega TUDO na tela de prestações (ordem segura)
-function editPrest(id){
-  const arr = JSON.parse(localStorage.getItem(DB_PREST)||'[]');
+async function editPrest(id){
+  const arr = await carregarPrestacoes();
   const r = arr.find(function(x) { return x.id === id; });
   if(!r){ alert("Prestação não encontrada."); return; }
 
@@ -237,15 +250,17 @@ function editPrest(id){
     : (r.valeParcAplicado || []);
 
   // ✅ CARREGAR TODOS OS DADOS
-  prestacaoAtual = {
-    despesas:   (r.despesas   || []).map(function(d) { return Object.assign({}, d); }),
-    pagamentos: (r.pagamentos || []).map(function(p) { return Object.assign({}, p); }),
-    coletas:    (r.coletas    || []).map(function(c) { return Object.assign({}, c); }), // ← IMPORTANTE
-    vales:      (r.vales      || []).map(function(v) { return Object.assign({}, v); }),
-    valeSelec:  (r.valesSel   || []).map(function(v) { return Object.assign({}, v); }),
-    resumo:     Object.assign({}, r.resumo || {}),
-    valeParcAplicado: migVale.map(function(x) { return Object.assign({}, x); })
-  };
+
+prestacaoAtual = {
+  despesas:   ((r.dados?.despesas || r.despesas) || []).map(function(d) { return Object.assign({}, d); }),
+  pagamentos: ((r.dados?.pagamentos || r.pagamentos) || []).map(function(p) { return Object.assign({}, p); }),
+  coletas:    ((r.dados?.coletas || r.coletas) || []).map(function(c) { return Object.assign({}, c); }),
+  vales:      ((r.dados?.vales || r.vales) || []).map(function(v) { return Object.assign({}, v); }),
+  valeSelec:  ((r.dados?.valesSel || r.valesSel) || []).map(function(v) { return Object.assign({}, v); }),
+  resumo:     Object.assign({}, (r.dados?.resumo || r.resumo) || {}),
+  saldoInfo:  r.dados?.saldoInfo || r.saldoInfo || null,
+  valeParcAplicado: migVale.map(function(x) { return Object.assign({}, x); })
+};
 
   // Preencher período
   document.getElementById('pcIni').value = r.ini || '';
@@ -270,6 +285,7 @@ function editPrest(id){
 
   try { pcRender(); } catch(e) { console.warn('pcRender:', e); }
   try { pgRender(); } catch(e) { console.warn('pgRender:', e); }
+  try { renderDespesas(); } catch(e) { console.warn('renderDespesas:', e); }
   try { renderValesPrestacao(); } catch(e) { console.warn('renderValesPrestacao:', e); }
   try { pcCalcular(); } catch(e) { console.warn('pcCalcular:', e); }
 
@@ -281,7 +297,7 @@ function editPrest(id){
 }
 
 // ===== EXCLUIR PRESTAÇÃO (APENAS ADMIN) =====
-function deletePrest(id) {
+async function deletePrest(id) {
   // Verifica se é admin
   const currentUser = window.UserAuth?.currentUser?.();
   if (!currentUser || currentUser.role !== 'admin') {
@@ -289,7 +305,7 @@ function deletePrest(id) {
     return;
   }
 
-  const arr = JSON.parse(localStorage.getItem(DB_PREST) || '[]');
+  const arr = await carregarPrestacoes();
   const idx = arr.findIndex(x => x.id === id);
   
   if (idx === -1) {
@@ -335,11 +351,14 @@ function deletePrest(id) {
       });
     }
 
-    // ✅ 2. REMOVER DA ARRAY
-    arr.splice(idx, 1);
-    
-    // ✅ 3. SALVAR NO LOCALSTORAGE
-    localStorage.setItem(DB_PREST, JSON.stringify(arr));
+    // ✅ 2. DELETAR DO SUPABASE E LOCALSTORAGE
+    if (typeof window.deletarPrestacaoGlobal === 'function') {
+      await window.deletarPrestacaoGlobal(id);
+    } else {
+      // Fallback para localStorage
+      arr.splice(idx, 1);
+      localStorage.setItem(DB_PREST, JSON.stringify(arr));
+    }
 
     // ✅ 4. REGISTRAR NO HISTÓRICO/AUDITORIA
     if (window.AuditLog && typeof window.AuditLog.log === 'function') {
@@ -390,12 +409,12 @@ window.relExcluirPrest = deletePrest;
 window.excluirPrestacaoRel = deletePrest;
   
    // CALCULO RELATÓRIO DE RECEBIMENTOS DAS PRESTAÇÕES
-   function renderResultado(){
+   async function renderResultado(){
     const de  = document.getElementById('resDataDe')?.value || '';
     const ate = document.getElementById('resDataAte')?.value || '';
     const q   = (document.getElementById('resBusca')?.value || '').toLowerCase();
   
-    const arr = (JSON.parse(localStorage.getItem(DB_PREST) || '[]') || [])
+    const arr = (await carregarPrestacoes())
   .filter(p=>{
     const d = p.ini || '';
     if (de && d < de) return false;
@@ -586,17 +605,40 @@ function safe(s){
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-// Procura um gerente por uid/id (string)
 function findGerenteInfo(gerenteId){
   const gid = String(gerenteId ?? '');
+  
+  // 1) Tenta window.gerentes (carregado do Supabase)
   const L = Array.isArray(window.gerentes) ? window.gerentes : [];
-  return L.find(x => String(x?.uid ?? x?.id ?? '') === gid) || null;
+  const found = L.find(x => String(x?.uid ?? x?.id ?? '') === gid);
+  if (found) return found;
+  
+  // 2) Tenta cache do GerentesLoader
+  if (window.GerentesLoader?.getCache) {
+    const cache = window.GerentesLoader.getCache();
+    const foundInCache = cache.find(x => String(x?.uid ?? x?.id ?? '') === gid);
+    if (foundInCache) return foundInCache;
+  }
+  
+  return null;
 }
 
-// Nome seguro do gerente: tenta lista -> snapshot salvo na prestação -> "(excluído)"
 function getNomeGerente(recPrest){
+  // 1. Tenta buscar na lista de gerentes ativos do Supabase
   const g = findGerenteInfo(recPrest?.gerenteId);
-  return safe(g?.nome || recPrest?.gerenteNome || '(excluído)');
+  if (g?.nome) return safe(g.nome);
+  
+  // 2. Usa nome salvo na prestação (sempre salvo no snapshot)
+  if (recPrest?.gerenteNome) return safe(recPrest.gerenteNome);
+  
+  // 3. Se window.gerentes não carregou ainda, indica isso
+  if (!window.gerentes || window.gerentes.length === 0) {
+    console.warn('[Relatórios] Gerentes não carregados do Supabase - usando nome da prestação');
+    return safe(recPrest?.gerenteNome || '(carregando...)');
+  }
+  
+  // 4. Gerente realmente foi removido
+  return safe('(removido)');
 }
 
 
@@ -659,13 +701,28 @@ function __consumeCarry(gerenteId, periodoIni, periodoFim){
 
 
 // ====== FECHAR SEMANA ======
-function fecharSemanaById(prestId, {forcar=false}={}){
+async function fecharSemanaById(prestId, {forcar=false}={}){
+  console.log('🔄 [fecharSemanaById] ========== INICIANDO ==========');
+  console.log('🔄 [fecharSemanaById] prestId:', prestId);
+  console.log('🔄 [fecharSemanaById] salvarPrestacaoGlobal existe?', typeof window.salvarPrestacaoGlobal === 'function');
+  console.log('🔄 [fecharSemanaById] carregarPrestacoesGlobal existe?', typeof window.carregarPrestacoesGlobal === 'function');
+  
   // Lê do mesmo DB das prestações salvas
-  const arr = (JSON.parse(localStorage.getItem(DB_PREST)||'[]')||[]);
+  const arr = (await carregarPrestacoes());
+  console.log('🔄 [fecharSemanaById] Total de prestações carregadas:', arr.length);
+  
   const idx = arr.findIndex(p => String(p.id)===String(prestId));
+  console.log('🔄 [fecharSemanaById] Índice encontrado:', idx);
+  
   if (idx<0){ alert('Prestação não encontrada.'); return; }
 
   const atual = arr[idx];
+  console.log('🔄 [fecharSemanaById] Prestação atual:', {
+    id: atual.id,
+    gerenteNome: atual.gerenteNome,
+    fechado: atual.fechado
+  });
+  
   if (atual.fechado){ alert('Esta semana já está fechada.'); return; }
 
   // pega ini/fim independente de como foi salvo e normaliza para seg→dom
@@ -681,52 +738,50 @@ function fecharSemanaById(prestId, {forcar=false}={}){
     if (!ok) return;
   }
 
-// ---- DERIVAÇÃO ROBUSTA: restam e adiantamento ----
-const resumo = atual.resumo || {};
+  // ---- DERIVAÇÃO ROBUSTA: restam e adiantamento ----
+  const resumo = atual.resumo || {};
 
-// 1) A Pagar (com vários fallbacks; se não vier, calcula)
-let aPagar = toNum(resumo.aPagar ?? resumo.a_pagar ?? resumo.pagar);
-if (!aPagar) {
-  const coletas    = toNum(resumo.coletas);
-  const despesas   = toNum(resumo.despesas);
-  const valorExtra = toNum(resumo.valorExtra);
-  const deveAnt    = toNum(resumo.deveAnt ?? resumo.deveAnterior);
-  const divida     = toNum(resumo.divida);
-  const credito    = toNum(resumo.credito);
-  // ajuste esta fórmula se a sua regra for diferente:
-  aPagar = (coletas - despesas) + valorExtra + deveAnt + divida - credito;
-}
+  // 1) A Pagar (com vários fallbacks; se não vier, calcula)
+  let aPagar = toNum(resumo.aPagar ?? resumo.a_pagar ?? resumo.pagar);
+  if (!aPagar) {
+    const coletas    = toNum(resumo.coletas);
+    const despesas   = toNum(resumo.despesas);
+    const valorExtra = toNum(resumo.valorExtra);
+    const deveAnt    = toNum(resumo.deveAnt ?? resumo.deveAnterior);
+    const divida     = toNum(resumo.divida);
+    const credito    = toNum(resumo.credito);
+    aPagar = (coletas - despesas) + valorExtra + deveAnt + divida - credito;
+  }
 
-// 2) Pagamentos
-const pagamentos = []
-  .concat(Array.isArray(atual.pagamentos)        ? atual.pagamentos        : [])
-  .concat(Array.isArray(atual.pagamentosNormais) ? atual.pagamentosNormais : []);
+  // 2) Pagamentos
+  const pagamentos = []
+    .concat(Array.isArray(atual.pagamentos)        ? atual.pagamentos        : [])
+    .concat(Array.isArray(atual.pagamentosNormais) ? atual.pagamentosNormais : []);
 
-const totalAdiantamento = pagamentos
-  .filter(x => String((x.forma||x.tipo||'') + '').trim().toUpperCase() === 'ADIANTAMENTO' && !x.cancelado)
-  .reduce((s,x)=> s + toNum(x.valor), 0);
+  const totalAdiantamento = pagamentos
+    .filter(x => String((x.forma||x.tipo||'') + '').trim().toUpperCase() === 'ADIANTAMENTO' && !x.cancelado)
+    .reduce((s,x)=> s + toNum(x.valor), 0);
 
-const totalRecebidoNormal = pagamentos
-  .filter(x => {
-    const f = String((x.forma||x.tipo||'') + '').trim().toUpperCase();
-    return f !== 'ADIANTAMENTO' && f !== 'VALE';
-  })
-  .reduce((s,x)=> s + toNum(x.valor), 0);
+  const totalRecebidoNormal = pagamentos
+    .filter(x => {
+      const f = String((x.forma||x.tipo||'') + '').trim().toUpperCase();
+      return f !== 'ADIANTAMENTO' && f !== 'VALE';
+    })
+    .reduce((s,x)=> s + toNum(x.valor), 0);
 
-// 3) RESTAM (usa campo salvo se existir; senão deriva)
-let restam = toNum(atual.restam ?? atual.emAberto ?? resumo.restam);
-if (!restam && (aPagar || totalRecebidoNormal || totalAdiantamento)) {
-  restam = Math.max(aPagar - (totalRecebidoNormal + totalAdiantamento), 0);
-}
+  // 3) RESTAM (usa campo salvo se existir; senão deriva)
+  let restam = toNum(atual.restam ?? atual.emAberto ?? resumo.restam);
+  if (!restam && (aPagar || totalRecebidoNormal || totalAdiantamento)) {
+    restam = Math.max(aPagar - (totalRecebidoNormal + totalAdiantamento), 0);
+  }
 
-// 4) Valores finais a carregar
-const adiantamento = totalAdiantamento;
-
+  // 4) Valores finais a carregar
+  const adiantamento = totalAdiantamento;
 
   // período da PRÓXIMA semana (seg→dom)
   const { nextSeg, nextDom } = __nextWeekRange(iniRaw, fimRaw);
-const nextIni = nextSeg;
-const nextFim = nextDom;
+  const nextIni = nextSeg;
+  const nextFim = nextDom;
 
   // guarda carry (não cria prestação nova)
   __putCarry({
@@ -739,23 +794,88 @@ const nextFim = nextDom;
     fromPrestId:  atual.id
   });
   
-  // marca a atual como fechada
+  // ✅ MARCA A ATUAL COMO FECHADA
   atual.fechado   = true;
   atual.fechadoEm = new Date().toISOString();
+  
+  console.log('🔄 [fecharSemanaById] Marcando como fechado:', {
+    id: atual.id,
+    fechado: atual.fechado,
+    fechadoEm: atual.fechadoEm
+  });
 
-  // salva de volta e re-render
-  arr[idx] = atual;
-  localStorage.setItem(DB_PREST, JSON.stringify(arr));
-  renderRelPrestacoes?.();
-renderPrestFechadas?.();
-
-  alert(
-    'Semana fechada.\n' +
-    `Próxima semana (seg→dom): ${nextIni} a ${nextFim}\n` +
-    `• Deve anterior a carregar: ${fmtBRL(restam)}\n` +
-    `• Adiantamento a carregar: ${fmtBRL(adiantamento)}\n\n` +
-    'Informações salvas para próxima prestação de contas.'
-  );
+  // ✅ SALVAR - TENTA SUPABASE, SE NÃO, USA LOCALSTORAGE
+  let salvouComSucesso = false;
+  
+  if (typeof window.salvarPrestacaoGlobal === 'function') {
+    try {
+      console.log('🔄 [fecharSemanaById] Tentando salvar no Supabase...');
+      const resultado = await window.salvarPrestacaoGlobal(atual);
+      console.log('✅ [fecharSemanaById] Resultado do Supabase:', resultado);
+      salvouComSucesso = true;
+    } catch(e) {
+      console.error('❌ [fecharSemanaById] Erro ao salvar no Supabase:', e);
+      // Tenta fallback para localStorage
+      console.log('⚠️ [fecharSemanaById] Tentando fallback localStorage...');
+      arr[idx] = atual;
+      localStorage.setItem(DB_PREST, JSON.stringify(arr));
+      salvouComSucesso = true;
+    }
+  } else {
+    console.warn('⚠️ [fecharSemanaById] salvarPrestacaoGlobal NÃO disponível, usando localStorage');
+    // Fallback para localStorage
+    arr[idx] = atual;
+    localStorage.setItem(DB_PREST, JSON.stringify(arr));
+    salvouComSucesso = true;
+  }
+  
+  console.log('🔄 [fecharSemanaById] Salvou com sucesso?', salvouComSucesso);
+  
+  // ✅ AGUARDA E RE-RENDERIZA
+  if (salvouComSucesso) {
+    console.log('🔄 [fecharSemanaById] Aguardando antes de renderizar...');
+    
+    // Aguarda um pouco para garantir que o Supabase processou
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Verifica se a prestação realmente foi atualizada
+    const arrVerificacao = await carregarPrestacoes();
+    const prestVerificada = arrVerificacao.find(p => String(p.id) === String(prestId));
+    console.log('🔍 [fecharSemanaById] Verificação pós-salvamento:', {
+      id: prestVerificada?.id,
+      fechado: prestVerificada?.fechado,
+      fechadoEm: prestVerificada?.fechadoEm
+    });
+    
+    if (!prestVerificada?.fechado) {
+      console.error('❌ [fecharSemanaById] PROBLEMA: A prestação NÃO foi salva como fechada!');
+      alert('⚠️ Houve um problema ao salvar. A prestação pode não ter sido fechada corretamente.\n\nVerifique o console para mais detalhes (F12).');
+    }
+    
+    // Re-renderiza as tabelas
+    console.log('🔄 [fecharSemanaById] Chamando renderRelPrestacoes...');
+    if (typeof renderRelPrestacoes === 'function') {
+      await renderRelPrestacoes();
+      console.log('✅ [fecharSemanaById] renderRelPrestacoes executado');
+    }
+    
+    console.log('🔄 [fecharSemanaById] Chamando renderPrestFechadas...');
+    if (typeof renderPrestFechadas === 'function') {
+      await renderPrestFechadas();
+      console.log('✅ [fecharSemanaById] renderPrestFechadas executado');
+    }
+    
+    console.log('🔄 [fecharSemanaById] ========== CONCLUÍDO ==========');
+    
+    // ✅ ALERTA SÓ NO FINAL
+    alert(
+      '✅ Semana fechada com sucesso!\n\n' +
+      `Próxima semana (seg→dom): ${nextIni} a ${nextFim}\n` +
+      `• Deve anterior a carregar: ${fmtBRL(restam)}\n` +
+      `• Adiantamento a carregar: ${fmtBRL(adiantamento)}\n\n` +
+      'Informações salvas para próxima prestação de contas.'
+    );
+  }
 }
 // ===== Relatórios: menu "Opções" flutuante =====
 (function bindRelatoriosOpcoes(){
@@ -882,14 +1002,14 @@ renderPrestFechadas?.();
   }
 
   // ---------- POPS ESPECÍFICOS ----------
-  function openPrestPop(btn){
+  async function openPrestPop(btn){
     // monta menu de PRESTAÇÕES (aberta x fechada)
     closePop();
     btnRef = btn; btnRef.setAttribute('aria-expanded','true'); btnRef.classList.add('is-open');
     killLegacyDropdown(btnRef);
 
     const id = getRowId(btnRef);
-    const list = JSON.parse(localStorage.getItem(DB_PREST)||'[]');
+    const list = await carregarPrestacoes();
     const rec  = list.find(x => [x.id,x.uid,x.key,x._id].some(v=> String(v)===String(id))) || null;
     const isClosed = !!rec?.fechado;
 
@@ -915,8 +1035,8 @@ renderPrestFechadas?.();
     positionPop();
     setTimeout(()=>{ document.addEventListener('click', onDocClick, true); window.addEventListener('scroll', onRelayout, true); window.addEventListener('resize', onRelayout); },0);
   }
-  function reopenWeek(id){
-    const arr = JSON.parse(localStorage.getItem(DB_PREST)||'[]')||[];
+  async function reopenWeek(id){
+    const arr = await carregarPrestacoes();
     const i = arr.findIndex(p => String(p.id)===String(id));
     if (i < 0) { alert('Prestação não encontrada.'); return; }
   
@@ -931,8 +1051,12 @@ renderPrestFechadas?.();
     prest.fechado = false;
     delete prest.fechadoEm;
   
-    // salva e re-render
-    localStorage.setItem(DB_PREST, JSON.stringify(arr));
+    // salva no Supabase e localStorage
+    if (typeof window.salvarPrestacaoGlobal === 'function') {
+      await window.salvarPrestacaoGlobal(prest);
+    } else {
+      localStorage.setItem(DB_PREST, JSON.stringify(arr));
+    }
     renderRelPrestacoes?.();
     renderPrestFechadas?.();
   

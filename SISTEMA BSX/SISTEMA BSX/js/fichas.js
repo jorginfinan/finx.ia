@@ -1,63 +1,298 @@
+// ============================================
+// FICHAS E VENDAS - SUPABASE
+// VERSÃO: 2025-11-26-v3-SUPABASE
+// ============================================
+
+console.log('🔵🔵🔵 [fichas.js] VERSÃO SUPABASE 2025-11-26-v3 CARREGADA! 🔵🔵🔵');
+
+// Flag para indicar que dados vieram do Supabase
+window.__fichasFromSupabase = false;
+window.__vendasFromSupabase = false;
+
+// Inicializa arrays globais (mas não sobrescreve se já tiver dados do Supabase)
+if (!window.__fichasFromSupabase) {
+  window.fichas = window.fichas || [];
+}
+if (!window.__vendasFromSupabase) {
+  window.vendas = window.vendas || [];
+}
+
+// ========== FUNÇÕES SUPABASE ==========
+
+// Carrega fichas do Supabase
+async function carregarFichas() {
+  if (!window.SupabaseAPI?.fichas) {
+    console.warn('[Fichas] SupabaseAPI.fichas não disponível');
+    return [];
+  }
+  try {
+    console.log('[Fichas] 🔄 Carregando do Supabase...');
+    const data = await window.SupabaseAPI.fichas.getAll();
+    window.fichas = data || [];
+    window.__fichasFromSupabase = true;  // Marca que veio do Supabase
+    console.log('[Fichas] ✅ Carregadas:', window.fichas.length);
+    return window.fichas;
+  } catch (e) {
+    console.error('[Fichas] ❌ Erro:', e);
+    return [];
+  }
+}
+
+// Carrega vendas do Supabase
+async function carregarVendas() {
+  if (!window.SupabaseAPI?.vendas) {
+    console.warn('[Vendas] SupabaseAPI.vendas não disponível');
+    return [];
+  }
+  try {
+    console.log('[Vendas] 🔄 Carregando do Supabase...');
+    const data = await window.SupabaseAPI.vendas.getAll();
+    window.vendas = data || [];
+    window.__vendasFromSupabase = true;  // Marca que veio do Supabase
+    console.log('[Vendas] ✅ Carregadas:', window.vendas.length);
+    return window.vendas;
+  } catch (e) {
+    console.error('[Vendas] ❌ Erro:', e);
+    return [];
+  }
+}
+
+// Salva fichas no Supabase
+async function saveFichas() {
+  if (!window.SupabaseAPI?.fichas) return;
+  for (const f of (window.fichas || [])) {
+    await window.SupabaseAPI.fichas.upsert(f.ficha, f.area);
+  }
+  console.log('[Fichas] ✅ Salvas no Supabase');
+}
+
+// Salva vendas no Supabase
+async function saveVendas() {
+  if (!window.SupabaseAPI?.vendas) return;
+  for (const v of (window.vendas || [])) {
+    await window.SupabaseAPI.vendas.upsert(v);
+  }
+  console.log('[Vendas] ✅ Salvas no Supabase');
+}
+
+// Expor globalmente para debug
+window.carregarFichas = carregarFichas;
+window.carregarVendas = carregarVendas;
+// NÃO zera mais as funções:
+//// window.renderFichaArea = null;
+//// window.renderVendas   = null;
+
+
+// Inicialização - carrega dados do Supabase
+(function initFichasVendas() {
+  let tentativas = 0;
+  const maxTentativas = 20;
+  let dadosCarregados = false;
+  
+  async function tryLoad() {
+    tentativas++;
+    console.log(`[Init Fichas/Vendas] Tentativa ${tentativas}...`);
+    
+    // Verifica se API está pronta
+    if (!window.SupabaseAPI?.fichas || !window.SupabaseAPI?.vendas) {
+      if (tentativas < maxTentativas) {
+        setTimeout(tryLoad, 500);
+      } else {
+        console.error('[Init Fichas/Vendas] ❌ API não ficou pronta após', maxTentativas, 'tentativas');
+      }
+      return;
+    }
+    
+    console.log('[Init Fichas/Vendas] ✅ API pronta, carregando dados...');
+    
+    try {
+      // Carrega fichas
+      await carregarFichas();
+      
+      // Carrega vendas
+      await carregarVendas();
+      
+      dadosCarregados = true;
+      
+      // Renderiza se elementos existirem
+      renderIfVisible();
+      
+      console.log('[Init Fichas/Vendas] ✅ Inicialização completa!');
+    } catch (err) {
+      console.error('[Init Fichas/Vendas] ❌ Erro:', err);
+    }
+  }
+  
+  // Função para renderizar se os elementos existirem no DOM
+  function renderIfVisible() {
+    if (!dadosCarregados) return;
+    
+    const tbodyFichas = document.getElementById('tbodyFichaArea');
+    const tbodyVendas = document.getElementById('tbodyVendas');
+    
+    if (tbodyFichas && typeof renderFichaArea === 'function') {
+      console.log('[Fichas] Renderizando tabela...');
+      renderFichaArea();
+    }
+    
+    if (tbodyVendas && typeof renderVendas === 'function') {
+      console.log('[Vendas] Renderizando tabela...');
+      renderVendas();
+    }
+    
+    if (typeof buildDespesasFilterOptions === 'function') {
+      buildDespesasFilterOptions();
+    }
+  }
+  
+  // Aguarda um pouco para API carregar
+  setTimeout(tryLoad, 1500);
+  
+  // Renderiza quando navegar para a página de fichas
+  document.addEventListener('page:show', (e) => {
+    if (e.detail === 'fich' || e.detail === 'fichas') {
+      console.log('[Fichas] Página exibida, renderizando...');
+      renderIfVisible();
+    }
+  });
+  
+  // Também escuta mudanças de hash
+  window.addEventListener('hashchange', () => {
+    const hash = window.location.hash.replace('#', '');
+    if (hash === 'fich' || hash === 'fichas') {
+      console.log('[Fichas] Hash mudou para fichas, renderizando...');
+      setTimeout(renderIfVisible, 100);
+    }
+  });
+  
+  // Observa mudanças de visibilidade da seção de fichas
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+        const target = mutation.target;
+        if (target.id === 'page-fich' || target.id === 'secFichas') {
+          const isVisible = target.style.display !== 'none';
+          if (isVisible) {
+            console.log('[Fichas] Seção ficou visível, renderizando...');
+            setTimeout(renderIfVisible, 50);
+          }
+        }
+      }
+    });
+  });
+  
+  // Observa as seções quando estiverem disponíveis
+  setTimeout(() => {
+    const pageFich = document.getElementById('page-fich');
+    const secFichas = document.getElementById('secFichas');
+    
+    if (pageFich) {
+      observer.observe(pageFich, { attributes: true });
+    }
+    if (secFichas) {
+      observer.observe(secFichas, { attributes: true });
+    }
+  }, 2000);
+  
+  // Recarrega ao trocar empresa
+  document.addEventListener('empresa:change', async () => {
+    console.log('[Fichas/Vendas] 🔄 Empresa mudou, recarregando...');
+    await carregarFichas();
+    await carregarVendas();
+    renderIfVisible();
+  });
+})();
 
 // ==== FICHAS ====
 function renderFichaArea(){
+  console.log('🟢 [renderFichaArea] Iniciando... window.fichas.length:', window.fichas?.length);
+  
   const tbody = document.getElementById('tbodyFichaArea');
-  tbody.innerHTML = (fichas||[]).sort((a,b)=> String(a.ficha).localeCompare(String(b.ficha))).map(r=>{
+  if (!tbody) {
+    console.warn('[renderFichaArea] ⚠️ tbody não encontrado!');
+    return;
+  }
+  
+  // ✅ USA EXPLICITAMENTE window.fichas (do Supabase)
+  const fichasArr = window.fichas || [];
+  console.log('🟢 [renderFichaArea] Renderizando', fichasArr.length, 'fichas');
+  
+  tbody.innerHTML = fichasArr.sort((a,b)=> String(a.ficha).localeCompare(String(b.ficha))).map(r=>{
     const del = currentUser?.isAdmin ? `<button class="btn danger" data-del-ficha="${r.ficha}">Excluir</button>` : '';
     return `<tr><td>${r.ficha}</td><td>${r.area||''}</td><td>${del}</td></tr>`;
   }).join('') || '<tr><td colspan="3">Nenhuma ficha cadastrada.</td></tr>';
 
   const sel = document.getElementById('selFichaVenda');
-  sel.innerHTML = (fichas||[]).sort((a,b)=> String(a.ficha).localeCompare(String(b.ficha))).map(r=>`<option value="${r.ficha}">${r.ficha} — ${r.area||''}</option>`).join('');
+  if (sel) {
+    sel.innerHTML = fichasArr.sort((a,b)=> String(a.ficha).localeCompare(String(b.ficha))).map(r=>`<option value="${r.ficha}">${r.ficha} — ${r.area||''}</option>`).join('');
+  }
 
   if(currentUser?.isAdmin){
     document.querySelectorAll('[data-del-ficha]').forEach(b=>{
-      b.addEventListener('click',()=>{
+      b.addEventListener('click', async ()=>{
         const f=b.getAttribute('data-del-ficha');
         if(confirm(`Excluir ficha ${f}? (Não remove vendas)`)){
-          fichas = fichas.filter(x=>x.ficha!==f); saveFichas(); renderFichaArea(); renderVendas();
+          window.fichas = window.fichas.filter(x=>x.ficha!==f); 
+          if (window.SupabaseAPI?.fichas) {
+            await window.SupabaseAPI.fichas.delete(f);
+          }
+          renderFichaArea(); 
+          renderVendas();
         }
       });
     });
   }
+  
+  console.log('🟢 [renderFichaArea] ✅ Concluído');
 }
-// >>> FONTE ÚNICA: array global `fichas` + saveFichas()
-function setFichaArea(ficha, area){
+// Exporta para window
+window.renderFichaArea = renderFichaArea;
+// >>> FONTE ÚNICA: array global `fichas` + Supabase
+async function setFichaArea(ficha, area){
   ficha = String(ficha||'').trim();
   area  = String(area ||'').trim();
   if (!ficha || !area) return;
 
-  const i = (fichas||[]).findIndex(x => String(x.ficha) === ficha);
-  if (i >= 0) fichas[i].area = area;
-  else (fichas ||= []).push({ ficha, area });
+  const i = (window.fichas||[]).findIndex(x => String(x.ficha) === ficha);
+  if (i >= 0) window.fichas[i].area = area;
+  else (window.fichas ||= []).push({ ficha, area });
 
-  saveFichas?.();
+  // Salva no Supabase
+  if (window.SupabaseAPI?.fichas) {
+    await window.SupabaseAPI.fichas.upsert(ficha, area);
+  }
 }
 
 function getAreaByFicha(ficha){
   ficha = String(ficha||'').trim();
-  const it = (fichas||[]).find(x => String(x.ficha) === ficha);
+  const it = (window.fichas||[]).find(x => String(x.ficha) === ficha);
   return it ? (it.area || '') : '';
 }
 
-document.getElementById('formFichaArea').addEventListener('submit',(ev)=>{
+document.getElementById('formFichaArea').addEventListener('submit', async (ev)=>{
   ev.preventDefault();
   const fd = new FormData(ev.target);
   const ficha = String(fd.get('ficha')||'').trim();
   const area  = String(fd.get('area')||'').trim();
   if(!ficha || !area){ alert('Informe ficha e área.'); return; }
-  const i = fichas.findIndex(x=>x.ficha===ficha);
-  if(i>-1){ fichas[i].area = area; } else { fichas.push({ficha, area}); }
-  saveFichas();
-buildDespesasFilterOptions?.();
-renderFichaArea();
-renderVendas?.();
-renderDespesas?.(); 
-alert('Salvo.');
+  
+  const i = window.fichas.findIndex(x=>x.ficha===ficha);
+  if(i>-1){ window.fichas[i].area = area; } else { window.fichas.push({ficha, area}); }
+  
+  // Salva no Supabase
+  if (window.SupabaseAPI?.fichas) {
+    await window.SupabaseAPI.fichas.upsert(ficha, area);
+  }
+  
+  buildDespesasFilterOptions?.();
+  renderFichaArea();
+  renderVendas?.();
+  renderDespesas?.(); 
+  alert('Salvo.');
 });
 
 function renderFichaVenda(){ renderFichaArea(); }
-document.getElementById('formFichaVenda').addEventListener('submit',(ev)=>{
+document.getElementById('formFichaVenda').addEventListener('submit', async (ev)=>{
   ev.preventDefault();
   const fd = new FormData(ev.target);
   const ficha = String(fd.get('ficha')||'').trim();
@@ -67,29 +302,41 @@ document.getElementById('formFichaVenda').addEventListener('submit',(ev)=>{
   if(!ficha || !ym || !bruta){ alert('Informe ficha, mês e venda bruta.'); return; }
   if(bruta.includes(',')) bruta = bruta.replace(/\./g,'').replace(',','.');
   if(liquida && liquida.includes(',')) liquida = liquida.replace(/\./g,'').replace(',','.');
+  
   const rec = { id:uid(), ficha, ym, bruta:parseFloat(bruta)||0, liquida: parseFloat(liquida||'0')||0 };
-  const idx = vendas.findIndex(v=>v.ficha===ficha && v.ym===ym);
-  if(idx>-1) vendas[idx] = { ...vendas[idx], ...rec };
-  else vendas.push(rec);
-  saveVendas(); ev.target.reset(); renderVendas(); alert('Venda salva.');
+  const idx = window.vendas.findIndex(v=>v.ficha===ficha && v.ym===ym);
+  if(idx>-1) window.vendas[idx] = { ...window.vendas[idx], ...rec };
+  else window.vendas.push(rec);
+  
+  // Salva no Supabase
+  if (window.SupabaseAPI?.vendas) {
+    await window.SupabaseAPI.vendas.upsert(rec);
+  }
+  
+  ev.target.reset(); 
+  renderVendas(); 
+  alert('Venda salva.');
 });
 function renderVendas(){
   const tb = document.getElementById('tbodyVendas');
-  const qFicha = (document.getElementById('fvBuscaFicha').value||'').trim().toLowerCase();
-  const qArea  = (document.getElementById('fvBuscaArea').value||'').trim().toLowerCase();
-  const de = document.getElementById('fvDe').value || '0000-00';
-  const ate = document.getElementById('fvAte').value || '9999-12';
+  if (!tb) return;
+  
+  const qFicha = (document.getElementById('fvBuscaFicha')?.value||'').trim().toLowerCase();
+  const qArea  = (document.getElementById('fvBuscaArea')?.value||'').trim().toLowerCase();
+  const de = document.getElementById('fvDe')?.value || '0000-00';
+  const ate = document.getElementById('fvAte')?.value || '9999-12';
 
-  const rows = (vendas||[]).filter(v=>{
+  // ✅ USA window.vendas e window.fichas
+  const rows = (window.vendas||[]).filter(v=>{
     if(v.ym < de || v.ym > ate) return false;
     if(qFicha && !String(v.ficha).toLowerCase().includes(qFicha)) return false;
-    const area = (fichas.find(f=>f.ficha===v.ficha)?.area || '').toLowerCase();
+    const area = (window.fichas.find(f=>f.ficha===v.ficha)?.area || '').toLowerCase();
     if(qArea && !area.includes(qArea)) return false;
     return true;
   }).sort((a,b)=> a.ficha===b.ficha ? a.ym.localeCompare(b.ym) : String(a.ficha).localeCompare(String(b.ficha)));
 
   tb.innerHTML = rows.map(v=>{
-    const area = fichas.find(f=>f.ficha===v.ficha)?.area || '';
+    const area = window.fichas.find(f=>f.ficha===v.ficha)?.area || '';
     const del = currentUser?.isAdmin ? `<button class="btn danger" data-del-venda="${v.id}">Excluir</button>` : '';
     const [y,m] = v.ym.split('-');
     return `<tr>
@@ -104,15 +351,21 @@ function renderVendas(){
 
   if(currentUser?.isAdmin){
     document.querySelectorAll('[data-del-venda]').forEach(b=>{
-      b.addEventListener('click',()=>{
+      b.addEventListener('click', async ()=>{
         const id=b.getAttribute('data-del-venda');
         if(confirm('Excluir venda?')){
-          vendas = vendas.filter(x=>x.id!==id); saveVendas(); renderVendas();
+          window.vendas = window.vendas.filter(x=>x.id!==id); 
+          if (window.SupabaseAPI?.vendas) {
+            await window.SupabaseAPI.vendas.delete(id);
+          }
+          renderVendas();
         }
       });
     });
   }
 }
+// Exporta para window
+window.renderVendas = renderVendas;
 ['fvBuscaFicha','fvBuscaArea','fvDe','fvAte'].forEach(id=>{
   document.getElementById(id).addEventListener('input', renderVendas);
   document.getElementById(id).addEventListener('change', renderVendas);
@@ -122,16 +375,16 @@ document.getElementById('fvExport').addEventListener('click',()=>{
   const qArea  = (document.getElementById('fvBuscaArea').value||'').trim().toLowerCase();
   const de = document.getElementById('fvDe').value || '0000-00';
   const ate = document.getElementById('fvAte').value || '9999-12';
-  const rows = (vendas||[]).filter(v=>{
+  const rows = (window.vendas||[]).filter(v=>{
     if(v.ym < de || v.ym > ate) return false;
     if(qFicha && !String(v.ficha).toLowerCase().includes(qFicha)) return false;
-    const area = (fichas.find(f=>f.ficha===v.ficha)?.area || '').toLowerCase();
+    const area = (window.fichas.find(f=>f.ficha===v.ficha)?.area || '').toLowerCase();
     if(qArea && !area.includes(qArea)) return false;
     return true;
   });
   const header = ['FICHA','ÁREA','MÊS','VENDA BRUTA','VENDA LÍQUIDA'];
   const lines=[header.join(';')].concat(rows.map(v=>{
-    const area = fichas.find(f=>f.ficha===v.ficha)?.area || '';
+    const area = window.fichas.find(f=>f.ficha===v.ficha)?.area || '';
     const [y,m] = v.ym.split('-');
     return [v.ficha, area, `${m}/${y}`, (v.bruta||0).toFixed(2).replace('.',','), (v.liquida||0).toFixed(2).replace('.',',')].join(';');
   }));
@@ -278,34 +531,40 @@ function mapRow(obj){
   return { ficha, ym, bruta, liquida, area };
 }
 
-function upsertVendas(rows){
+async function upsertVendas(rows){
   const idx = new Map();
-  (vendas||[]).forEach((v,i)=> idx.set(`${v.ficha}|${v.ym}`, i));
+  (window.vendas||[]).forEach((v,i)=> idx.set(`${v.ficha}|${v.ym}`, i));
   let novos=0, atualizados=0;
 
-  rows.forEach(r=>{
+  for (const r of rows) {
     const key = `${r.ficha}|${r.ym}`;
+    const rec = {
+      id: uid?.() || crypto.randomUUID?.() || String(Date.now()+Math.random()),
+      ficha: r.ficha,
+      ym: r.ym,
+      bruta: Number(r.bruta)||0,
+      liquida: Number(r.liquida)||0
+    };
+    
     if (idx.has(key)){
       const i = idx.get(key);
-      vendas[i].bruta   = Number(r.bruta)||0;
-      vendas[i].liquida = Number(r.liquida)||0;
-      vendas[i].updatedAt = new Date().toISOString();
+      rec.id = window.vendas[i].id; // mantém ID original
+      window.vendas[i].bruta = rec.bruta;
+      window.vendas[i].liquida = rec.liquida;
+      window.vendas[i].updatedAt = new Date().toISOString();
       atualizados++;
     } else {
-      vendas.push({
-        id: uid?.() || crypto.randomUUID?.() || String(Date.now()+Math.random()),
-        ficha: r.ficha,
-        ym: r.ym,
-        bruta: Number(r.bruta)||0,
-        liquida: Number(r.liquida)||0,
-        createdAt: new Date().toISOString()
-      });
+      rec.createdAt = new Date().toISOString();
+      window.vendas.push(rec);
       novos++;
     }
-  });
+    
+    // Salva cada venda no Supabase
+    if (window.SupabaseAPI?.vendas) {
+      await window.SupabaseAPI.vendas.upsert(rec);
+    }
+  }
 
-  // salva como sempre
-  saveVendas?.();
   return {novos, atualizados};
 }
 
@@ -330,8 +589,8 @@ async function handleImport(){
     }
 
     const mapped = rows.map(mapRow);
-    const areasInfo = upsertAreasFromRows(mapped);
-    const {novos, atualizados} = upsertVendas(mapped);
+    const areasInfo = await upsertAreasFromRows(mapped);
+    const {novos, atualizados} = await upsertVendas(mapped);
 
     renderVendas?.(); 
     renderDespesas?.();     
@@ -361,7 +620,7 @@ btnModelo?.addEventListener('click', ()=>{
   URL.revokeObjectURL(url);
 });
 
-function upsertAreasFromRows(rows){
+async function upsertAreasFromRows(rows){
   if (!Array.isArray(window.fichas)) window.fichas = [];
   const byFicha = new Map();
   // considera só linhas com área preenchida
@@ -373,7 +632,7 @@ function upsertAreasFromRows(rows){
   let novas=0, atualizadas=0;
   const idx = new Map(window.fichas.map((f,i)=>[String(f.ficha), i]));
 
-  byFicha.forEach((area, ficha)=>{
+  for (const [ficha, area] of byFicha) {
     if (idx.has(ficha)){
       const i = idx.get(ficha);
       if (window.fichas[i].area !== area){
@@ -384,10 +643,14 @@ function upsertAreasFromRows(rows){
       window.fichas.push({ ficha, area });
       novas++;
     }
-  });
+    
+    // Salva no Supabase
+    if (window.SupabaseAPI?.fichas) {
+      await window.SupabaseAPI.fichas.upsert(ficha, area);
+    }
+  }
 
-  // persiste e atualiza telas relacionadas
-  window.saveFichas?.();
+  // atualiza telas relacionadas
   window.buildDespesasFilterOptions?.();
   window.renderFichaArea?.();
   return {novas, atualizadas};
@@ -401,7 +664,7 @@ function upsertAreasFromRows(rows){
 
   // usa a função principal já existente
   async function upsertFA(ficha, area) {
-    setFichaArea(ficha, area); // grava direto no banco fichas
+    await setFichaArea(ficha, area); // grava direto no Supabase
   }
 
   // parser CSV (formato simples "ficha;area")
@@ -481,7 +744,4 @@ function upsertAreasFromRows(rows){
     doImport();
   });
 })();
-
-
-
 })();

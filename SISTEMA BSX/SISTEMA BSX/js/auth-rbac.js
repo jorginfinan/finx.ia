@@ -401,7 +401,7 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
     return key.replace('_view','_edit');
   }
 
-  // hasPerm no estilo antigo (aceita array ou objeto) + aliases + “editar ⇒ ver”
+  // hasPerm no estilo antigo (aceita array ou objeto) + aliases + "editar ⇒ ver"
   function hasPerm(cu, need){
     if (!need) return true;
     const key = canonicalPermKey(need);
@@ -453,7 +453,7 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
     // Cada operação já salva individualmente
   }
   
-  // ✅ ATUALIZAR createUser:
+  // ✅ createUser - versão Supabase
   async function createUser({username, password, role='operador', perms, companies}) {
     username = String(username||'').trim().toLowerCase();
     if (!username || !password) return {ok:false, msg:'Preencha usuário e senha'};
@@ -462,15 +462,15 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
     const existing = await window.SupabaseAPI.users.getByUsername(username);
     if (existing) return {ok:false, msg:'Usuário já existe'};
     
-    // Cria no Supabase
+    // Cria no Supabase (usando nomes corretos das colunas)
     const permObj = (role==='admin') ? permsAllTrue() : toPermObject(perms);
     
     try {
       await window.SupabaseAPI.users.create({
         username,
-        pass: await sha(password),
+        password: await sha(password),  // ✅ Coluna é 'password', não 'pass'
         role,
-        perms: permObj,
+        permissoes: permObj,             // ✅ Coluna é 'permissoes', não 'perms'
         companies: Array.isArray(companies) ? companies : []
       });
       
@@ -480,12 +480,21 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
     }
   }
   
-  // ✅ ATUALIZAR updateUser:
+  // ✅ updateUser - versão Supabase (CORRIGIDA - mapeia campos)
   async function updateUser(id, patch) {
     try {
       const p = Object.assign({}, patch||{});
-      if (p.perms) p.perms = toPermObject(p.perms);
-      if (p.role === 'admin') p.perms = permsAllTrue();
+      
+      // Mapeia perms -> permissoes (nome da coluna no Supabase)
+      if (p.perms) {
+        p.permissoes = toPermObject(p.perms);
+        delete p.perms;
+      }
+      if (p.role === 'admin') {
+        p.permissoes = permsAllTrue();
+      }
+      
+      // Remove password do patch (usa changePassword separadamente)
       if (typeof p.password === 'string') delete p.password;
       
       await window.SupabaseAPI.users.update(id, p);
@@ -495,7 +504,7 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
     }
   }
   
-  // ✅ ATUALIZAR removeUser:
+  // ✅ removeUser - versão Supabase
   async function removeUser(id) {
     try {
       await window.SupabaseAPI.users.delete(id);
@@ -505,14 +514,15 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
     }
   }
   
-  // ✅ ATUALIZAR login:
+  // ✅ login - versão Supabase
   async function login(username, password) {
     const u = await window.SupabaseAPI.users.getByUsername(username);
-    if (!u || u.active===false) return {ok:false, msg:'Usuário inexistente ou inativo'};
-    if (!(await passOk(u.pass, password))) return {ok:false, msg:'Senha inválida'};
+    if (!u || u.ativo===false) return {ok:false, msg:'Usuário inexistente ou inativo'};  // ✅ 'ativo', não 'active'
+    if (!(await passOk(u.password, password))) return {ok:false, msg:'Senha inválida'};  // ✅ 'password', não 'pass'
     
+    // ✅ Mapeia 'permissoes' -> 'perms' para uso interno
     const perms = (u.role==='admin') ? permsAllTrue()
-               : (Array.isArray(u.perms) ? toPermObject(u.perms) : (u.perms||{}));
+               : (Array.isArray(u.permissoes) ? toPermObject(u.permissoes) : (u.permissoes||{}));
     
     setSession({
       id: u.id,
@@ -525,6 +535,7 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
     document.dispatchEvent(new CustomEvent('auth:login', { detail:{ user: current() } }));
     return {ok:true};
   }
+
   function setSession(s){ jset(K_SESS, s); }
   function current(){ return jget(K_SESS, null); }
 
@@ -533,80 +544,33 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
     return;
   }
   
+  // ✅ find - busca usuário por username
+  async function find(username){
+    username = String(username||'').trim().toLowerCase();
+    return await window.SupabaseAPI.users.getByUsername(username);
+  }
   
-  /* --- API pública --- */
-  function list(){ return loadUsers(); }
-  function listUsers(){ return list(); }
-
-  function find(username){
-    username = String(username||'').trim().toLowerCase();
-    return loadUsers().find(u=>u.username===username);
-  }
-
-  async function createUser({username, password, role='operador', perms, companies}) {
-    username = String(username||'').trim().toLowerCase();
-    if (!username || !password) return {ok:false, msg:'Preencha usuário e senha'};
-    const arr = loadUsers();
-    if (arr.some(u=>u.username===username)) return {ok:false, msg:'Usuário já existe'};
-    const permObj = (role==='admin') ? permsAllTrue() : toPermObject(perms);
-    arr.push({
-      id: uid(), username, pass: await sha(password),
-      role, active:true, perms: permObj,
-      companies: Array.isArray(companies) ? companies : [],   // << NOVO
-      createdAt:new Date().toISOString()
-    });
-    saveUsers(arr);
-    return {ok:true};
-  }
-
-  function updateUser(id, patch){
-    const arr = loadUsers();
-    const i = arr.findIndex(u=>u.id===id);
-    if (i<0) return {ok:false, msg:'Usuário não encontrado'};
-    const p = Object.assign({}, patch||{});
-    if (p.perms) p.perms = toPermObject(p.perms);
-    if (p.role === 'admin') p.perms = permsAllTrue();
-    if (typeof p.password === 'string'){ delete p.password; } 
-    arr[i] = Object.assign({}, arr[i], p);
-    saveUsers(arr);
-    return {ok:true};
-  }
-
-  function removeUser(id){ saveUsers(loadUsers().filter(u=>u.id!==id)); }
-
-  async function login(username, password){
-    const u = find(username);
-    if (!u || u.active===false) return {ok:false, msg:'Usuário inexistente ou inativo'};
-    if (!(await passOk(u.pass, password))) return {ok:false, msg:'Senha inválida'};
-    const perms = (u.role==='admin') ? permsAllTrue()
-               : (Array.isArray(u.perms) ? toPermObject(u.perms) : (u.perms||{}));
-    setSession({
-      id:u.id, username:u.username, role:u.role,
-      perms,
-      companies: Array.isArray(u.companies) ? u.companies : []  // << NOVO
-    });
-    document.dispatchEvent(new CustomEvent('auth:login', { detail:{ user: current() } }));
-    return {ok:true};
-  }
-
+  // ✅ changePassword - versão Supabase
   async function changePassword(id, newPassword){
     newPassword = String(newPassword||'');
     if (!newPassword) return {ok:false, msg:'Senha vazia'};
-    const arr = loadUsers();
-    const i = arr.findIndex(u=>u.id===id);
-    if (i<0) return {ok:false, msg:'Usuário não encontrado'};
-    arr[i] = Object.assign({}, arr[i], { pass: await sha(newPassword) });
-    saveUsers(arr);
-    // mantém sessão; não força logout
-    return {ok:true};
+    
+    try {
+      await window.SupabaseAPI.users.update(id, { password: await sha(newPassword) });  // ✅ 'password', não 'pass'
+      return {ok:true};
+    } catch (error) {
+      return {ok:false, msg: error.message};
+    }
   }
-  
-  
 
   function logout(){
     localStorage.removeItem(K_SESS);
     document.dispatchEvent(new Event('auth:logout'));
   }
+  
+  /* --- API pública --- */
+  function list(){ return loadUsers(); }
+  function listUsers(){ return list(); }
 
   // ✅ GUARD APRIMORADO - Controla visibilidade de elementos E menus da sidebar
   function guard(){
@@ -664,7 +628,6 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
   }
 
   // Exposição
-// Exposição
 window.UserAuth = Object.assign(window.UserAuth || {}, {
   list,
   listUsers,
@@ -677,8 +640,10 @@ window.UserAuth = Object.assign(window.UserAuth || {}, {
   currentUser: current,
   setSession,       // <- para o adapter usar
   permsAllTrue,     // <- para o adapter montar perms de admin
+  changePassword,   // <- para troca de senha
   can: (p) => hasPerm(current(), p),
-  has: (p) => hasPerm(current(), p)
+  has: (p) => hasPerm(current(), p),
+  guard             // <- expõe guard para ser chamado externamente
 });
 
 

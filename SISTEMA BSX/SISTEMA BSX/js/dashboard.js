@@ -1,3 +1,6 @@
+/* ==== Dashboard - VERSÃO SUPABASE 2025-11-26-v2 ==== */
+console.log('🟠🟠🟠 [dashboard.js] VERSÃO SUPABASE 2025-11-26-v2 CARREGADA! 🟠🟠🟠');
+
 /* ==== Util: ler a primeira chave que existir no localStorage ==== */
 function fromLS(keys){
   for (const k of keys.filter(Boolean)) {
@@ -24,7 +27,16 @@ function getLancs(){
 
 
 
-function getPrestacoes(){
+async function getPrestacoes(){
+  // Tenta carregar do Supabase primeiro
+  if (typeof window.carregarPrestacoesGlobal === 'function') {
+    try {
+      return await window.carregarPrestacoesGlobal();
+    } catch(e) {
+      console.warn('[Dashboard] Erro ao carregar do Supabase, usando localStorage:', e);
+    }
+  }
+  // Fallback para localStorage
   return fromLS([window.DB_PREST, 'bsx_prest_contas_v1', 'DB_PREST']) || [];
 }
 
@@ -43,7 +55,7 @@ function calcSaldoCaixaMes(ym){
 }
 
 // Limiar padrão (R$ 50) e taxa ideal (4% se não houver outra no window)
-const LIMIAR_ALERTA = 250;
+const LIMIAR_ALERTA = 350;
 
 function limiar_alerta(despesa,
   limiar = (typeof window.LIMIAR_ALERTA === 'number' ? window.LIMIAR_ALERTA : LIMIAR_ALERTA),
@@ -83,31 +95,22 @@ const ymLast  = (ym) => {
 
 /* Pega dados (preferindo globais, com fallback no localStorage) */
 function getDespesas(){
-  try { if (Array.isArray(window.despesas) && window.despesas.length) return window.despesas; } catch(_){}
-  try {
-    // ✅ Lê da chave com prefixo de empresa (BSX__bsx_despesas_v1)
-    const empresa = localStorage.getItem('CURRENT_COMPANY') || 'BSX';
-    const baseKey = (typeof window.DB_DESPESAS!=='undefined') ? window.DB_DESPESAS : 'bsx_despesas_v1';
-    const keyWithPrefix = `${empresa}__${baseKey}`;
-    
-    // Tenta com prefixo primeiro
-    let arr = JSON.parse(localStorage.getItem(keyWithPrefix)||'null');
-    
-    // Se não encontrar, tenta sem prefixo
-    if (!Array.isArray(arr)) {
-      arr = JSON.parse(localStorage.getItem(baseKey)||'[]');
-    }
-    
-    return Array.isArray(arr) ? arr : [];
-  } catch(_) { return []; }
+  // ✅ Retorna as despesas já carregadas do Supabase (via loadDespesas)
+  if (Array.isArray(window.despesas) && window.despesas.length) {
+    return window.despesas;
+  }
+  // Fallback: tenta carregar se ainda não foi carregado
+  console.warn('[Dashboard] Despesas não carregadas ainda, retornando array vazio');
+  return [];
 }
+
 function getVendas(){
-  try { if (Array.isArray(window.vendas)) return window.vendas; } catch(_){}
-  try { return JSON.parse(localStorage.getItem('DB_VENDAS')||'[]') || []; } catch(_) { return []; }
+  // ✅ USA APENAS window.vendas (Supabase) - sem fallback localStorage
+  return Array.isArray(window.vendas) ? window.vendas : [];
 }
 function getFichas(){
-  try { if (Array.isArray(window.fichas)) return window.fichas; } catch(_){}
-  try { return JSON.parse(localStorage.getItem('DB_FICHAS')||'[]') || []; } catch(_) { return []; }
+  // ✅ USA APENAS window.fichas (Supabase) - sem fallback localStorage
+  return Array.isArray(window.fichas) ? window.fichas : [];
 }
 
 /* Rota/área exibida por ficha */
@@ -143,29 +146,28 @@ function renderSaldo(ym){
 function gerenteNome(uid){
   const uidS = String(uid);
 
-  // 1) tentar na lista já carregada (se existir)
+  // 1) tentar na lista já carregada do Supabase
   if (Array.isArray(window.gerentes) && window.gerentes.length){
     const g = window.gerentes.find(x => String(x.uid ?? x.id) === uidS);
     if (g?.nome) return g.nome;
   }
 
-  // 2) ler direto do banco oficial
-  try {
-    const KEY = (typeof window.DB_GERENTES === 'string' && window.DB_GERENTES) ? window.DB_GERENTES : 'bsx_gerentes_v2';
-    const arr = JSON.parse(localStorage.getItem(KEY) || '[]') || [];
-    const g = arr.find(x => String(x.uid ?? x.id) === uidS);
+  // 2) Se ainda não carregou, tentar buscar do GerentesLoader
+  if (window.GerentesLoader?.getCache) {
+    const cache = window.GerentesLoader.getCache();
+    const g = cache.find(x => String(x.uid ?? x.id) === uidS);
     if (g?.nome) return g.nome;
-  } catch(_) {}
+  }
 
-  return '(excluído)';
+  // 3) Não encontrou - retorna carregando ou excluído
+  return window.gerentes ? '(excluído)' : '(carregando...)';
 }
 
 /* -------------------- 2) Resultado – prestações Abertas -------------------- */
 /* ========= Resultado – prestações ABERTAS (detalhado, 1 linha por gerente) ========= */
-function renderDashboardResultado(){
+async function renderDashboardResultado(){
   const q = (document.getElementById('dashResBusca')?.value || '').toLowerCase();
-  const KEY = (typeof window.DB_PREST !== 'undefined') ? window.DB_PREST : 'bsx_prest_contas_v1';
-  const arr = (JSON.parse(localStorage.getItem(KEY) || '[]') || []).filter(p => !p.fechado);
+  const arr = (await getPrestacoes()).filter(p => !p.fechado);
 
 
   const rows = arr.map(p=>{
@@ -175,13 +177,12 @@ function renderDashboardResultado(){
     const aPagar     = Number(p?.resumo?.aPagar) || 0;
     const pagamentos = Array.isArray(p.pagamentos) ? p.pagamentos : [];
 
-    // ✅ ADIANTAMENTO: Valores pagos pela empresa ao gerente (ADIANTAMENTO + VALE)
     const adiant = pagamentos
-      .filter(x => {
-        const f = String(x.forma||'').toUpperCase();
-        return (f === 'ADIANTAMENTO' || f === 'VALE') && !x.cancelado;
-      })
-      .reduce((s,x)=> s + (Number(x.valor)||0), 0);
+    .filter(x => {
+      const f = String(x.forma||'').toUpperCase();
+      return f === 'ADIANTAMENTO' && !x.cancelado;
+    })
+    .reduce((s,x)=> s + (Number(x.valor)||0), 0);
 
     // ✅ RECEBIDO: Valores recebidos do gerente (PIX, Dinheiro, etc) - EXCLUI pagamentos da empresa
     const recebido = pagamentos
@@ -291,13 +292,30 @@ function renderDashboardResultado(){
   );
 }
 /* -------------------- Ciclo do dashboard -------------------- */
-function refresh(){
+async function refresh(){
   const ym = ($('dashMes')?.value) || ymNow();
   renderSaldo(ym);
+  
+  // ✅ Garante que despesas estão carregadas do Supabase
+  if (typeof loadDespesas === 'function' && (!window.despesas || !window.despesas.length)) {
+    await loadDespesas();
+  }
+  
+  // ✅ Garante que fichas estão carregadas do Supabase
+  if (typeof window.carregarFichas === 'function' && (!window.fichas || !window.fichas.length)) {
+    console.log('[Dashboard] Aguardando fichas do Supabase...');
+    await window.carregarFichas();
+  }
+  
+  // ✅ Garante que vendas estão carregadas do Supabase
+  if (typeof window.carregarVendas === 'function' && (!window.vendas || !window.vendas.length)) {
+    console.log('[Dashboard] Aguardando vendas do Supabase...');
+    await window.carregarVendas();
+  }
+  
   renderDashboardResultado();
   renderAlerts(ym);
 }
-
 function init(){
   const input = $('dashMes'); if (input && !input.value) input.value = ymNow();
   input?.addEventListener('change', refresh);

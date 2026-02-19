@@ -1,5 +1,15 @@
 (function(){
   'use strict';
+  
+  // ============================================
+  // PROTEÇÃO CONTRA MÚLTIPLO CARREGAMENTO
+  // ============================================
+  if (window.__GERENTES_LOADED__) {
+    console.warn('[Gerentes] Já carregado, ignorando...');
+    return;
+  }
+  window.__GERENTES_LOADED__ = true;
+  
   let __saving = false;
   let __savingTimeout = null;
   let __submitting = false;
@@ -13,10 +23,12 @@
   // ============================================
   async function read() {
     try {
-      const arr = await window.SupabaseAPI.gerentes.getAtivos();
+      // Usa getAll() para não filtrar por ativo=true
+      const arr = await window.SupabaseAPI.gerentes.getAll();
+      console.log('[Gerentes] Carregados:', arr?.length || 0, 'gerentes');
       return Array.isArray(arr) ? arr : [];
     } catch (error) {
-      console.error('Erro ao carregar gerentes:', error);
+      console.error('[Gerentes] Erro ao carregar:', error);
       return [];
     }
   }
@@ -60,7 +72,9 @@
       
       const comissaoPorRotaPositiva = !!fd.get('comissaoPorRotaPositiva');
       
-      // ✅ IMPORTANTE: Use underscore para compatibilidade com Supabase
+      // ✅ NOVO: Saldo acumulado para gerentes 50%
+      const temSaldoAcumulado = !!fd.get('temSaldoAcumulado');
+      
       const g = {
         nome,
         comissao: Number(fd.get('comissao')||0) || 0,
@@ -69,14 +83,17 @@
         telefone: String(fd.get('telefone')||'').trim(),
         email: String(fd.get('email')||'').trim(),
         obs: String(fd.get('obs')||'').trim(),
-        observacoes: String(fd.get('obs')||'').trim(), // Duplica para compatibilidade
+        observacoes: String(fd.get('obs')||'').trim(),
         base_calculo: comissaoPorRotaPositiva ? 'COLETAS' : String(fd.get('baseCalculo') || 'COLETAS_MENOS_DESPESAS').toUpperCase().replace(/-/g, '_'),
         comissao_por_rota_positiva: comissaoPorRotaPositiva,
         tem_segunda_comissao: temSegundaComissao,
-        comissao2: temSegundaComissao ? comissao2Value : 0
+        comissao2: temSegundaComissao ? comissao2Value : 0,
+        tem_saldo_acumulado: temSaldoAcumulado,
+        ativo: true
       };
       
-      // Salva no Supabase
+      console.log('[Gerentes] Salvando:', uidEditing ? 'EDIÇÃO' : 'NOVO');
+      
       if (uidEditing) {
         await window.SupabaseAPI.gerentes.updateByUid(uidEditing, g);
       } else {
@@ -84,17 +101,14 @@
         await window.SupabaseAPI.gerentes.create(g);
       }
       
-      // Limpa formulário
       form.reset();
       form.removeAttribute('data-editing-uid');
       delete form.dataset.editingUid;
       
-      // Re-renderiza
       await render();
       
       window.showNotification('Gerente salvo com sucesso!', 'success');
       
-      // Auditoria
       if (typeof window.AuditLog !== 'undefined') {
         window.AuditLog.log(uidEditing ? 'gerente_editado' : 'gerente_criado', {
           id: g.uid,
@@ -105,7 +119,7 @@
       
     } catch (error) {
       console.error('[Gerentes] ❌ Erro ao salvar:', error);
-      window.showNotification(error.message || 'Erro ao salvar. Tente novamente.', 'error');
+      window.showNotification(error.message || 'Erro ao salvar', 'error');
     } finally {
       __savingTimeout = setTimeout(function() {
         __saving = false;
@@ -125,12 +139,12 @@
     try {
       arr = await read();
     } catch (e) {
-      console.error('[Gerentes] Erro ao carregar gerentes:', e);
+      console.error('[Gerentes] Erro ao renderizar:', e);
       arr = [];
     }
   
     if (!Array.isArray(arr)) {
-      console.warn('[Gerentes] read() não retornou array, usando [].', arr);
+      console.warn('[Gerentes] Resposta não é array:', arr);
       arr = [];
     }
   
@@ -167,9 +181,6 @@
     }
   }
 
-  // ============================================
-  // UTILITÁRIOS
-  // ============================================
   function esc(s) {
     const map = {
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
@@ -198,7 +209,7 @@
   }
 
   // ============================================
-  // CLICK NA TABELA (Editar/Excluir)
+  // CLICK NA TABELA
   // ============================================
   async function onTableClick(e){
     const target = e.target;
@@ -213,14 +224,17 @@
     
     e.preventDefault();
     e.stopPropagation();
-    if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    e.stopImmediatePropagation();
 
     const uid = (btnDel||btnEdit).getAttribute('data-del-gerente') || 
                 (btnEdit||btnDel).getAttribute('data-edit-gerente');
     if (!uid) return;
     
+    console.log('[Gerentes] Ação:', btnDel ? 'EXCLUIR' : 'EDITAR', 'UID:', uid);
+    
     const arr = await read();
     const g   = arr.find(function(x) { return x.uid === uid; });
+    
     if (!g) {
       alert('Gerente não encontrado.');
       return;
@@ -232,7 +246,7 @@
       try {
         await window.SupabaseAPI.gerentes.deleteByUid(uid);
         await render();
-        window.showNotification('Gerente excluído com sucesso!', 'success');
+        window.showNotification('Gerente excluído!', 'success');
         
         if (typeof window.AuditLog !== 'undefined') {
           window.AuditLog.log('gerente_excluido', {
@@ -242,7 +256,7 @@
         }
       } catch (error) {
         console.error('[Gerentes] Erro ao excluir:', error);
-        window.showNotification('Erro ao excluir gerente', 'error');
+        window.showNotification('Erro ao excluir', 'error');
       }
       
       return;
@@ -269,7 +283,6 @@
 
       const baseCalcEl = f.querySelector('[name="baseCalculo"]');
       if (baseCalcEl) {
-        // Converte COLETAS_MENOS_DESPESAS para coletas-despesas (formato do form)
         const baseCalc = (g.base_calculo || 'COLETAS_MENOS_DESPESAS').toLowerCase().replace(/_/g, '-');
         baseCalcEl.value = baseCalc;
       }
@@ -282,6 +295,14 @@
 
       const com2El = f.querySelector('[name="comissao2"]');
       if (com2El) com2El.value = String(Number(g.comissao2) || 0);
+      
+      // ✅ Mostrar div da 2ª comissão se estiver marcado
+      const div2Com = document.getElementById('segundaComissaoDiv');
+      if (div2Com) div2Com.style.display = g.tem_segunda_comissao ? 'block' : 'none';
+
+      // ✅ NOVO: Carregar checkbox de saldo acumulado
+      const temSaldoEl = f.querySelector('[name="temSaldoAcumulado"]');
+      if (temSaldoEl) temSaldoEl.checked = !!g.tem_saldo_acumulado;
 
       f.scrollIntoView({ behavior:'smooth', block:'center' });
       
@@ -300,16 +321,14 @@
     if (form && !form.__wired_gerentes){
       form.__wired_gerentes = true;
       form.addEventListener('submit', onSubmit);
-      console.log('[Gerentes] ✅ Event listener registrado (submit → Supabase)');
-    } else if (form) {
-      console.log('[Gerentes] ⚠️ Event listener JÁ estava registrado');
+      console.log('[Gerentes] ✅ Submit registrado');
     }
 
     const tb = document.getElementById('tbodyGerentes');
     if (tb && !tb.__wired_gerentes){
       tb.__wired_gerentes = true;
       tb.addEventListener('click', onTableClick, true);
-      console.log('[Gerentes] ✅ Event listener registrado (click na tabela)');
+      console.log('[Gerentes] ✅ Click registrado');
     }
 
     document.addEventListener('empresa:change', render);
@@ -334,4 +353,6 @@
     document.addEventListener('DOMContentLoaded', init);
   else
     init();
+    
+  console.log('[Gerentes] ✅ Módulo carregado!');
 })();

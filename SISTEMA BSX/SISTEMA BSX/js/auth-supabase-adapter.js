@@ -58,7 +58,7 @@
             role: u.role || 'operador',
             pass: u.password,
             perms: u.permissoes || {},
-            companies: [],
+            companies: Array.isArray(u.companies) ? u.companies : [],
             ativo: u.ativo !== false
           }));
         } catch (err) {
@@ -85,6 +85,7 @@
             nome,
             empresa_id: data?.empresa_id || null,
             permissoes: data?.perms || data?.permissoes || {},
+            companies: Array.isArray(data?.companies) ? data.companies : [],  // ✅ ADICIONA
             ativo: data?.ativo ?? true
           };
   
@@ -120,14 +121,15 @@
             ? (window.UserAuth.permsAllTrue ? window.UserAuth.permsAllTrue() : {})
             : (user.permissoes || {});
   
-          const session = {
-            id: user.id,
-            username: user.username,
-            nome: user.nome,
-            role: user.role || 'operador',
-            empresa_id: user.empresa_id || null,
-            perms
-          };
+            const session = {
+              id: user.id,
+              username: user.username,
+              nome: user.nome,
+              role: user.role || 'operador',
+              empresa_id: user.empresa_id || null,
+              perms,
+              companies: Array.isArray(user.companies) ? user.companies : []  // ✅ ADICIONA
+            };
   
           if (typeof window.UserAuth.setSession === 'function') {
             window.UserAuth.setSession(session);

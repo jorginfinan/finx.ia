@@ -38,11 +38,14 @@
         const passwordHash = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9';
         
         // Buscar ID da empresa BSX
-        const { data: empresa } = await client
+        let empresa;
+        const { data: empresaData } = await client
           .from('empresas')
           .select('id')
           .eq('nome', 'BSX')
           .single();
+        
+        empresa = empresaData;
 
         if (!empresa) {
           // Criar empresa BSX se não existir
@@ -74,7 +77,7 @@
           console.error('❌ Erro ao criar admin:', error);
         } else {
           console.log('✅ Admin criado com sucesso!');
-          console.log('📝 Use: admin / admin123');
+          console.log('🔑 Use: admin / admin123');
         }
       } else {
         console.log('✅ Admin já existe');
@@ -90,4 +93,54 @@
   } else {
     ensureAdminExists();
   }
+  
+  // ===== CARREGAR GERENTES AUTOMATICAMENTE =====
+  async function carregarGerentes() {
+    try {
+      console.log('[Init] 📥 Carregando gerentes...');
+      
+      if (!window.SupabaseAPI?.gerentes) {
+        console.warn('[Init] SupabaseAPI.gerentes não disponível ainda');
+        setTimeout(carregarGerentes, 1000);
+        return;
+      }
+      
+      const gerentes = await window.SupabaseAPI.gerentes.getAll();
+      
+      if (Array.isArray(gerentes)) {
+        window.gerentes = gerentes.map(g => ({
+          id: g.id,           // ✅ CORRIGIDO: UUID do Supabase
+          uid: g.uid || g.id, // UID legado
+          nome: g.nome || '(sem nome)',
+          numero: g.numero || '',
+          comissao: Number(g.comissao) || 0,
+          comissao2: Number(g.comissao2) || 0,
+          comissaoModo: g.comissao_modo || g.comissaoModo || 'simples',
+          comissaoPorRotaPositiva: g.comissao_por_rota_positiva || false,
+          temSegundaComissao: g.tem_segunda_comissao || false,
+          temSaldoAcumulado: g.tem_saldo_acumulado || false,
+          baseCalculo: g.base_calculo || g.baseCalculo || 'COLETAS_MENOS_DESPESAS',
+          ativo: g.ativo !== false
+        }));
+        
+        console.log(`[Init] ✅ ${window.gerentes.length} gerentes carregados`);
+        
+        document.dispatchEvent(new CustomEvent('gerentes:loaded', { 
+          detail: window.gerentes 
+        }));
+      }
+    } catch (error) {
+      console.error('[Init] Erro ao carregar gerentes:', error);
+    }
+  }
+  
+  // Carrega gerentes após 1 segundo
+  setTimeout(carregarGerentes, 1000);
+  
+  // Recarrega a cada 30 segundos
+  setInterval(carregarGerentes, 30000);
+  
+  // Função global para forçar reload
+  window.recarregarGerentes = carregarGerentes;
+
 })();

@@ -2101,6 +2101,15 @@ async function pcCalcular(){
     return;
   }
   
+  console.log('🔍 [DEBUG] Objeto gerente carregado:', {
+    uid: g.uid,
+    nome: g.nome,
+    comissao: g.comissao,
+    tem_saldo_acumulado: g.tem_saldo_acumulado,
+    temSaldoAcumulado: g.temSaldoAcumulado,
+    tem_segunda_comissao: g.tem_segunda_comissao
+  });
+  
   const perc1 = Number(g.comissao) || 0;
 
   // coletas (total e só as positivas p/ modo "por rota")
@@ -2174,6 +2183,18 @@ const valePg = valesAplicados.reduce((sum, v) => {
         
         // Verifica se é gerente 50% com saldo acumulado (sem 2ª comissão)
         const isGerente50ComSaldo = !temSegundaComissao && perc1 >= 50 && temSaldoAcumuladoConfig;
+        
+        console.log('🔍 [DEBUG] Verificação Saldo Acumulado:', {
+          gerente: g.nome || g.numero,
+          perc1,
+          temSegundaComissao,
+          'g.temSaldoAcumulado': g.temSaldoAcumulado,
+          'g.tem_saldo_acumulado': g.tem_saldo_acumulado,
+          temSaldoAcumuladoConfig,
+          usaSaldoAcumulado,
+          isGerente50ComSaldo,
+          empresaSemSaldoAcumulado
+        });
 
   if (usaSaldoAcumulado) {
     console.log('📊 [SaldoAcumulado] Condições atendidas! Calculando...');
@@ -2547,6 +2568,16 @@ const restam = aPagar - (pagos + adiantPg) + pagamentosDivida;
   }
 
   // snapshot completo
+  // ✅ PRESERVA as flags de saldo acumulado definidas anteriormente
+  const _saldoFlags = {
+    usandoSaldo50: prestacaoAtual.resumo?.usandoSaldo50 || false,
+    saldoAnterior: prestacaoAtual.resumo?.saldoAnterior || 0,
+    descontoSaldo: prestacaoAtual.resumo?.descontoSaldo || 0,
+    resultadoSemComissao: prestacaoAtual.resumo?.resultadoSemComissao || 0
+  };
+  
+  console.log('🔄 [Resumo] Preservando flags de saldo:', _saldoFlags);
+  
   prestacaoAtual.resumo = {
     coletas: coletas, 
     coletasPos: coletasPositivas, 
@@ -2568,7 +2599,11 @@ const restam = aPagar - (pagos + adiantPg) + pagamentosDivida;
     pagos: pagos, 
     restam: restam, 
     baseColeta: coletas,
-    baseColeta: coletas,
+    // ✅ FLAGS DE SALDO ACUMULADO PRESERVADAS
+    usandoSaldo50: _saldoFlags.usandoSaldo50,
+    saldoAnterior: _saldoFlags.saldoAnterior,
+    descontoSaldo: _saldoFlags.descontoSaldo,
+    resultadoSemComissao: _saldoFlags.resultadoSemComissao,
 resultadoSemana: coletas - despesasTot,
 // saldo negativo acumulado que já existia ANTES dessa prestação
 negAnterior: (
@@ -3007,6 +3042,17 @@ if (!dataURL) {
 
   // Variáveis do resumo
   const r = prestacaoAtual.resumo || {};
+  
+  console.log('🎨 [PNG] Resumo para renderização:', {
+    usandoSaldo50: r.usandoSaldo50,
+    saldoAnterior: r.saldoAnterior,
+    saldoNegAcarreado: r.saldoNegAcarreado,
+    descontoSaldo: r.descontoSaldo,
+    baseComissao: r.baseComissao,
+    comis1: r.comis1,
+    perc: r.perc
+  });
+  
   const coletas2 = Number(r.coletas) || 0;
   const despesas2 = Number(r.despesas) || 0;
   const perc2 = Number(r.perc) || 0;
@@ -3154,14 +3200,12 @@ else {
     ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Base p/ Comissão', fmtBRL(baseComissao50), 
                  { color:'#16a34a', valueColor:'#16a34a', size:R_LINE });
     
-    // Comissão 50%
-    if (c1 > 0) {
-      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
-        'Comissão (' + (Number(r.perc)||0) + '%)',
-        fmtBRL(c1),
-        { valueColor:'#16a34a', size: R_LINE }
-      );
-    }
+    // Comissão 50% - SEMPRE mostra, mesmo quando for R$ 0
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+      'Comissão (' + (Number(r.perc)||0) + '%)',
+      fmtBRL(c1),
+      { valueColor:'#16a34a', size: R_LINE }
+    );
     
     // Novo Saldo (no banco)
     ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Novo Saldo (banco)', fmtBRL(saldoNovo50), 
@@ -3503,26 +3547,29 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
       
       const deveAtualizarSaldo = window.SaldoAcumulado && (
         prestacaoAtual.saldoInfo?.usandoSaldoAcumulado || 
-        prestacaoAtual.saldoInfo?.regraEspecial === 'SEGUNDA_COMISSAO'
+        prestacaoAtual.saldoInfo?.regraEspecial === 'SEGUNDA_COMISSAO' ||
+        prestacaoAtual.saldoInfo?.regraEspecial === 'GERENTE_50_SALDO'
       );
       
       if (deveAtualizarSaldo) {
         const empresaId = recPrest.empresaId || (window.getCompany ? window.getCompany() : 'BSX');
         const saldoNovo = prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0;
         
-        // ✅ REGRA SIMPLIFICADA PARA 2ª COMISSÃO:
+        // ✅ REGRA PARA 2ª COMISSÃO E GERENTE 50%:
         // O cálculo em pcCalcular() já considera o saldo anterior corretamente,
         // então basta salvar o novo saldo calculado diretamente.
-        if (prestacaoAtual.saldoInfo?.regraEspecial === 'SEGUNDA_COMISSAO') {
-          console.log('💾 [2ª Comissão] Salvando saldo direto:', {
+        if (prestacaoAtual.saldoInfo?.regraEspecial === 'SEGUNDA_COMISSAO' ||
+            prestacaoAtual.saldoInfo?.regraEspecial === 'GERENTE_50_SALDO') {
+          console.log('💾 [Saldo Especial] Salvando saldo direto:', {
             gerenteId: recPrest.gerenteId,
             empresaId,
             saldoNovo,
+            regraEspecial: prestacaoAtual.saldoInfo?.regraEspecial,
             saldoInfo: prestacaoAtual.saldoInfo
           });
           
           await window.SaldoAcumulado.setSaldo(recPrest.gerenteId, empresaId, saldoNovo);
-          console.log('✅ [2ª Comissão] Saldo salvo:', saldoNovo);
+          console.log('✅ [Saldo Especial] Saldo salvo:', saldoNovo);
           
         } else if (idx > -1 && prevRec && prevRec.saldoInfo) {
           // Edição de prestação com saldo acumulado normal
@@ -4412,14 +4459,12 @@ window.prestToDataURL = function(rec) {
                      window.fmtBRL ? window.fmtBRL(baseComissao50) : String(baseComissao50), 
                      { color:'#16a34a', valueColor:'#16a34a', size:R_LINE });
         
-        // Comissão 50%
-        if (c1 > 0) {
-          ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
-            'Comissão (' + (Number(r.perc)||0) + '%)',
-            window.fmtBRL ? window.fmtBRL(c1) : String(c1),
-            { valueColor:'#16a34a', size: R_LINE }
-          );
-        }
+        // Comissão 50% - SEMPRE mostra, mesmo quando for R$ 0
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+          'Comissão (' + (Number(r.perc)||0) + '%)',
+          window.fmtBRL ? window.fmtBRL(c1) : String(c1),
+          { valueColor:'#16a34a', size: R_LINE }
+        );
         
         // Novo Saldo (no banco)
         ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Novo Saldo (banco)', 

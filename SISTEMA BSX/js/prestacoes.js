@@ -2370,44 +2370,50 @@ const valePg = valesAplicados.reduce((sum, v) => {
         });
         
       } else {
-        // RESULTADO POSITIVO: Verifica saldo e paga comissão
+        // RESULTADO POSITIVO: Calcula 50% e desconta do banco
+        
+        // ✅ NOVA REGRA: 50% do positivo é a "comissão virtual" que vai abater do banco
+        const comissaoVirtual = resultadoSemComissao * (perc1 / 100); // 50% do resultado
         
         if (saldoAnterior > 0) {
-          // Tem saldo anterior: desconta primeiro
-          if (resultadoSemComissao > saldoAnterior) {
-            // Resultado maior que saldo: desconta saldo, paga 50% sobre o restante
-            const baseParaComissao = resultadoSemComissao - saldoAnterior;
-            baseComissao = baseParaComissao;
-            valorComissao1 = baseParaComissao * (perc1 / 100);
-            resultado = resultadoSemComissao - valorComissao1;
-            novoSaldo = 0;
+          // Tem saldo no banco
+          
+          if (comissaoVirtual <= saldoAnterior) {
+            // Comissão virtual cabe no saldo: desconta do banco, não paga ao gerente
+            baseComissao = resultadoSemComissao;
+            valorComissao1 = 0; // Gerente não recebe (vai pro banco)
+            resultado = resultadoSemComissao; // Resultado integral (sem desconto de comissão)
+            novoSaldo = saldoAnterior - comissaoVirtual; // Desconta 50% do banco
             
-            console.log('📊 [Gerente50%] Resultado > Saldo: paga 50% sobre diferença:', {
+            console.log('📊 [Gerente50%] Positivo com saldo: 50% vai pro banco:', {
               resultadoSemComissao,
+              comissaoVirtual,
               saldoAnterior,
-              baseParaComissao,
-              valorComissao1,
+              descontoDoBanco: comissaoVirtual,
               novoSaldo
             });
             
           } else {
-            // Resultado menor ou igual ao saldo: não paga comissão, reduz saldo
-            baseComissao = 0;
-            valorComissao1 = 0;
-            resultado = resultadoSemComissao;
-            novoSaldo = saldoAnterior - resultadoSemComissao;
+            // Comissão virtual maior que saldo: zera banco e paga diferença ao gerente
+            const comissaoPagaAoGerente = comissaoVirtual - saldoAnterior;
+            baseComissao = resultadoSemComissao;
+            valorComissao1 = comissaoPagaAoGerente;
+            resultado = resultadoSemComissao - comissaoPagaAoGerente;
+            novoSaldo = 0;
             
-            console.log('📊 [Gerente50%] Resultado <= Saldo: não paga comissão:', {
+            console.log('📊 [Gerente50%] Positivo zerou banco e sobrou:', {
               resultadoSemComissao,
+              comissaoVirtual,
               saldoAnterior,
+              comissaoPagaAoGerente,
               novoSaldo
             });
           }
           
         } else {
-          // Sem saldo anterior: paga 50% normal
+          // Sem saldo no banco: paga 50% normal ao gerente
           baseComissao = resultadoSemComissao;
-          valorComissao1 = resultadoSemComissao * (perc1 / 100);
+          valorComissao1 = comissaoVirtual;
           resultado = resultadoSemComissao - valorComissao1;
           novoSaldo = 0;
           
@@ -2421,8 +2427,9 @@ const valePg = valesAplicados.reduce((sum, v) => {
       
       valorComissao2 = 0; // Gerente 50% não tem 2ª comissão
       
-      // Calcula quanto foi descontado do saldo
-      const descontoSaldo = saldoAnterior > 0 ? Math.min(saldoAnterior, Math.max(0, resultadoSemComissao)) : 0;
+      // Calcula quanto foi descontado do saldo (50% do positivo, limitado ao saldo)
+      const comissaoVirtualParaDesconto = resultadoSemComissao > 0 ? resultadoSemComissao * (perc1 / 100) : 0;
+      const descontoSaldo = saldoAnterior > 0 ? Math.min(saldoAnterior, comissaoVirtualParaDesconto) : 0;
       
       // ✅ IMPORTANTE: Define saldoInfo para que o salvamento atualize o Supabase
       prestacaoAtual.saldoInfo = {
@@ -2432,7 +2439,8 @@ const valePg = valesAplicados.reduce((sum, v) => {
         regraEspecial: 'GERENTE_50_SALDO',
         baseComissaoCalculada: baseComissao,
         resultadoSemComissao: resultadoSemComissao,
-        descontoSaldo: descontoSaldo
+        descontoSaldo: descontoSaldo,
+        comissaoVirtual: comissaoVirtualParaDesconto
       };
       
       prestacaoAtual.resumo = {
@@ -2442,6 +2450,7 @@ const valePg = valesAplicados.reduce((sum, v) => {
         baseComissao: baseComissao,
         resultadoSemComissao: resultadoSemComissao,
         descontoSaldo: descontoSaldo,
+        comissaoVirtual: comissaoVirtualParaDesconto,
         usandoSaldo50: true  // Flag para renderização
       };
       
@@ -2573,7 +2582,8 @@ const restam = aPagar - (pagos + adiantPg) + pagamentosDivida;
     usandoSaldo50: prestacaoAtual.resumo?.usandoSaldo50 || false,
     saldoAnterior: prestacaoAtual.resumo?.saldoAnterior || 0,
     descontoSaldo: prestacaoAtual.resumo?.descontoSaldo || 0,
-    resultadoSemComissao: prestacaoAtual.resumo?.resultadoSemComissao || 0
+    resultadoSemComissao: prestacaoAtual.resumo?.resultadoSemComissao || 0,
+    comissaoVirtual: prestacaoAtual.resumo?.comissaoVirtual || 0
   };
   
   console.log('🔄 [Resumo] Preservando flags de saldo:', _saldoFlags);
@@ -2583,7 +2593,7 @@ const restam = aPagar - (pagos + adiantPg) + pagamentosDivida;
     coletasPos: coletasPositivas, 
     valorExtra: valorExtra, 
     adiant: adiant, 
-    deveAnt: deveAnt, 
+    deveAnt: deveAnt,
     divida: divida, 
     credito: credito,
     despesas: despesasTot, 
@@ -2604,6 +2614,7 @@ const restam = aPagar - (pagos + adiantPg) + pagamentosDivida;
     saldoAnterior: _saldoFlags.saldoAnterior,
     descontoSaldo: _saldoFlags.descontoSaldo,
     resultadoSemComissao: _saldoFlags.resultadoSemComissao,
+    comissaoVirtual: _saldoFlags.comissaoVirtual,
 resultadoSemana: coletas - despesasTot,
 // saldo negativo acumulado que já existia ANTES dessa prestação
 negAnterior: (
@@ -3172,6 +3183,7 @@ else {
   const descontoSaldo50 = Number(r.descontoSaldo || 0);
   const saldoNovo50 = Number(r.saldoNegAcarreado || 0);
   const baseComissao50 = Number(r.baseComissao || 0);
+  const comissaoVirtual50 = Number(r.comissaoVirtual || 0);
   
   ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', fmtBRL(coletas2),
                { bold:true, size:R_BOLD });
@@ -3190,28 +3202,31 @@ else {
     ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo Anterior (banco)', fmtBRL(saldoAnterior50), 
                  { valueColor:'#b91c1c', size:R_LINE });
     
-    // Desconto do Saldo (se aplicável)
+    // Comissão 50% calculada (valor que seria a comissão)
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 
+      'Comissão 50% (calculada)',
+      fmtBRL(comissaoVirtual50),
+      { valueColor:'#6b7280', size: R_LINE }
+    );
+    
+    // Desconto do Saldo (quanto efetivamente foi descontado do banco)
     if (descontoSaldo50 > 0) {
-      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Desconto do Saldo', '- ' + fmtBRL(descontoSaldo50), 
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Abatido do Banco', '- ' + fmtBRL(descontoSaldo50), 
                    { valueColor:'#16a34a', size:R_LINE });
     }
-    
-    // Base para Comissão
-    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Base p/ Comissão', fmtBRL(baseComissao50), 
-                 { color:'#16a34a', valueColor:'#16a34a', size:R_LINE });
-    
-    // Comissão 50% - SEMPRE mostra, mesmo quando for R$ 0
-    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
-      'Comissão (' + (Number(r.perc)||0) + '%)',
-      fmtBRL(c1),
-      { valueColor:'#16a34a', size: R_LINE }
-    );
     
     // Novo Saldo (no banco)
     ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Novo Saldo (banco)', fmtBRL(saldoNovo50), 
                  { valueColor:'#b91c1c', bold: true, size:R_LINE });
     
-    // Resultado = (Coletas - Despesas) - Comissão
+    // Comissão efetivamente paga ao gerente (pode ser 0 se foi pro banco)
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+      'Comissão Paga',
+      fmtBRL(c1),
+      { valueColor:'#16a34a', size: R_LINE }
+    );
+    
+    // Resultado = (Coletas - Despesas) - Comissão Paga
     const resultadoFinal = _resColetas2 - c1;
     ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', fmtBRL(resultadoFinal),
                  { bold:true, size:R_BOLD });
@@ -4425,6 +4440,7 @@ window.prestToDataURL = function(rec) {
       const descontoSaldo50 = Number(r.descontoSaldo || 0);
       const saldoNovo50 = Number(r.saldoNegAcarreado || 0);
       const baseComissao50 = Number(r.baseComissao || 0);
+      const comissaoVirtual50 = Number(r.comissaoVirtual || 0);
       
       ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', 
                    window.fmtBRL ? window.fmtBRL(coletas2) : String(coletas2), 
@@ -4447,31 +4463,33 @@ window.prestToDataURL = function(rec) {
                      window.fmtBRL ? window.fmtBRL(saldoAnterior50) : String(saldoAnterior50), 
                      { valueColor:'#b91c1c', size:R_LINE });
         
-        // Desconto do Saldo (se aplicável)
+        // Comissão 50% calculada (valor que seria a comissão)
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 
+          'Comissão 50% (calculada)',
+          window.fmtBRL ? window.fmtBRL(comissaoVirtual50) : String(comissaoVirtual50),
+          { valueColor:'#6b7280', size: R_LINE }
+        );
+        
+        // Desconto do Saldo (quanto efetivamente foi descontado do banco)
         if (descontoSaldo50 > 0) {
-          ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Desconto do Saldo', 
+          ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Abatido do Banco', 
                        '- ' + (window.fmtBRL ? window.fmtBRL(descontoSaldo50) : String(descontoSaldo50)), 
                        { valueColor:'#16a34a', size:R_LINE });
         }
-        
-        // Base para Comissão
-        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Base p/ Comissão', 
-                     window.fmtBRL ? window.fmtBRL(baseComissao50) : String(baseComissao50), 
-                     { color:'#16a34a', valueColor:'#16a34a', size:R_LINE });
-        
-        // Comissão 50% - SEMPRE mostra, mesmo quando for R$ 0
-        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
-          'Comissão (' + (Number(r.perc)||0) + '%)',
-          window.fmtBRL ? window.fmtBRL(c1) : String(c1),
-          { valueColor:'#16a34a', size: R_LINE }
-        );
         
         // Novo Saldo (no banco)
         ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Novo Saldo (banco)', 
                      window.fmtBRL ? window.fmtBRL(saldoNovo50) : String(saldoNovo50), 
                      { valueColor:'#b91c1c', bold: true, size:R_LINE });
         
-        // Resultado = (Coletas - Despesas) - Comissão
+        // Comissão efetivamente paga ao gerente (pode ser 0 se foi pro banco)
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+          'Comissão Paga',
+          window.fmtBRL ? window.fmtBRL(c1) : String(c1),
+          { valueColor:'#16a34a', size: R_LINE }
+        );
+        
+        // Resultado = (Coletas - Despesas) - Comissão Paga
         const resultadoFinal = _resColetas2 - c1;
         ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', 
                      window.fmtBRL ? window.fmtBRL(resultadoFinal) : String(resultadoFinal),

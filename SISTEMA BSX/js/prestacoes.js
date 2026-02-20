@@ -2217,11 +2217,12 @@ const valePg = valesAplicados.reduce((sum, v) => {
     // Se está EDITANDO uma prestação que JÁ FOI SALVA no Supabase,
     // precisamos tirar a contribuição DESSA prestação do saldo atual,
     // para recalcular como se ela ainda não existisse.
-    // ✅ CORREÇÃO: Para gerentes com 2ª comissão, usa saldo do Supabase diretamente
+    // ✅ CORREÇÃO: Para gerentes com 2ª comissão E gerentes 50%, usa saldo do Supabase diretamente
     // O saldo no Supabase representa o saldo ANTES dessa prestação
-    if (temSegundaComissao) {
+    if (temSegundaComissao || isGerente50ComSaldo) {
       saldoParaCalcular = saldoDoSupabase;
-      console.log('🔄 [2ª Comissão] Usando saldo do Supabase direto:', {
+      console.log('🔄 [Saldo Especial] Usando saldo do Supabase direto:', {
+        tipo: isGerente50ComSaldo ? 'Gerente 50%' : '2ª Comissão',
         saldoDoSupabase,
         saldoParaCalcular,
         coletas

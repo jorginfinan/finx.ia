@@ -2578,16 +2578,20 @@ const restam = aPagar - (pagos + adiantPg) + pagamentosDivida;
   }
 
   // snapshot completo
-  // ✅ PRESERVA as flags de saldo acumulado definidas anteriormente
+  // ✅ PRESERVA as flags de saldo acumulado APENAS se o gerente atual usa essa regra
+  // Verifica se o gerente atual é 50% com saldo acumulado
+  const _gerenteAtual50 = prestacaoAtual.saldoInfo?.regraEspecial === 'GERENTE_50_SALDO';
+  
   const _saldoFlags = {
-    usandoSaldo50: prestacaoAtual.resumo?.usandoSaldo50 || false,
-    saldoAnterior: prestacaoAtual.resumo?.saldoAnterior || 0,
-    descontoSaldo: prestacaoAtual.resumo?.descontoSaldo || 0,
-    resultadoSemComissao: prestacaoAtual.resumo?.resultadoSemComissao || 0,
-    comissaoVirtual: prestacaoAtual.resumo?.comissaoVirtual || 0
+    // ✅ IMPORTANTE: Só preserva usandoSaldo50 se o gerente atual realmente usa essa regra
+    usandoSaldo50: _gerenteAtual50 && (prestacaoAtual.resumo?.usandoSaldo50 || false),
+    saldoAnterior: _gerenteAtual50 ? (prestacaoAtual.resumo?.saldoAnterior || 0) : 0,
+    descontoSaldo: _gerenteAtual50 ? (prestacaoAtual.resumo?.descontoSaldo || 0) : 0,
+    resultadoSemComissao: _gerenteAtual50 ? (prestacaoAtual.resumo?.resultadoSemComissao || 0) : 0,
+    comissaoVirtual: _gerenteAtual50 ? (prestacaoAtual.resumo?.comissaoVirtual || 0) : 0
   };
   
-  console.log('🔄 [Resumo] Preservando flags de saldo:', _saldoFlags);
+  console.log('🔄 [Resumo] Flags de saldo:', { _gerenteAtual50, _saldoFlags });
   
   prestacaoAtual.resumo = {
     coletas: coletas, 

@@ -331,26 +331,37 @@
         const empresaId = await getEmpresaId();
         console.log('[API] 📥 Buscando despesas da empresa:', empresaId);
         
-        // ✅ CORREÇÃO: Adiciona range para buscar até 10000 registros (Supabase limita em 1000 por padrão)
-        const { data, error } = await this.client
-          .from(this.table)
-          .select('*')
-          .eq('empresa_id', empresaId)
-          .order('data', { ascending: false })
-          .range(0, 9999);
+        // ✅ CORREÇÃO: Busca em lotes de 1000 para contornar limite do Supabase
+        let allData = [];
+        let from = 0;
+        const batchSize = 1000;
+        let hasMore = true;
         
-        if (error) throw error;
-        
-        console.log('[API] 📦 Recebidas', data?.length, 'despesas do Supabase');
-        
-        // Aviso se atingiu o limite
-        if (data?.length >= 9999) {
-          console.warn('[API] ⚠️ ATENÇÃO: Limite de 10000 despesas atingido! Algumas despesas podem não ter sido carregadas.');
+        while (hasMore) {
+          const { data, error } = await this.client
+            .from(this.table)
+            .select('*')
+            .eq('empresa_id', empresaId)
+            .order('data', { ascending: false })
+            .range(from, from + batchSize - 1);
+          
+          if (error) throw error;
+          
+          if (data && data.length > 0) {
+            allData = allData.concat(data);
+            console.log(`[API] 📦 Lote ${Math.floor(from/batchSize) + 1}: +${data.length} despesas (total: ${allData.length})`);
+            from += batchSize;
+            hasMore = data.length === batchSize; // Continua se recebeu lote cheio
+          } else {
+            hasMore = false;
+          }
         }
         
+        console.log('[API] ✅ Total de despesas carregadas:', allData.length);
+        
         // Log de uma amostra para debug
-        if (data && data.length > 0) {
-          const amostra = data.slice(0, 5).map(d => ({
+        if (allData.length > 0) {
+          const amostra = allData.slice(0, 5).map(d => ({
             uid: d.uid,
             descricao: d.descricao,
             oculta: d.oculta,
@@ -358,11 +369,11 @@
           }));
           console.log('[API] 📋 Amostra (primeiras 5):', amostra);
           
-          const ocultasNoBanco = data.filter(d => d.oculta === true).length;
+          const ocultasNoBanco = allData.filter(d => d.oculta === true).length;
           console.log('[API] 🚫 Despesas com oculta=true no banco:', ocultasNoBanco);
         }
         
-        return data || [];
+        return allData;
       } catch (error) {
         console.error('[API] ❌ Erro ao buscar despesas:', error);
         return [];
@@ -593,20 +604,37 @@
     
     async getAll() {
       try {
-        // Fichas é cadastro universal - não filtra por empresa
-        const { data, error } = await this.client
-          .from(this.table)
-          .select('*')
-          .order('ficha');
+        // ✅ CORREÇÃO: Busca em lotes de 1000 para contornar limite do Supabase
+        let allData = [];
+        let from = 0;
+        const batchSize = 1000;
+        let hasMore = true;
         
-        if (error) {
-          console.error('[FichasAPI] Erro na query:', error);
-          throw error;
+        while (hasMore) {
+          const { data, error } = await this.client
+            .from(this.table)
+            .select('*')
+            .order('ficha')
+            .range(from, from + batchSize - 1);
+          
+          if (error) {
+            console.error('[FichasAPI] Erro na query:', error);
+            throw error;
+          }
+          
+          if (data && data.length > 0) {
+            allData = allData.concat(data);
+            console.log(`[FichasAPI] 📦 Lote ${Math.floor(from/batchSize) + 1}: +${data.length} fichas (total: ${allData.length})`);
+            from += batchSize;
+            hasMore = data.length === batchSize;
+          } else {
+            hasMore = false;
+          }
         }
         
-        console.log('[FichasAPI] ✅ Carregadas:', data?.length || 0, 'fichas');
+        console.log('[FichasAPI] ✅ Total carregadas:', allData.length, 'fichas');
         
-        return (data || []).map(f => ({
+        return allData.map(f => ({
           ficha: f.ficha,
           area: f.area || ''
         }));
@@ -694,21 +722,38 @@
     
     async getAll() {
       try {
-        // Vendas é cadastro universal - não filtra por empresa
-        const { data, error } = await this.client
-          .from(this.table)
-          .select('*')
-          .order('ano_mes', { ascending: false });
+        // ✅ CORREÇÃO: Busca em lotes de 1000 para contornar limite do Supabase
+        let allData = [];
+        let from = 0;
+        const batchSize = 1000;
+        let hasMore = true;
         
-        if (error) {
-          console.error('[VendasAPI] Erro na query:', error);
-          throw error;
+        while (hasMore) {
+          const { data, error } = await this.client
+            .from(this.table)
+            .select('*')
+            .order('ano_mes', { ascending: false })
+            .range(from, from + batchSize - 1);
+          
+          if (error) {
+            console.error('[VendasAPI] Erro na query:', error);
+            throw error;
+          }
+          
+          if (data && data.length > 0) {
+            allData = allData.concat(data);
+            console.log(`[VendasAPI] 📦 Lote ${Math.floor(from/batchSize) + 1}: +${data.length} vendas (total: ${allData.length})`);
+            from += batchSize;
+            hasMore = data.length === batchSize;
+          } else {
+            hasMore = false;
+          }
         }
         
-        console.log('[VendasAPI] ✅ Carregadas:', data?.length || 0, 'vendas');
+        console.log('[VendasAPI] ✅ Total carregadas:', allData.length, 'vendas');
         
         // Mapeia para formato JS (ym, bruta, liquida)
-        return (data || []).map(v => ({
+        return allData.map(v => ({
           id: v.uid || v.id,
           ficha: v.ficha,
           ym: v.ano_mes,

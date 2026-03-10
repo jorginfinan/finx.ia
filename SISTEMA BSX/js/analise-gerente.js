@@ -197,6 +197,16 @@
                   <tbody id="agBodyPrestacoes">
                     <tr><td colspan="6" class="ag-empty">Nenhuma prestação encontrada</td></tr>
                   </tbody>
+                  <tfoot id="agFootPrestacoes">
+                    <tr class="ag-total-row">
+                      <td><strong>TOTAL</strong></td>
+                      <td class="valor"><strong id="agTotalColetasTabela">R$ 0,00</strong></td>
+                      <td class="valor despesa"><strong id="agTotalDespPrestTabela">R$ 0,00</strong></td>
+                      <td class="valor"><strong id="agTotalComissaoTabela">R$ 0,00</strong></td>
+                      <td class="valor"><strong id="agTotalResultadoTabela">R$ 0,00</strong></td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>
@@ -209,6 +219,9 @@
                 <span class="ag-secao-toggle">▼</span>
               </div>
               <div class="ag-secao-content" id="agTabelaDespesas">
+                <div class="ag-busca-container">
+                  <input type="text" id="agBuscaDespesa" class="input ag-busca-input" placeholder="🔍 Filtrar por descrição...">
+                </div>
                 <table class="ag-table">
                   <thead>
                     <tr>
@@ -221,6 +234,12 @@
                   <tbody id="agBodyDespesas">
                     <tr><td colspan="4" class="ag-empty">Nenhuma despesa encontrada</td></tr>
                   </tbody>
+                  <tfoot id="agFootDespesas">
+                    <tr class="ag-total-row">
+                      <td colspan="3"><strong>TOTAL</strong></td>
+                      <td class="valor despesa"><strong id="agTotalDespesasTabela">R$ 0,00</strong></td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>
@@ -245,6 +264,12 @@
                   <tbody id="agBodyPagamentos">
                     <tr><td colspan="4" class="ag-empty">Nenhum pagamento encontrado</td></tr>
                   </tbody>
+                  <tfoot id="agFootPagamentos">
+                    <tr class="ag-total-row">
+                      <td colspan="3"><strong>TOTAL</strong></td>
+                      <td class="valor"><strong id="agTotalPagamentosTabela">R$ 0,00</strong></td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>
@@ -403,6 +428,11 @@
       // Exportação
       document.getElementById('agExportPdf')?.addEventListener('click', exportarPDF);
       document.getElementById('agExportExcel')?.addEventListener('click', exportarExcel);
+      
+      // Filtro de busca de despesas
+      document.getElementById('agBuscaDespesa')?.addEventListener('input', function() {
+        renderTabelaDespesas(this.value);
+      });
     }
     
     // ============================================
@@ -539,32 +569,56 @@
     function buscarPagamentos(gerenteNum, de, ate) {
       const pagamentos = [];
       
-      // 1. Busca pagamentos das prestações (PIX)
-      const prestacoes = window.prestacoesSalvas || [];
+      // ✅ BUSCA NO FINANCEIRO (window.financeiro)
+      const financeiro = window.financeiro || [];
       
-      prestacoes.forEach(p => {
-        const pGerente = p.gerenteNumero || p.gerente?.numero || '';
-        if (pGerente !== gerenteNum) return;
+      financeiro.forEach(f => {
+        // Verifica se o gerente/rota contém o número do gerente
+        const fGerente = (f.gerenteRota || f.gerente || f.descricao || '').toLowerCase();
+        const numPadded = gerenteNum.toString().padStart(3, '0');
         
-        // Pagamentos registrados na prestação
-        const pgtos = p.pagamentos || p.resumo?.pagamentos || [];
+        // Busca pelo número do gerente no início (ex: "026 Sávio")
+        if (!fGerente.includes(numPadded.toLowerCase()) && !fGerente.startsWith(gerenteNum)) {
+          return;
+        }
         
-        pgtos.forEach(pgto => {
-          const dataPgto = pgto.data || pgto.dataPagamento || '';
-          if (dataPgto >= de && dataPgto <= ate) {
-            pagamentos.push({
-              data: dataPgto,
-              tipo: 'PIX',
-              descricao: pgto.obs || `Pagamento prestação ${p.periodoIni || ''} a ${p.periodoFim || ''}`,
-              valor: Number(pgto.valor) || 0,
-              origem: 'prestacao',
-              prestacaoId: p.id
-            });
-          }
+        // Filtro por data
+        const dataF = f.data || '';
+        if (dataF < de || dataF > ate) return;
+        
+        // Determina tipo baseado na categoria e se é recebido ou pago
+        const isPago = (f.tipo || '').toLowerCase() === 'pago' || 
+                       (f.recebidoPago || '').toLowerCase() === 'pago';
+        const isRecebido = (f.tipo || '').toLowerCase() === 'recebido' || 
+                           (f.recebidoPago || '').toLowerCase() === 'recebido';
+        
+        const categoria = (f.categoria || '').toLowerCase();
+        let tipoLabel = 'Outros';
+        
+        if (categoria.includes('adiantamento')) {
+          tipoLabel = 'Adiantamento';
+        } else if (categoria.includes('prestação') || categoria.includes('prestacao')) {
+          tipoLabel = isRecebido ? 'Recebimento' : 'Pagamento';
+        } else if (isPago) {
+          tipoLabel = 'Pagamento';
+        } else if (isRecebido) {
+          tipoLabel = 'Recebimento';
+        }
+        
+        pagamentos.push({
+          data: dataF,
+          tipo: tipoLabel,
+          descricao: f.categoria || f.descricao || '-',
+          valor: Number(f.valor) || 0,
+          formaPgto: f.formaPgto || f.forma || 'PIX',
+          isPago: isPago,
+          isRecebido: isRecebido,
+          origem: 'financeiro',
+          id: f.id
         });
       });
       
-      // 2. Busca adiantamentos (vales)
+      // Também busca nos vales como fallback
       const vales = window.vales || [];
       
       vales.forEach(v => {
@@ -573,14 +627,24 @@
         
         const dataVale = v.data || '';
         if (dataVale >= de && dataVale <= ate) {
-          pagamentos.push({
-            data: dataVale,
-            tipo: 'Adiantamento',
-            descricao: v.obs || v.descricao || 'Adiantamento',
-            valor: Number(v.valor) || 0,
-            origem: 'vale',
-            valeId: v.id
-          });
+          // Verifica se já não existe no financeiro (evita duplicata)
+          const jáExiste = pagamentos.some(p => 
+            p.data === dataVale && 
+            Math.abs(p.valor - (Number(v.valor) || 0)) < 0.01 &&
+            p.tipo === 'Adiantamento'
+          );
+          
+          if (!jáExiste) {
+            pagamentos.push({
+              data: dataVale,
+              tipo: 'Adiantamento',
+              descricao: v.obs || v.descricao || 'Adiantamento (Vale)',
+              valor: Number(v.valor) || 0,
+              isPago: true,
+              origem: 'vale',
+              valeId: v.id
+            });
+          }
         }
       });
       
@@ -614,25 +678,36 @@
         return sum + comissao;
       }, 0);
       
-      // Total de pagamentos
-      const totalPagamentos = pagamentos.reduce((sum, pg) => {
-        return sum + (Number(pg.valor) || 0);
-      }, 0);
+      // Total de pagamentos (separado por tipo)
+      let totalPago = 0;
+      let totalRecebido = 0;
       
-      // Saldo (Coletas - Despesas - Comissões - Pagamentos já feitos)
-      // Na verdade, o que sobra para pagar seria: Resultado das prestações - Pagamentos
+      pagamentos.forEach(pg => {
+        const valor = Number(pg.valor) || 0;
+        if (pg.isPago || pg.tipo === 'Adiantamento' || pg.tipo === 'Pagamento') {
+          totalPago += valor;
+        } else if (pg.isRecebido || pg.tipo === 'Recebimento') {
+          totalRecebido += valor;
+        }
+      });
+      
+      const totalPagamentos = totalPago; // Para o card de pagamentos
+      
+      // Saldo = Resultado das prestações - Pagamentos feitos ao gerente
       const totalResultado = prestacoes.reduce((sum, p) => {
         const resultado = Number(p.resumo?.resultado) || 0;
         return sum + resultado;
       }, 0);
       
-      const saldo = totalResultado - totalPagamentos;
+      const saldo = totalResultado - totalPago;
       
       dadosAnalise.resumo = {
         totalColetas,
         totalDespesas,
         totalComissao,
         totalPagamentos,
+        totalPago,
+        totalRecebido,
         totalResultado,
         saldo
       };
@@ -684,10 +759,19 @@
       
       if (prestacoes.length === 0) {
         tbody.innerHTML = '<tr><td colspan="6" class="ag-empty">Nenhuma prestação encontrada</td></tr>';
+        // Limpa totais
+        document.getElementById('agTotalColetasTabela').textContent = 'R$ 0,00';
+        document.getElementById('agTotalDespPrestTabela').textContent = 'R$ 0,00';
+        document.getElementById('agTotalComissaoTabela').textContent = 'R$ 0,00';
+        document.getElementById('agTotalResultadoTabela').textContent = 'R$ 0,00';
         return;
       }
       
       let html = '';
+      let somaColetas = 0;
+      let somaDespesas = 0;
+      let somaComissao = 0;
+      let somaResultado = 0;
       
       prestacoes.forEach(p => {
         const periodo = `${formatDateBR(p.periodoIni)} a ${formatDateBR(p.periodoFim)}`;
@@ -696,6 +780,11 @@
         const comissao = Number(p.resumo?.comissaoVal) || Number(p.resumo?.comis1 || 0) + Number(p.resumo?.comis2 || 0);
         const resultado = Number(p.resumo?.resultado) || 0;
         const restam = Number(p.resumo?.restam) || 0;
+        
+        somaColetas += coletas;
+        somaDespesas += despesas;
+        somaComissao += comissao;
+        somaResultado += resultado;
         
         let status = 'Quitada';
         let statusClass = 'status-ok';
@@ -717,34 +806,58 @@
       });
       
       tbody.innerHTML = html;
+      
+      // Atualiza totais no tfoot
+      document.getElementById('agTotalColetasTabela').textContent = fmtBRL(somaColetas);
+      document.getElementById('agTotalDespPrestTabela').textContent = fmtBRL(somaDespesas);
+      document.getElementById('agTotalComissaoTabela').textContent = fmtBRL(somaComissao);
+      document.getElementById('agTotalResultadoTabela').textContent = fmtBRL(somaResultado);
     }
     
-    function renderTabelaDespesas() {
+    function renderTabelaDespesas(filtro = '') {
       const tbody = document.getElementById('agBodyDespesas');
       const badge = document.getElementById('agBadgeDespesas');
-      const { despesas } = dadosAnalise;
+      let { despesas } = dadosAnalise;
+      
+      // Aplica filtro de busca
+      if (filtro && filtro.trim()) {
+        const termo = filtro.toLowerCase().trim();
+        despesas = despesas.filter(d => {
+          const info = (d.info || d.descricao || '').toLowerCase();
+          const ficha = (d.ficha || '').toLowerCase();
+          return info.includes(termo) || ficha.includes(termo);
+        });
+      }
       
       badge.textContent = despesas.length;
       
       if (despesas.length === 0) {
         tbody.innerHTML = '<tr><td colspan="4" class="ag-empty">Nenhuma despesa encontrada</td></tr>';
+        document.getElementById('agTotalDespesasTabela').textContent = 'R$ 0,00';
         return;
       }
       
       let html = '';
+      let somaValor = 0;
       
       despesas.forEach(d => {
+        const valor = Number(d.valor) || 0;
+        somaValor += valor;
+        
         html += `
           <tr>
             <td>${formatDateBR(d.data)}</td>
             <td>${esc(d.ficha || '-')}</td>
             <td>${esc(d.info || d.descricao || '-')}</td>
-            <td class="valor despesa">${fmtBRL(d.valor)}</td>
+            <td class="valor despesa">${fmtBRL(valor)}</td>
           </tr>
         `;
       });
       
       tbody.innerHTML = html;
+      
+      // Atualiza total no tfoot
+      document.getElementById('agTotalDespesasTabela').textContent = fmtBRL(somaValor);
     }
     
     function renderTabelaPagamentos() {
@@ -756,25 +869,60 @@
       
       if (pagamentos.length === 0) {
         tbody.innerHTML = '<tr><td colspan="4" class="ag-empty">Nenhum pagamento encontrado</td></tr>';
+        document.getElementById('agTotalPagamentosTabela').textContent = 'R$ 0,00';
         return;
       }
       
       let html = '';
+      let somaPago = 0;
+      let somaRecebido = 0;
       
       pagamentos.forEach(pg => {
-        const tipoClass = pg.tipo === 'Adiantamento' ? 'tipo-adiant' : 'tipo-pix';
+        const valor = Number(pg.valor) || 0;
+        
+        // Determina classe visual
+        let tipoClass = 'tipo-outros';
+        if (pg.tipo === 'Adiantamento') {
+          tipoClass = 'tipo-adiant';
+          somaPago += valor;
+        } else if (pg.tipo === 'Recebimento' || pg.isRecebido) {
+          tipoClass = 'tipo-receb';
+          somaRecebido += valor;
+        } else if (pg.tipo === 'Pagamento' || pg.isPago) {
+          tipoClass = 'tipo-pago';
+          somaPago += valor;
+        } else {
+          // Outros - tenta inferir
+          if (pg.isPago) somaPago += valor;
+          else somaRecebido += valor;
+        }
         
         html += `
           <tr>
             <td>${formatDateBR(pg.data)}</td>
-            <td class="${tipoClass}">${esc(pg.tipo)}</td>
-            <td>${esc(pg.descricao || '-')}</td>
-            <td class="valor">${fmtBRL(pg.valor)}</td>
+            <td><span class="${tipoClass}">${esc(pg.tipo)}</span></td>
+            <td>${esc(pg.descricao || '-')}${pg.formaPgto ? ` <small>(${pg.formaPgto})</small>` : ''}</td>
+            <td class="valor ${pg.isPago ? 'despesa' : ''}">${fmtBRL(valor)}</td>
           </tr>
         `;
       });
       
       tbody.innerHTML = html;
+      
+      // Total = Pagamentos - Recebimentos (saldo negativo = pagou mais do que recebeu)
+      const saldoPagamentos = somaPago - somaRecebido;
+      const totalEl = document.getElementById('agTotalPagamentosTabela');
+      
+      if (somaRecebido > 0 && somaPago > 0) {
+        totalEl.innerHTML = `
+          <span class="tipo-receb">+${fmtBRL(somaRecebido)}</span> / 
+          <span class="tipo-pago">-${fmtBRL(somaPago)}</span>
+        `;
+      } else if (somaPago > 0) {
+        totalEl.textContent = fmtBRL(somaPago);
+      } else {
+        totalEl.textContent = fmtBRL(somaRecebido);
+      }
     }
     
     // ============================================
@@ -1207,6 +1355,67 @@
           padding: 3px 8px;
           border-radius: 4px;
           font-size: 12px;
+        }
+        
+        .ag-table .tipo-pago {
+          background: #fee2e2;
+          color: #dc2626;
+          padding: 3px 8px;
+          border-radius: 4px;
+          font-size: 12px;
+        }
+        
+        .ag-table .tipo-receb {
+          background: #d1fae5;
+          color: #059669;
+          padding: 3px 8px;
+          border-radius: 4px;
+          font-size: 12px;
+        }
+        
+        .ag-table .tipo-outros {
+          background: #e5e7eb;
+          color: #4b5563;
+          padding: 3px 8px;
+          border-radius: 4px;
+          font-size: 12px;
+        }
+        
+        /* Campo de busca */
+        .ag-busca-container {
+          padding: 10px 15px;
+          background: #f9fafb;
+          border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .ag-busca-input {
+          width: 100%;
+          max-width: 400px;
+          padding: 8px 12px;
+          border: 1px solid #d1d5db;
+          border-radius: 6px;
+          font-size: 14px;
+        }
+        
+        .ag-busca-input:focus {
+          outline: none;
+          border-color: #3b82f6;
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        /* Total row no footer */
+        .ag-table tfoot {
+          background: #f3f4f6;
+          border-top: 2px solid #e5e7eb;
+        }
+        
+        .ag-total-row td {
+          padding: 12px 15px;
+          font-weight: 600;
+        }
+        
+        .ag-total-row .valor {
+          font-size: 15px;
         }
         
         .ag-empty {

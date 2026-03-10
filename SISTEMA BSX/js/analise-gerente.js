@@ -385,21 +385,22 @@
         return;
       }
       
-      // Ordena por número
-      const ordenados = [...gerentes].sort((a, b) => {
-        const numA = String(a.numero || '').padStart(3, '0');
-        const numB = String(b.numero || '').padStart(3, '0');
-        return numA.localeCompare(numB);
+      // Extrai número da rota do início do nome (ex: "041 Assis Boy" → "041")
+      // g.numero pode ser telefone — não usar para ordenação/label
+      const comRota = gerentes.map(g => {
+        const match = (g.nome || '').match(/^(\d+)/);
+        const rota = match ? match[1].padStart(3, '0') : '999';
+        return { ...g, _rota: rota };
       });
+      
+      const ordenados = comRota.sort((a, b) => a._rota.localeCompare(b._rota));
       
       let options = '<option value="">Selecione o gerente</option>';
       
       ordenados.forEach(g => {
-        const num = g.numero || '';
         const nome = g.nome || '';
-        const label = num ? `${num} - ${nome}` : nome;
         const uid = g.uid || g.id || '';
-        options += `<option value="${uid}">${label}</option>`;
+        options += `<option value="${uid}">${nome}</option>`;
       });
       
       select.innerHTML = options;
@@ -524,8 +525,13 @@
     
     async function buscarDados() {
       const gerenteNome = currentGerente?.nome || '';
-      const gerenteNum  = currentGerente?.numero || '';
       const gerenteUid  = currentGerente?.uid || currentGerente?.id || '';
+      
+      // ✅ Extrai o número da rota do início do nome (ex: "041 Assis Boy" → "041")
+      // currentGerente.numero pode ser telefone — não usar para busca em lancamentos
+      const rotaMatch = (gerenteNome || '').match(/^(\d+)/);
+      const gerenteRota = rotaMatch ? rotaMatch[1].padStart(3, '0') : '';
+      
       const { de, ate } = currentPeriodo;
       
       // 1. PRESTAÇÕES — carrega direto do Supabase
@@ -536,16 +542,16 @@
       } else {
         todasPrestacoes = JSON.parse(localStorage.getItem(window.DB_PREST) || '[]');
       }
-      dadosAnalise.prestacoes = buscarPrestacoes(todasPrestacoes, gerenteUid, gerenteNum, de, ate);
+      dadosAnalise.prestacoes = buscarPrestacoes(todasPrestacoes, gerenteUid, gerenteRota, de, ate);
       
       // 2. DESPESAS
-      dadosAnalise.despesas = buscarDespesas(gerenteNome, gerenteNum, de, ate);
+      dadosAnalise.despesas = buscarDespesas(gerenteNome, gerenteRota, de, ate);
       
-      // 3. PAGAMENTOS — recarrega window.lanc do Supabase antes de buscar
+      // 3. PAGAMENTOS — recarrega window.lanc antes de buscar
       if (typeof window.carregarFinanceiroSupabase === 'function') {
-        try { await window.carregarFinanceiroSupabase(); } catch(e) { /* usa cache */ }
+        try { await window.carregarFinanceiroSupabase(); } catch(e) {}
       }
-      dadosAnalise.pagamentos = buscarPagamentos(gerenteNum, de, ate);
+      dadosAnalise.pagamentos = buscarPagamentos(gerenteRota, gerenteNome, de, ate);
       
       console.log('[Análise Gerente] Dados carregados:', {
         prestacoes: dadosAnalise.prestacoes.length,
@@ -554,13 +560,15 @@
       });
     }
     
-    function buscarPrestacoes(todasPrestacoes, gerenteUid, gerenteNum, de, ate) {
+    function buscarPrestacoes(todasPrestacoes, gerenteUid, gerenteRota, de, ate) {
       return todasPrestacoes.filter(p => {
+        // Filtra por uid do gerente ou pelo número da rota no nome
         const pUid = p.gerenteId || '';
-        const pNum = p.gerenteNumero || p.gerente?.numero || '';
+        const pNome = (p.gerenteNome || '').toLowerCase();
         const uidMatch = gerenteUid && pUid === gerenteUid;
-        const numMatch = gerenteNum && pNum === gerenteNum;
-        if (!uidMatch && !numMatch) return false;
+        const rotaMatch = gerenteRota && pNome.includes(gerenteRota);
+        if (!uidMatch && !rotaMatch) return false;
+        
         const dataRef = p.fim || p.periodoFim || p.dataFim || p.data || '';
         if (dataRef < de || dataRef > ate) return false;
         return true;
@@ -571,14 +579,16 @@
       });
     }
     
-    function buscarDespesas(gerenteNome, gerenteNum, de, ate) {
+    function buscarDespesas(gerenteNome, gerenteRota, de, ate) {
       const todasDespesas = window.despesas || [];
       const fichaRotaMap = new Map(
         (window.fichas || []).map(f => [String(f.ficha).trim(), String(f.area || '').trim()])
       );
       return todasDespesas.filter(d => {
         const dGerente = (d.gerenteNome || '').toLowerCase();
-        if (!dGerente.includes(gerenteNome.toLowerCase()) && !dGerente.includes(gerenteNum)) return false;
+        const nomeMatch = dGerente.includes(gerenteNome.toLowerCase());
+        const rotaMatch = gerenteRota && dGerente.includes(gerenteRota);
+        if (!nomeMatch && !rotaMatch) return false;
         const dataRef = d.data || d.periodoFim || '';
         if (dataRef < de || dataRef > ate) return false;
         if (d.isHidden) return false;
@@ -590,36 +600,30 @@
       }).sort((a, b) => (a.data || '').localeCompare(b.data || ''));
     }
     
-    function buscarPagamentos(gerenteNum, de, ate) {
+    function buscarPagamentos(gerenteRota, gerenteNome, de, ate) {
       const pagamentos = [];
       
       // ✅ BUSCA EM window.lanc (tabela lancamentos do Supabase)
       const lancamentos = window.lanc || [];
-      const numPadded = String(gerenteNum).padStart(3, '0');
-      const numRaw    = String(gerenteNum);
-      const gerenteObj = (window.gerentes || []).find(g =>
-        String(g.numero) === numRaw || String(g.numero) === numPadded
-      );
-      const gerenteNomeLower = (gerenteObj?.nome || '').toLowerCase().trim();
-      const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const normalize = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
       
-      // 🔍 DEBUG — remova após confirmar funcionamento
-      console.log('[AG-Pagamentos] window.lanc total:', lancamentos.length);
-      console.log('[AG-Pagamentos] Buscando gerente:', { numRaw, numPadded, gerenteNomeLower });
-      console.log('[AG-Pagamentos] Todos gerentes em lanc:', [...new Set(lancamentos.map(l => l.gerente))]);
+      // Extrai só o nome sem o número para match por nome (ex: "041 Assis Boy" → "assis boy")
+      const nomeSemNumero = normalize(gerenteNome.replace(/^\d+\s*/, ''));
+      const rotaNorm = (gerenteRota || '').padStart(3, '0');
       
       function matchGerente(textoGerente) {
-        const t = normalize((textoGerente || '').replace(/[-_]/g, ' ').trim());
+        const t = normalize((textoGerente || '').replace(/[-_]/g, ' '));
         if (!t) return false;
-        if (t.includes(numPadded)) return true;
-        if (numRaw !== numPadded && (t === numRaw || t.startsWith(numRaw + ' '))) return true;
-        if (gerenteNomeLower && normalize(t).includes(normalize(gerenteNomeLower))) return true;
+        // Match pelo número da rota: "026 savio", "026", "026 sávio queiroz"
+        if (rotaNorm && t.startsWith(rotaNorm)) return true;
+        if (rotaNorm && t.includes(' ' + rotaNorm + ' ')) return true;
+        // Match pelo nome sem número: "sávio", "savio queiroz", "assis boy"
+        if (nomeSemNumero.length > 2 && normalize(t).includes(nomeSemNumero)) return true;
         return false;
       }
       
       lancamentos.forEach(f => {
-        const matched = matchGerente(f.gerente);
-        if (!matched) return;
+        if (!matchGerente(f.gerente)) return;
         
         const dataF = f.data || '';
         if (dataF < de || dataF > ate) return;
@@ -629,7 +633,7 @@
         
         const categoria = (f.categoria || '').toLowerCase();
         let tipoLabel = 'Outros';
-        if (categoria.includes('adiantamento')) tipoLabel = 'Adiantamento';
+        if (categoria.includes('adiantamento'))                       tipoLabel = 'Adiantamento';
         else if (categoria.includes('prest') || categoria.includes('comiss'))
           tipoLabel = isPago ? 'Pagamento' : 'Recebimento';
         else if (isPago)     tipoLabel = 'Pagamento';

@@ -253,11 +253,19 @@
             <!-- PAGAMENTOS -->
             <div class="ag-secao card">
               <div class="ag-secao-header" data-toggle="agTabelaPagamentos">
-                <h3>💳 Pagamentos ao Gerente</h3>
+                <h3>💳 Pagamentos</h3>
                 <span class="ag-secao-badge" id="agBadgePagamentos">0</span>
                 <span class="ag-secao-toggle">▼</span>
               </div>
               <div class="ag-secao-content" id="agTabelaPagamentos">
+                <div class="ag-busca-container">
+                  <label style="font-size:13px;color:#6b7280;align-self:center;">De</label>
+                  <input type="date" id="agPagDe" class="input ag-filtro-rota">
+                  <label style="font-size:13px;color:#6b7280;align-self:center;">Até</label>
+                  <input type="date" id="agPagAte" class="input ag-filtro-rota">
+                  <button id="agFiltrarPag" class="btn secondary" style="padding:6px 14px;font-size:13px;">Filtrar</button>
+                  <button id="agLimparPag" class="btn secondary" style="padding:6px 14px;font-size:13px;background:#f3f4f6;color:#374151;">Limpar</button>
+                </div>
                 <table class="ag-table">
                   <thead>
                     <tr>
@@ -457,6 +465,21 @@
       document.getElementById('agFiltroRota')?.addEventListener('change', function() {
         const filtroBusca = document.getElementById('agBuscaDespesa')?.value || '';
         renderTabelaDespesas(filtroBusca, this.value);
+      });
+      
+      // Filtro de data dos pagamentos
+      document.getElementById('agFiltrarPag')?.addEventListener('click', function() {
+        const de  = document.getElementById('agPagDe')?.value || '';
+        const ate = document.getElementById('agPagAte')?.value || '';
+        renderTabelaPagamentos(de, ate);
+        recalcularCards(de, ate);
+      });
+      
+      document.getElementById('agLimparPag')?.addEventListener('click', function() {
+        document.getElementById('agPagDe').value = '';
+        document.getElementById('agPagAte').value = '';
+        renderTabelaPagamentos('', '');
+        recalcularCards('', '');
       });
     }
     
@@ -751,6 +774,40 @@
     // RENDER CARDS
     // ============================================
     
+    // Recalcula cards respeitando filtro de data dos pagamentos
+    function recalcularCards(filtroDe = '', filtroAte = '') {
+      let pagamentosFiltrados = dadosAnalise.pagamentos || [];
+      if (filtroDe) pagamentosFiltrados = pagamentosFiltrados.filter(p => (p.data || '') >= filtroDe);
+      if (filtroAte) pagamentosFiltrados = pagamentosFiltrados.filter(p => (p.data || '') <= filtroAte);
+      
+      let totalPago = 0;
+      pagamentosFiltrados.forEach(pg => {
+        if (pg.isPago || pg.tipo === 'Adiantamento' || pg.tipo === 'Pagamento') {
+          totalPago += Number(pg.valor) || 0;
+        }
+      });
+      
+      const { totalColetas, totalDespesas, totalComissao, totalResultado } = dadosAnalise.resumo;
+      const saldo = totalResultado - totalPago;
+      
+      document.getElementById('agTotalPagamentos').textContent = fmtBRL(totalPago);
+      
+      const saldoEl = document.getElementById('agSaldo');
+      const saldoCard = saldoEl.closest('.ag-card');
+      if (saldo > 0) {
+        saldoCard.classList.remove('ag-card-negativo');
+        saldoCard.classList.add('ag-card-positivo');
+        saldoEl.textContent = fmtBRL(saldo) + ' (a pagar)';
+      } else if (saldo < 0) {
+        saldoCard.classList.remove('ag-card-positivo');
+        saldoCard.classList.add('ag-card-negativo');
+        saldoEl.textContent = fmtBRL(Math.abs(saldo)) + ' (pago a mais)';
+      } else {
+        saldoCard.classList.remove('ag-card-positivo', 'ag-card-negativo');
+        saldoEl.textContent = 'R$ 0,00 (zerado)';
+      }
+    }
+    
     function renderCards() {
       const { totalColetas, totalDespesas, totalComissao, totalPagamentos, saldo } = dadosAnalise.resumo;
       
@@ -950,10 +1007,14 @@
       select.innerHTML = options;
     }
     
-    function renderTabelaPagamentos() {
+    function renderTabelaPagamentos(filtroDe = '', filtroAte = '') {
       const tbody = document.getElementById('agBodyPagamentos');
       const badge = document.getElementById('agBadgePagamentos');
-      const { pagamentos } = dadosAnalise;
+      let { pagamentos } = dadosAnalise;
+      
+      // Aplica filtro de data se informado
+      if (filtroDe) pagamentos = pagamentos.filter(p => (p.data || '') >= filtroDe);
+      if (filtroAte) pagamentos = pagamentos.filter(p => (p.data || '') <= filtroAte);
       
       badge.textContent = pagamentos.length;
       

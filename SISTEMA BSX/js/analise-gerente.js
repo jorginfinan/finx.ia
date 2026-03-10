@@ -525,10 +525,22 @@
     async function buscarDados() {
       const gerenteNome = currentGerente?.nome || '';
       const gerenteNum = currentGerente?.numero || '';
+      const gerenteUid = currentGerente?.uid || currentGerente?.id || '';
       const { de, ate } = currentPeriodo;
       
-      // 1. PRESTAÇÕES
-      dadosAnalise.prestacoes = buscarPrestacoes(gerenteNum, de, ate);
+      // 1. PRESTAÇÕES — carrega direto do Supabase (window.prestacoesSalvas não é populado)
+      let todasPrestacoes = [];
+      if (typeof window.carregarPrestacoesGlobal === 'function') {
+        try {
+          todasPrestacoes = await window.carregarPrestacoesGlobal();
+        } catch(e) {
+          console.warn('[Análise Gerente] Fallback localStorage para prestações:', e);
+          todasPrestacoes = JSON.parse(localStorage.getItem(window.DB_PREST) || '[]');
+        }
+      } else {
+        todasPrestacoes = JSON.parse(localStorage.getItem(window.DB_PREST) || '[]');
+      }
+      dadosAnalise.prestacoes = buscarPrestacoes(todasPrestacoes, gerenteUid, gerenteNum, de, ate);
       
       // 2. DESPESAS
       dadosAnalise.despesas = buscarDespesas(gerenteNome, gerenteNum, de, ate);
@@ -543,23 +555,23 @@
       });
     }
     
-    function buscarPrestacoes(gerenteNum, de, ate) {
-      // Busca prestações salvas
-      const todasPrestacoes = window.prestacoesSalvas || [];
-      
+    function buscarPrestacoes(todasPrestacoes, gerenteUid, gerenteNum, de, ate) {
       return todasPrestacoes.filter(p => {
-        // Filtro por gerente
-        const pGerente = p.gerenteNumero || p.gerente?.numero || '';
-        if (pGerente !== gerenteNum) return false;
+        // ✅ Filtra por uid do gerente (campo gerenteId) ou fallback por número
+        const pUid = p.gerenteId || '';
+        const pNum = p.gerenteNumero || p.gerente?.numero || '';
+        const uidMatch = gerenteUid && pUid === gerenteUid;
+        const numMatch = gerenteNum && pNum === gerenteNum;
+        if (!uidMatch && !numMatch) return false;
         
-        // Filtro por período (usa periodoFim ou dataFim)
-        const dataRef = p.periodoFim || p.dataFim || p.data || '';
+        // ✅ Usa ini/fim (estrutura real) com fallback para periodoFim/periodoIni
+        const dataRef = p.fim || p.periodoFim || p.dataFim || p.data || '';
         if (dataRef < de || dataRef > ate) return false;
         
         return true;
       }).sort((a, b) => {
-        const dataA = a.periodoIni || a.dataIni || '';
-        const dataB = b.periodoIni || b.dataIni || '';
+        const dataA = a.ini || a.periodoIni || a.dataIni || '';
+        const dataB = b.ini || b.periodoIni || b.dataIni || '';
         return dataA.localeCompare(dataB);
       });
     }
@@ -607,8 +619,8 @@
       const lancamentos = window.lanc || [];
       
       // Monta variações do número e nome do gerente para match flexível
-      const numPadded = String(gerenteNum).padStart(3, '0');   // "026"
-      const numRaw    = String(gerenteNum);                      // "26"
+      const numPadded = String(gerenteNum).padStart(3, '0');
+      const numRaw    = String(gerenteNum);
       const gerenteObj = (window.gerentes || []).find(g =>
         String(g.numero) === numRaw || String(g.numero) === numPadded
       );
@@ -617,13 +629,9 @@
       function matchGerente(textoGerente) {
         const t = (textoGerente || '').toLowerCase().replace(/[-_]/g, ' ').trim();
         if (!t) return false;
-        // Match por número padded (ex: "026", "026 sávio", "026 - savio")
         if (t.includes(numPadded)) return true;
-        // Match por número sem zero à esquerda (ex: "26 sávio")
         if (numRaw !== numPadded && t.includes(numRaw)) return true;
-        // Match por nome do gerente (ex: "sávio", "savio")
         if (gerenteNomeLower) {
-          // Normaliza acentos para comparação
           const normalize = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
           if (normalize(t).includes(normalize(gerenteNomeLower))) return true;
         }
@@ -633,11 +641,9 @@
       lancamentos.forEach(f => {
         if (!matchGerente(f.gerente)) return;
         
-        // Filtro por data
         const dataF = f.data || '';
         if (dataF < de || dataF > ate) return;
         
-        // Em window.lanc: status é "PAGO" ou "RECEBIDO"
         const isPago     = (f.status || '').toUpperCase() === 'PAGO';
         const isRecebido = (f.status || '').toUpperCase() === 'RECEBIDO';
         
@@ -822,7 +828,7 @@
       let somaResultado = 0;
       
       prestacoes.forEach(p => {
-        const periodo = `${formatDateBR(p.periodoIni)} a ${formatDateBR(p.periodoFim)}`;
+        const periodo = `${formatDateBR(p.ini || p.periodoIni)} a ${formatDateBR(p.fim || p.periodoFim)}`;
         const coletas = Number(p.resumo?.coletas) || 0;
         const despesas = Number(p.resumo?.despesas) || 0;
         const comissao = Number(p.resumo?.comissaoVal) || Number(p.resumo?.comis1 || 0) + Number(p.resumo?.comis2 || 0);
@@ -1125,7 +1131,7 @@
       
       ctx.font = '12px Arial';
       dadosAnalise.prestacoes.slice(0, 15).forEach(p => {
-        const periodo = `${formatDateBR(p.periodoIni)} a ${formatDateBR(p.periodoFim)}`;
+        const periodo = `${formatDateBR(p.ini || p.periodoIni)} a ${formatDateBR(p.fim || p.periodoFim)}`;
         const coletas = Number(p.resumo?.coletas) || 0;
         const despesas = Number(p.resumo?.despesas) || 0;
         const comissao = Number(p.resumo?.comissaoVal) || 0;

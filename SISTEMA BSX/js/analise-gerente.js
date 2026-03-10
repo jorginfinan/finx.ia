@@ -370,6 +370,15 @@
       
       const gerentes = window.gerentes || [];
       
+      console.log('[Análise Gerente] Carregando gerentes:', gerentes.length);
+      
+      // Se ainda não tem gerentes, tenta novamente em 500ms
+      if (gerentes.length === 0) {
+        console.log('[Análise Gerente] ⏳ Aguardando gerentes carregarem...');
+        setTimeout(carregarGerentes, 500);
+        return;
+      }
+      
       // Ordena por número
       const ordenados = [...gerentes].sort((a, b) => {
         const numA = String(a.numero || '').padStart(3, '0');
@@ -387,6 +396,7 @@
       });
       
       select.innerHTML = options;
+      console.log('[Análise Gerente] ✅ Gerentes carregados:', ordenados.length);
     }
     
     // ============================================

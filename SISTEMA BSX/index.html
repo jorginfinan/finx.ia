@@ -126,6 +126,12 @@
   <span class="label">Financeiro</span>
 </button>
 
+<!-- Analise - Gerentes-->
+<button class="sb-item" data-tab="analise-gerente">
+  <span class="sb-icon">📊</span>
+  <span class="sb-label">Análise Gerente</span>
+</button>
+
 <!-- USUÁRIOS (só aparece para admin) -->
 <!-- Sidebar -->
  
@@ -339,6 +345,12 @@
         </section>
       </div>
       </section>
+
+      <!-- ANÁLISE POR GERENTE -->
+<section id="pageAnaliseGerente" class="page-section" style="display:none">
+  <h1>📊 Análise por Gerente</h1>
+  <div id="analiseGerenteContent"></div>
+</section>
       
       <!-- ===== PÁGINA HISTÓRICO/AUDITORIA ===== -->
       <section id="pageHistorico" class="container hidden" data-perm="admin_only">
@@ -1625,6 +1637,7 @@ function pgDivAddFromForm(){
 <script src="js/audit-log.js"></script>
 <script src="js/audit-auto.js"></script>
 <script src="js/historico.js" defer></script>
+<script src="analise-gerente.js"></script>
 <script src="js/tema-sazonal.js"></script>
 
 

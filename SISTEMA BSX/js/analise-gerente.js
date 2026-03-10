@@ -524,19 +524,15 @@
     
     async function buscarDados() {
       const gerenteNome = currentGerente?.nome || '';
-      const gerenteNum = currentGerente?.numero || '';
-      const gerenteUid = currentGerente?.uid || currentGerente?.id || '';
+      const gerenteNum  = currentGerente?.numero || '';
+      const gerenteUid  = currentGerente?.uid || currentGerente?.id || '';
       const { de, ate } = currentPeriodo;
       
-      // 1. PRESTAÇÕES — carrega direto do Supabase (window.prestacoesSalvas não é populado)
+      // 1. PRESTAÇÕES — carrega direto do Supabase
       let todasPrestacoes = [];
       if (typeof window.carregarPrestacoesGlobal === 'function') {
-        try {
-          todasPrestacoes = await window.carregarPrestacoesGlobal();
-        } catch(e) {
-          console.warn('[Análise Gerente] Fallback localStorage para prestações:', e);
-          todasPrestacoes = JSON.parse(localStorage.getItem(window.DB_PREST) || '[]');
-        }
+        try { todasPrestacoes = await window.carregarPrestacoesGlobal(); }
+        catch(e) { todasPrestacoes = JSON.parse(localStorage.getItem(window.DB_PREST) || '[]'); }
       } else {
         todasPrestacoes = JSON.parse(localStorage.getItem(window.DB_PREST) || '[]');
       }
@@ -545,7 +541,10 @@
       // 2. DESPESAS
       dadosAnalise.despesas = buscarDespesas(gerenteNome, gerenteNum, de, ate);
       
-      // 3. PAGAMENTOS (PIX + Adiantamentos)
+      // 3. PAGAMENTOS — recarrega window.lanc do Supabase antes de buscar
+      if (typeof window.carregarFinanceiroSupabase === 'function') {
+        try { await window.carregarFinanceiroSupabase(); } catch(e) { /* usa cache */ }
+      }
       dadosAnalise.pagamentos = buscarPagamentos(gerenteNum, de, ate);
       
       console.log('[Análise Gerente] Dados carregados:', {
@@ -557,17 +556,13 @@
     
     function buscarPrestacoes(todasPrestacoes, gerenteUid, gerenteNum, de, ate) {
       return todasPrestacoes.filter(p => {
-        // ✅ Filtra por uid do gerente (campo gerenteId) ou fallback por número
         const pUid = p.gerenteId || '';
         const pNum = p.gerenteNumero || p.gerente?.numero || '';
         const uidMatch = gerenteUid && pUid === gerenteUid;
         const numMatch = gerenteNum && pNum === gerenteNum;
         if (!uidMatch && !numMatch) return false;
-        
-        // ✅ Usa ini/fim (estrutura real) com fallback para periodoFim/periodoIni
         const dataRef = p.fim || p.periodoFim || p.dataFim || p.data || '';
         if (dataRef < de || dataRef > ate) return false;
-        
         return true;
       }).sort((a, b) => {
         const dataA = a.ini || a.periodoIni || a.dataIni || '';
@@ -578,68 +573,53 @@
     
     function buscarDespesas(gerenteNome, gerenteNum, de, ate) {
       const todasDespesas = window.despesas || [];
-      // ✅ Mapa rápido ficha → rota (area) vindo de window.fichas
       const fichaRotaMap = new Map(
         (window.fichas || []).map(f => [String(f.ficha).trim(), String(f.area || '').trim()])
       );
-      
       return todasDespesas.filter(d => {
-        // Filtro por gerente (nome ou número no nome)
         const dGerente = (d.gerenteNome || '').toLowerCase();
-        const nomeMatch = dGerente.includes(gerenteNome.toLowerCase());
-        const numMatch = dGerente.includes(gerenteNum);
-        
-        if (!nomeMatch && !numMatch) return false;
-        
-        // Filtro por período
+        if (!dGerente.includes(gerenteNome.toLowerCase()) && !dGerente.includes(gerenteNum)) return false;
         const dataRef = d.data || d.periodoFim || '';
         if (dataRef < de || dataRef > ate) return false;
-        
-        // Ignora ocultas
         if (d.isHidden) return false;
-        
         return true;
       }).map(d => {
-        // ✅ Enriquece com a rota vinda de window.fichas se d.rota estiver vazio
         const fichaStr = String(d.ficha || '').trim();
         const rotaDaFicha = fichaStr ? (fichaRotaMap.get(fichaStr) || '') : '';
         return { ...d, rota: d.rota && d.rota.trim() ? d.rota : rotaDaFicha };
-      }).sort((a, b) => {
-        const dataA = a.data || '';
-        const dataB = b.data || '';
-        return dataA.localeCompare(dataB);
-      });
+      }).sort((a, b) => (a.data || '').localeCompare(b.data || ''));
     }
     
     function buscarPagamentos(gerenteNum, de, ate) {
       const pagamentos = [];
       
       // ✅ BUSCA EM window.lanc (tabela lancamentos do Supabase)
-      // O campo r.gerente é texto livre: "026", "Sávio", "026 Sávio", "026 - SAVIO", etc.
       const lancamentos = window.lanc || [];
-      
-      // Monta variações do número e nome do gerente para match flexível
       const numPadded = String(gerenteNum).padStart(3, '0');
       const numRaw    = String(gerenteNum);
       const gerenteObj = (window.gerentes || []).find(g =>
         String(g.numero) === numRaw || String(g.numero) === numPadded
       );
       const gerenteNomeLower = (gerenteObj?.nome || '').toLowerCase().trim();
+      const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      
+      // 🔍 DEBUG — remova após confirmar funcionamento
+      console.log('[AG-Pagamentos] window.lanc total:', lancamentos.length);
+      console.log('[AG-Pagamentos] Buscando gerente:', { numRaw, numPadded, gerenteNomeLower });
+      console.log('[AG-Pagamentos] Todos gerentes em lanc:', [...new Set(lancamentos.map(l => l.gerente))]);
       
       function matchGerente(textoGerente) {
-        const t = (textoGerente || '').toLowerCase().replace(/[-_]/g, ' ').trim();
+        const t = normalize((textoGerente || '').replace(/[-_]/g, ' ').trim());
         if (!t) return false;
         if (t.includes(numPadded)) return true;
-        if (numRaw !== numPadded && t.includes(numRaw)) return true;
-        if (gerenteNomeLower) {
-          const normalize = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-          if (normalize(t).includes(normalize(gerenteNomeLower))) return true;
-        }
+        if (numRaw !== numPadded && (t === numRaw || t.startsWith(numRaw + ' '))) return true;
+        if (gerenteNomeLower && normalize(t).includes(normalize(gerenteNomeLower))) return true;
         return false;
       }
       
       lancamentos.forEach(f => {
-        if (!matchGerente(f.gerente)) return;
+        const matched = matchGerente(f.gerente);
+        if (!matched) return;
         
         const dataF = f.data || '';
         if (dataF < de || dataF > ate) return;
@@ -649,24 +629,18 @@
         
         const categoria = (f.categoria || '').toLowerCase();
         let tipoLabel = 'Outros';
-        if (categoria.includes('adiantamento')) {
-          tipoLabel = 'Adiantamento';
-        } else if (categoria.includes('prest') || categoria.includes('comiss')) {
+        if (categoria.includes('adiantamento')) tipoLabel = 'Adiantamento';
+        else if (categoria.includes('prest') || categoria.includes('comiss'))
           tipoLabel = isPago ? 'Pagamento' : 'Recebimento';
-        } else if (isPago) {
-          tipoLabel = 'Pagamento';
-        } else if (isRecebido) {
-          tipoLabel = 'Recebimento';
-        }
+        else if (isPago)     tipoLabel = 'Pagamento';
+        else if (isRecebido) tipoLabel = 'Recebimento';
         
         pagamentos.push({
-          data: dataF,
-          tipo: tipoLabel,
+          data: dataF, tipo: tipoLabel,
           descricao: f.categoria || '-',
           valor: Number(f.valor) || 0,
           formaPgto: f.forma || 'PIX',
-          isPago,
-          isRecebido,
+          isPago, isRecebido,
           origem: 'lancamento',
           id: f.uid || f.id
         });

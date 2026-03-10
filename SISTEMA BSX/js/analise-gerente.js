@@ -525,22 +525,10 @@
     async function buscarDados() {
       const gerenteNome = currentGerente?.nome || '';
       const gerenteNum = currentGerente?.numero || '';
-      const gerenteUid = currentGerente?.uid || currentGerente?.id || '';
       const { de, ate } = currentPeriodo;
       
-      // 1. PRESTAÇÕES — carrega direto do Supabase (window.prestacoesSalvas não é populado)
-      let todasPrestacoes = [];
-      if (typeof window.carregarPrestacoesGlobal === 'function') {
-        try {
-          todasPrestacoes = await window.carregarPrestacoesGlobal();
-        } catch(e) {
-          console.warn('[Análise Gerente] Fallback localStorage para prestações:', e);
-          todasPrestacoes = JSON.parse(localStorage.getItem(window.DB_PREST) || '[]');
-        }
-      } else {
-        todasPrestacoes = JSON.parse(localStorage.getItem(window.DB_PREST) || '[]');
-      }
-      dadosAnalise.prestacoes = buscarPrestacoes(todasPrestacoes, gerenteUid, gerenteNum, de, ate);
+      // 1. PRESTAÇÕES
+      dadosAnalise.prestacoes = buscarPrestacoes(gerenteNum, de, ate);
       
       // 2. DESPESAS
       dadosAnalise.despesas = buscarDespesas(gerenteNome, gerenteNum, de, ate);
@@ -555,98 +543,110 @@
       });
     }
     
-    function buscarPrestacoes(todasPrestacoes, gerenteUid, gerenteNum, de, ate) {
+    function buscarPrestacoes(gerenteNum, de, ate) {
+      // Busca prestações salvas
+      const todasPrestacoes = window.prestacoesSalvas || [];
+      
       return todasPrestacoes.filter(p => {
-        // ✅ Filtra por uid do gerente (campo gerenteId) ou fallback por número
-        const pUid = p.gerenteId || '';
-        const pNum = p.gerenteNumero || p.gerente?.numero || '';
-        const uidMatch = gerenteUid && pUid === gerenteUid;
-        const numMatch = gerenteNum && pNum === gerenteNum;
-        if (!uidMatch && !numMatch) return false;
+        // Filtro por gerente
+        const pGerente = p.gerenteNumero || p.gerente?.numero || '';
+        if (pGerente !== gerenteNum) return false;
         
-        // ✅ Usa ini/fim (estrutura real) com fallback para periodoFim/periodoIni
-        const dataRef = p.fim || p.periodoFim || p.dataFim || p.data || '';
+        // Filtro por período (usa periodoFim ou dataFim)
+        const dataRef = p.periodoFim || p.dataFim || p.data || '';
         if (dataRef < de || dataRef > ate) return false;
         
         return true;
       }).sort((a, b) => {
-        const dataA = a.ini || a.periodoIni || a.dataIni || '';
-        const dataB = b.ini || b.periodoIni || b.dataIni || '';
+        const dataA = a.periodoIni || a.dataIni || '';
+        const dataB = b.periodoIni || b.dataIni || '';
         return dataA.localeCompare(dataB);
       });
     }
     
     function buscarDespesas(gerenteNome, gerenteNum, de, ate) {
-        const todasDespesas = window.despesas || [];
-        // Mapa rápido: ficha → area (rota) vindo de window.fichas
-        const fichaRotaMap = new Map(
-          (window.fichas || []).map(f => [String(f.ficha).trim(), String(f.area || '').trim()])
-        );
+      const todasDespesas = window.despesas || [];
+      // ✅ Mapa rápido ficha → rota (area) vindo de window.fichas
+      const fichaRotaMap = new Map(
+        (window.fichas || []).map(f => [String(f.ficha).trim(), String(f.area || '').trim()])
+      );
       
-        return todasDespesas.filter(d => {
-          // Filtro por gerente (nome ou número no nome)
-          const dGerente = (d.gerenteNome || '').toLowerCase();
-          const nomeMatch = dGerente.includes(gerenteNome.toLowerCase());
-          const numMatch = dGerente.includes(gerenteNum);
-      
-          if (!nomeMatch && !numMatch) return false;
-      
-          // Filtro por período
-          const dataRef = d.data || d.periodoFim || '';
-          if (dataRef < de || dataRef > ate) return false;
-      
-          // Ignora ocultas
-          if (d.isHidden) return false;
-      
-          return true;
-        }).map(d => {
-          // ✅ Enriquece com a rota vinda de window.fichas (caso d.rota esteja vazio)
-          const fichaStr = String(d.ficha || '').trim();
-          const rotaDaFicha = fichaStr ? (fichaRotaMap.get(fichaStr) || '') : '';
-          return {
-            ...d,
-            rota: d.rota && d.rota.trim() ? d.rota : rotaDaFicha
-          };
-        }).sort((a, b) => {
-          const dataA = a.data || '';
-          const dataB = b.data || '';
-          return dataA.localeCompare(dataB);
-        });
-      }
+      return todasDespesas.filter(d => {
+        // Filtro por gerente (nome ou número no nome)
+        const dGerente = (d.gerenteNome || '').toLowerCase();
+        const nomeMatch = dGerente.includes(gerenteNome.toLowerCase());
+        const numMatch = dGerente.includes(gerenteNum);
+        
+        if (!nomeMatch && !numMatch) return false;
+        
+        // Filtro por período
+        const dataRef = d.data || d.periodoFim || '';
+        if (dataRef < de || dataRef > ate) return false;
+        
+        // Ignora ocultas
+        if (d.isHidden) return false;
+        
+        return true;
+      }).map(d => {
+        // ✅ Enriquece com a rota vinda de window.fichas se d.rota estiver vazio
+        const fichaStr = String(d.ficha || '').trim();
+        const rotaDaFicha = fichaStr ? (fichaRotaMap.get(fichaStr) || '') : '';
+        return { ...d, rota: d.rota && d.rota.trim() ? d.rota : rotaDaFicha };
+      }).sort((a, b) => {
+        const dataA = a.data || '';
+        const dataB = b.data || '';
+        return dataA.localeCompare(dataB);
+      });
+    }
     
     function buscarPagamentos(gerenteNum, de, ate) {
       const pagamentos = [];
       
-      // ✅ BUSCA NO FINANCEIRO (window.financeiro)
-      const financeiro = window.financeiro || [];
+      // ✅ BUSCA EM window.lanc (tabela lancamentos do Supabase)
+      // O campo r.gerente é texto livre: "026", "Sávio", "026 Sávio", "026 - SAVIO", etc.
+      const lancamentos = window.lanc || [];
       
-      financeiro.forEach(f => {
-        // Verifica se o gerente/rota contém o número do gerente
-        const fGerente = (f.gerenteRota || f.gerente || f.descricao || '').toLowerCase();
-        const numPadded = gerenteNum.toString().padStart(3, '0');
-        
-        // Busca pelo número do gerente no início (ex: "026 Sávio")
-        if (!fGerente.includes(numPadded.toLowerCase()) && !fGerente.startsWith(gerenteNum)) {
-          return;
+      // Monta variações do número e nome do gerente para match flexível
+      const numPadded = String(gerenteNum).padStart(3, '0');   // "026"
+      const numRaw    = String(gerenteNum);                      // "26"
+      const gerenteObj = (window.gerentes || []).find(g =>
+        String(g.numero) === numRaw || String(g.numero) === numPadded
+      );
+      const gerenteNomeLower = (gerenteObj?.nome || '').toLowerCase().trim();
+      
+      function matchGerente(textoGerente) {
+        const t = (textoGerente || '').toLowerCase().replace(/[-_]/g, ' ').trim();
+        if (!t) return false;
+        // Match por número padded (ex: "026", "026 sávio", "026 - savio")
+        if (t.includes(numPadded)) return true;
+        // Match por número sem zero à esquerda (ex: "26 sávio")
+        if (numRaw !== numPadded && t.includes(numRaw)) return true;
+        // Match por nome do gerente (ex: "sávio", "savio")
+        if (gerenteNomeLower) {
+          // Normaliza acentos para comparação
+          const normalize = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+          if (normalize(t).includes(normalize(gerenteNomeLower))) return true;
         }
+        return false;
+      }
+      
+      lancamentos.forEach(f => {
+        if (!matchGerente(f.gerente)) return;
         
         // Filtro por data
         const dataF = f.data || '';
         if (dataF < de || dataF > ate) return;
         
-        // Determina tipo baseado na categoria e se é recebido ou pago
-        const isPago = (f.tipo || '').toLowerCase() === 'pago' || 
-                       (f.recebidoPago || '').toLowerCase() === 'pago';
-        const isRecebido = (f.tipo || '').toLowerCase() === 'recebido' || 
-                           (f.recebidoPago || '').toLowerCase() === 'recebido';
+        // Em window.lanc: status é "PAGO" ou "RECEBIDO"
+        const isPago     = (f.status || '').toUpperCase() === 'PAGO';
+        const isRecebido = (f.status || '').toUpperCase() === 'RECEBIDO';
         
         const categoria = (f.categoria || '').toLowerCase();
         let tipoLabel = 'Outros';
-        
         if (categoria.includes('adiantamento')) {
           tipoLabel = 'Adiantamento';
-        } else if (categoria.includes('prestação') || categoria.includes('prestacao')) {
-          tipoLabel = isRecebido ? 'Recebimento' : 'Pagamento';
+        } else if (categoria.includes('prest') || categoria.includes('comiss')) {
+          tipoLabel = isPago ? 'Pagamento' : 'Recebimento';
         } else if (isPago) {
           tipoLabel = 'Pagamento';
         } else if (isRecebido) {
@@ -656,13 +656,13 @@
         pagamentos.push({
           data: dataF,
           tipo: tipoLabel,
-          descricao: f.categoria || f.descricao || '-',
+          descricao: f.categoria || '-',
           valor: Number(f.valor) || 0,
-          formaPgto: f.formaPgto || f.forma || 'PIX',
-          isPago: isPago,
-          isRecebido: isRecebido,
-          origem: 'financeiro',
-          id: f.id
+          formaPgto: f.forma || 'PIX',
+          isPago,
+          isRecebido,
+          origem: 'lancamento',
+          id: f.uid || f.id
         });
       });
       
@@ -822,7 +822,7 @@
       let somaResultado = 0;
       
       prestacoes.forEach(p => {
-        const periodo = `${formatDateBR(p.ini || p.periodoIni)} a ${formatDateBR(p.fim || p.periodoFim)}`;
+        const periodo = `${formatDateBR(p.periodoIni)} a ${formatDateBR(p.periodoFim)}`;
         const coletas = Number(p.resumo?.coletas) || 0;
         const despesas = Number(p.resumo?.despesas) || 0;
         const comissao = Number(p.resumo?.comissaoVal) || Number(p.resumo?.comis1 || 0) + Number(p.resumo?.comis2 || 0);
@@ -1125,7 +1125,7 @@
       
       ctx.font = '12px Arial';
       dadosAnalise.prestacoes.slice(0, 15).forEach(p => {
-        const periodo = `${formatDateBR(p.ini || p.periodoIni)} a ${formatDateBR(p.fim || p.periodoFim)}`;
+        const periodo = `${formatDateBR(p.periodoIni)} a ${formatDateBR(p.periodoFim)}`;
         const coletas = Number(p.resumo?.coletas) || 0;
         const despesas = Number(p.resumo?.despesas) || 0;
         const comissao = Number(p.resumo?.comissaoVal) || 0;

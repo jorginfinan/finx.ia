@@ -565,30 +565,42 @@
     }
     
     function buscarDespesas(gerenteNome, gerenteNum, de, ate) {
-      const todasDespesas = window.despesas || [];
+        const todasDespesas = window.despesas || [];
+        // Mapa rápido: ficha → area (rota) vindo de window.fichas
+        const fichaRotaMap = new Map(
+          (window.fichas || []).map(f => [String(f.ficha).trim(), String(f.area || '').trim()])
+        );
       
-      return todasDespesas.filter(d => {
-        // Filtro por gerente (nome ou número no nome)
-        const dGerente = (d.gerenteNome || '').toLowerCase();
-        const nomeMatch = dGerente.includes(gerenteNome.toLowerCase());
-        const numMatch = dGerente.includes(gerenteNum);
-        
-        if (!nomeMatch && !numMatch) return false;
-        
-        // Filtro por período
-        const dataRef = d.data || d.periodoFim || '';
-        if (dataRef < de || dataRef > ate) return false;
-        
-        // Ignora ocultas
-        if (d.isHidden) return false;
-        
-        return true;
-      }).sort((a, b) => {
-        const dataA = a.data || '';
-        const dataB = b.data || '';
-        return dataA.localeCompare(dataB);
-      });
-    }
+        return todasDespesas.filter(d => {
+          // Filtro por gerente (nome ou número no nome)
+          const dGerente = (d.gerenteNome || '').toLowerCase();
+          const nomeMatch = dGerente.includes(gerenteNome.toLowerCase());
+          const numMatch = dGerente.includes(gerenteNum);
+      
+          if (!nomeMatch && !numMatch) return false;
+      
+          // Filtro por período
+          const dataRef = d.data || d.periodoFim || '';
+          if (dataRef < de || dataRef > ate) return false;
+      
+          // Ignora ocultas
+          if (d.isHidden) return false;
+      
+          return true;
+        }).map(d => {
+          // ✅ Enriquece com a rota vinda de window.fichas (caso d.rota esteja vazio)
+          const fichaStr = String(d.ficha || '').trim();
+          const rotaDaFicha = fichaStr ? (fichaRotaMap.get(fichaStr) || '') : '';
+          return {
+            ...d,
+            rota: d.rota && d.rota.trim() ? d.rota : rotaDaFicha
+          };
+        }).sort((a, b) => {
+          const dataA = a.data || '';
+          const dataB = b.data || '';
+          return dataA.localeCompare(dataB);
+        });
+      }
     
     function buscarPagamentos(gerenteNum, de, ate) {
       const pagamentos = [];

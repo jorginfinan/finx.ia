@@ -654,8 +654,8 @@
       const vales = window.vales || [];
       
       vales.forEach(v => {
-        const vGerente = v.gerenteNumero || v.gerente || '';
-        if (vGerente !== gerenteNum) return;
+        const vGerente = String(v.gerenteNumero || v.gerente || '');
+        if (!matchGerente(vGerente)) return;
         
         const dataVale = v.data || '';
         if (dataVale >= de && dataVale <= ate) {

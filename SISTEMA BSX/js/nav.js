@@ -8,7 +8,9 @@
     fin:'pageFinanceiro', desp:'pageDespesas',
     users:'pageUsers', usuarios:'pageUsers','prest-vales':'pagePrestVales',
     historico: 'pageHistorico',
-    audit: 'pageHistorico'
+    audit: 'pageHistorico',
+    'analise-gerente': 'pageAnaliseGerente',
+    'analise': 'pageAnaliseGerente'
   };
 
   function pageIdFor(key){
@@ -49,6 +51,10 @@
     __origAfterShow(key, id);
     if (key === 'prest-vales' || id === 'pagePrestVales') {
       try { window.vlsInit?.(); } catch(_) {}
+    }
+    // ✅ Inicializa Análise por Gerente
+    if (key === 'analise-gerente' || key === 'analise' || id === 'pageAnaliseGerente') {
+      try { window.AnaliseGerente?.init?.(); } catch(_) {}
     }
   };
 

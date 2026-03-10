@@ -222,23 +222,27 @@
               </div>
               <div class="ag-secao-content" id="agTabelaDespesas">
                 <div class="ag-busca-container">
+                  <select id="agFiltroRota" class="input ag-filtro-rota">
+                    <option value="">Todas as rotas</option>
+                  </select>
                   <input type="text" id="agBuscaDespesa" class="input ag-busca-input" placeholder="🔍 Filtrar por descrição...">
                 </div>
                 <table class="ag-table">
                   <thead>
                     <tr>
                       <th>Data</th>
+                      <th>Rota</th>
                       <th>Ficha</th>
                       <th>Descrição</th>
                       <th>Valor</th>
                     </tr>
                   </thead>
                   <tbody id="agBodyDespesas">
-                    <tr><td colspan="4" class="ag-empty">Nenhuma despesa encontrada</td></tr>
+                    <tr><td colspan="5" class="ag-empty">Nenhuma despesa encontrada</td></tr>
                   </tbody>
                   <tfoot id="agFootDespesas">
                     <tr class="ag-total-row">
-                      <td colspan="3"><strong>TOTAL</strong></td>
+                      <td colspan="4"><strong>TOTAL</strong></td>
                       <td class="valor despesa"><strong id="agTotalDespesasTabela">R$ 0,00</strong></td>
                     </tr>
                   </tfoot>
@@ -444,7 +448,14 @@
       
       // Filtro de busca de despesas
       document.getElementById('agBuscaDespesa')?.addEventListener('input', function() {
-        renderTabelaDespesas(this.value);
+        const filtroRota = document.getElementById('agFiltroRota')?.value || '';
+        renderTabelaDespesas(this.value, filtroRota);
+      });
+      
+      // Filtro de rota
+      document.getElementById('agFiltroRota')?.addEventListener('change', function() {
+        const filtroBusca = document.getElementById('agBuscaDespesa')?.value || '';
+        renderTabelaDespesas(filtroBusca, this.value);
       });
     }
     
@@ -827,10 +838,23 @@
       document.getElementById('agTotalResultadoTabela').textContent = fmtBRL(somaResultado);
     }
     
-    function renderTabelaDespesas(filtro = '') {
+    function renderTabelaDespesas(filtro = '', filtroRota = '') {
       const tbody = document.getElementById('agBodyDespesas');
       const badge = document.getElementById('agBadgeDespesas');
       let { despesas } = dadosAnalise;
+      
+      // Popula select de rotas (só se ainda não foi populado ou mudou)
+      popularSelectRotas(despesas);
+      
+      // Aplica filtro de rota
+      if (filtroRota) {
+        if (filtroRota === '-') {
+          // Filtra despesas sem rota
+          despesas = despesas.filter(d => !d.rota || d.rota.trim() === '');
+        } else {
+          despesas = despesas.filter(d => (d.rota || '') === filtroRota);
+        }
+      }
       
       // Aplica filtro de busca
       if (filtro && filtro.trim()) {
@@ -838,14 +862,15 @@
         despesas = despesas.filter(d => {
           const info = (d.info || d.descricao || '').toLowerCase();
           const ficha = (d.ficha || '').toLowerCase();
-          return info.includes(termo) || ficha.includes(termo);
+          const rota = (d.rota || '').toLowerCase();
+          return info.includes(termo) || ficha.includes(termo) || rota.includes(termo);
         });
       }
       
       badge.textContent = despesas.length;
       
       if (despesas.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="ag-empty">Nenhuma despesa encontrada</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="ag-empty">Nenhuma despesa encontrada</td></tr>';
         document.getElementById('agTotalDespesasTabela').textContent = 'R$ 0,00';
         return;
       }
@@ -856,10 +881,12 @@
       despesas.forEach(d => {
         const valor = Number(d.valor) || 0;
         somaValor += valor;
+        const rota = d.rota && d.rota.trim() ? d.rota : '-';
         
         html += `
           <tr>
             <td>${formatDateBR(d.data)}</td>
+            <td class="rota-cell">${esc(rota)}</td>
             <td>${esc(d.ficha || '-')}</td>
             <td>${esc(d.info || d.descricao || '-')}</td>
             <td class="valor despesa">${fmtBRL(valor)}</td>
@@ -871,6 +898,48 @@
       
       // Atualiza total no tfoot
       document.getElementById('agTotalDespesasTabela').textContent = fmtBRL(somaValor);
+    }
+    
+    function popularSelectRotas(despesas) {
+      const select = document.getElementById('agFiltroRota');
+      if (!select) return;
+      
+      // Coleta todas as rotas únicas
+      const rotasSet = new Set();
+      let temSemRota = false;
+      
+      despesas.forEach(d => {
+        const rota = (d.rota || '').trim();
+        if (rota) {
+          rotasSet.add(rota);
+        } else {
+          temSemRota = true;
+        }
+      });
+      
+      // Ordena rotas
+      const rotasOrdenadas = Array.from(rotasSet).sort((a, b) => {
+        // Tenta ordenar numericamente se possível
+        const numA = parseInt(a);
+        const numB = parseInt(b);
+        if (!isNaN(numA) && !isNaN(numB)) {
+          return numA - numB;
+        }
+        return a.localeCompare(b);
+      });
+      
+      // Monta options
+      let options = '<option value="">Todas as rotas</option>';
+      
+      if (temSemRota) {
+        options += '<option value="-">- (sem rota)</option>';
+      }
+      
+      rotasOrdenadas.forEach(rota => {
+        options += `<option value="${rota}">${rota}</option>`;
+      });
+      
+      select.innerHTML = options;
     }
     
     function renderTabelaPagamentos() {
@@ -1344,6 +1413,11 @@
           color: #ef4444;
         }
         
+        .ag-table .rota-cell {
+          font-weight: 500;
+          color: #6366f1;
+        }
+        
         .ag-table .status-ok {
           color: #10b981;
           font-weight: 600;
@@ -1399,10 +1473,24 @@
           padding: 10px 15px;
           background: #f9fafb;
           border-bottom: 1px solid #e5e7eb;
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+        
+        .ag-filtro-rota {
+          min-width: 150px;
+          max-width: 200px;
+          padding: 8px 12px;
+          border: 1px solid #d1d5db;
+          border-radius: 6px;
+          font-size: 14px;
         }
         
         .ag-busca-input {
-          width: 100%;
+          flex: 1;
+          min-width: 200px;
           max-width: 400px;
           padding: 8px 12px;
           border: 1px solid #d1d5db;

@@ -29,11 +29,6 @@
     // ============================================
     
     function init() {
-      // ✅ EVITA MÚLTIPLAS INICIALIZAÇÕES (previne loop infinito)
-      if (_initialized) {
-        return;
-      }
-      
       // Tenta encontrar o container - suporta dois IDs possíveis
       let container = document.getElementById('analiseGerenteContent');
       if (!container) {
@@ -42,6 +37,13 @@
       
       if (!container) {
         console.warn('[Análise Gerente] Container não encontrado');
+        return;
+      }
+      
+      // ✅ Se já inicializado, apenas recarrega os gerentes (pode ter carregado depois)
+      if (_initialized) {
+        console.log('[Análise Gerente] Já inicializado, recarregando gerentes...');
+        carregarGerentes();
         return;
       }
       
@@ -392,7 +394,8 @@
         const num = g.numero || '';
         const nome = g.nome || '';
         const label = num ? `${num} - ${nome}` : nome;
-        options += `<option value="${g.uid || g.id}">${esc(label)}</option>`;
+        const uid = g.uid || g.id || '';
+        options += `<option value="${uid}">${label}</option>`;
       });
       
       select.innerHTML = options;

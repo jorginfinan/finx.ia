@@ -525,10 +525,22 @@
     async function buscarDados() {
       const gerenteNome = currentGerente?.nome || '';
       const gerenteNum = currentGerente?.numero || '';
+      const gerenteUid = currentGerente?.uid || currentGerente?.id || '';
       const { de, ate } = currentPeriodo;
       
-      // 1. PRESTAÇÕES
-      dadosAnalise.prestacoes = buscarPrestacoes(gerenteNum, de, ate);
+      // 1. PRESTAÇÕES — carrega direto do Supabase (window.prestacoesSalvas não é populado)
+      let todasPrestacoes = [];
+      if (typeof window.carregarPrestacoesGlobal === 'function') {
+        try {
+          todasPrestacoes = await window.carregarPrestacoesGlobal();
+        } catch(e) {
+          console.warn('[Análise Gerente] Fallback localStorage para prestações:', e);
+          todasPrestacoes = JSON.parse(localStorage.getItem(window.DB_PREST) || '[]');
+        }
+      } else {
+        todasPrestacoes = JSON.parse(localStorage.getItem(window.DB_PREST) || '[]');
+      }
+      dadosAnalise.prestacoes = buscarPrestacoes(todasPrestacoes, gerenteUid, gerenteNum, de, ate);
       
       // 2. DESPESAS
       dadosAnalise.despesas = buscarDespesas(gerenteNome, gerenteNum, de, ate);
@@ -543,64 +555,52 @@
       });
     }
     
-    function buscarPrestacoes(gerenteNum, de, ate) {
-      // Busca prestações salvas
-      const todasPrestacoes = window.prestacoesSalvas || [];
-      
+    function buscarPrestacoes(todasPrestacoes, gerenteUid, gerenteNum, de, ate) {
       return todasPrestacoes.filter(p => {
-        // Filtro por gerente
-        const pGerente = p.gerenteNumero || p.gerente?.numero || '';
-        if (pGerente !== gerenteNum) return false;
+        // ✅ Filtra por uid do gerente (campo gerenteId) ou fallback por número
+        const pUid = p.gerenteId || '';
+        const pNum = p.gerenteNumero || p.gerente?.numero || '';
+        const uidMatch = gerenteUid && pUid === gerenteUid;
+        const numMatch = gerenteNum && pNum === gerenteNum;
+        if (!uidMatch && !numMatch) return false;
         
-        // Filtro por período (usa periodoFim ou dataFim)
-        const dataRef = p.periodoFim || p.dataFim || p.data || '';
+        // ✅ Usa ini/fim (estrutura real) com fallback para periodoFim/periodoIni
+        const dataRef = p.fim || p.periodoFim || p.dataFim || p.data || '';
         if (dataRef < de || dataRef > ate) return false;
         
         return true;
       }).sort((a, b) => {
-        const dataA = a.periodoIni || a.dataIni || '';
-        const dataB = b.periodoIni || b.dataIni || '';
+        const dataA = a.ini || a.periodoIni || a.dataIni || '';
+        const dataB = b.ini || b.periodoIni || b.dataIni || '';
         return dataA.localeCompare(dataB);
       });
     }
     
     function buscarDespesas(gerenteNome, gerenteNum, de, ate) {
-        const todasDespesas = window.despesas || [];
-        // Mapa rápido: ficha → area (rota) vindo de window.fichas
-        const fichaRotaMap = new Map(
-          (window.fichas || []).map(f => [String(f.ficha).trim(), String(f.area || '').trim()])
-        );
+      const todasDespesas = window.despesas || [];
       
-        return todasDespesas.filter(d => {
-          // Filtro por gerente (nome ou número no nome)
-          const dGerente = (d.gerenteNome || '').toLowerCase();
-          const nomeMatch = dGerente.includes(gerenteNome.toLowerCase());
-          const numMatch = dGerente.includes(gerenteNum);
-      
-          if (!nomeMatch && !numMatch) return false;
-      
-          // Filtro por período
-          const dataRef = d.data || d.periodoFim || '';
-          if (dataRef < de || dataRef > ate) return false;
-      
-          // Ignora ocultas
-          if (d.isHidden) return false;
-      
-          return true;
-        }).map(d => {
-          // ✅ Enriquece com a rota vinda de window.fichas (caso d.rota esteja vazio)
-          const fichaStr = String(d.ficha || '').trim();
-          const rotaDaFicha = fichaStr ? (fichaRotaMap.get(fichaStr) || '') : '';
-          return {
-            ...d,
-            rota: d.rota && d.rota.trim() ? d.rota : rotaDaFicha
-          };
-        }).sort((a, b) => {
-          const dataA = a.data || '';
-          const dataB = b.data || '';
-          return dataA.localeCompare(dataB);
-        });
-      }
+      return todasDespesas.filter(d => {
+        // Filtro por gerente (nome ou número no nome)
+        const dGerente = (d.gerenteNome || '').toLowerCase();
+        const nomeMatch = dGerente.includes(gerenteNome.toLowerCase());
+        const numMatch = dGerente.includes(gerenteNum);
+        
+        if (!nomeMatch && !numMatch) return false;
+        
+        // Filtro por período
+        const dataRef = d.data || d.periodoFim || '';
+        if (dataRef < de || dataRef > ate) return false;
+        
+        // Ignora ocultas
+        if (d.isHidden) return false;
+        
+        return true;
+      }).sort((a, b) => {
+        const dataA = a.data || '';
+        const dataB = b.data || '';
+        return dataA.localeCompare(dataB);
+      });
+    }
     
     function buscarPagamentos(gerenteNum, de, ate) {
       const pagamentos = [];
@@ -810,7 +810,7 @@
       let somaResultado = 0;
       
       prestacoes.forEach(p => {
-        const periodo = `${formatDateBR(p.periodoIni)} a ${formatDateBR(p.periodoFim)}`;
+        const periodo = `${formatDateBR(p.ini || p.periodoIni)} a ${formatDateBR(p.fim || p.periodoFim)}`;
         const coletas = Number(p.resumo?.coletas) || 0;
         const despesas = Number(p.resumo?.despesas) || 0;
         const comissao = Number(p.resumo?.comissaoVal) || Number(p.resumo?.comis1 || 0) + Number(p.resumo?.comis2 || 0);
@@ -1113,7 +1113,7 @@
       
       ctx.font = '12px Arial';
       dadosAnalise.prestacoes.slice(0, 15).forEach(p => {
-        const periodo = `${formatDateBR(p.periodoIni)} a ${formatDateBR(p.periodoFim)}`;
+        const periodo = `${formatDateBR(p.ini || p.periodoIni)} a ${formatDateBR(p.fim || p.periodoFim)}`;
         const coletas = Number(p.resumo?.coletas) || 0;
         const despesas = Number(p.resumo?.despesas) || 0;
         const comissao = Number(p.resumo?.comissaoVal) || 0;

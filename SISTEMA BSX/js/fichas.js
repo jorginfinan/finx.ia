@@ -310,7 +310,12 @@ document.getElementById('formFichaVenda').addEventListener('submit', async (ev)=
   
   // Salva no Supabase
   if (window.SupabaseAPI?.vendas) {
-    await window.SupabaseAPI.vendas.upsert(rec);
+    try {
+      await window.SupabaseAPI.vendas.upsert(rec);
+    } catch(e) {
+      alert('Erro ao salvar venda no banco: ' + (e.message || e));
+      return;
+    }
   }
   
   ev.target.reset(); 

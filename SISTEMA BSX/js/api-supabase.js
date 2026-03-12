@@ -343,7 +343,6 @@
             .select('*')
             .eq('empresa_id', empresaId)
             .order('data', { ascending: false })
-            .order('uid', { ascending: true })   // ← sort secundário estável evita registros perdidos na paginação
             .range(from, from + batchSize - 1);
           
           if (error) throw error;
@@ -729,11 +728,15 @@
         const batchSize = 1000;
         let hasMore = true;
         
+        const empresaId = await getEmpresaId();
+        
         while (hasMore) {
           const { data, error } = await this.client
             .from(this.table)
             .select('*')
+            .eq('empresa_id', empresaId)
             .order('ano_mes', { ascending: false })
+            .order('ficha', { ascending: true })  // sort estável evita registros perdidos na paginação
             .range(from, from + batchSize - 1);
           
           if (error) {
@@ -768,57 +771,63 @@
     }
     
     async upsert(venda) {
-      try {
-        const uid = venda.id || 'vnd_' + Math.random().toString(36).slice(2, 11);
-        const anoMes = venda.ym || venda.ano_mes;
-        
-        // Verifica se já existe (por ficha + ano_mes, sem filtro de empresa)
-        const { data: existing } = await this.client
+      const empresaId = await getEmpresaId();
+      const uid = venda.id || 'vnd_' + Math.random().toString(36).slice(2, 11);
+      const anoMes = venda.ym || venda.ano_mes;
+      
+      // Verifica se já existe filtrando pela empresa correta
+      const { data: existing, error: errCheck } = await this.client
+        .from(this.table)
+        .select('id, uid')
+        .eq('ficha', venda.ficha)
+        .eq('ano_mes', anoMes)
+        .eq('empresa_id', empresaId)
+        .maybeSingle();
+      
+      if (errCheck) {
+        console.error('[VendasAPI] Erro ao verificar existência:', errCheck);
+        throw errCheck;
+      }
+      
+      if (existing) {
+        // Update
+        const { data, error } = await this.client
           .from(this.table)
-          .select('id, uid')
-          .eq('ficha', venda.ficha)
-          .eq('ano_mes', anoMes)
-          .maybeSingle();
+          .update({
+            venda_bruta: Number(venda.bruta) || 0,
+            venda_liquida: Number(venda.liquida) || 0
+          })
+          .eq('id', existing.id)
+          .select()
+          .single();
         
-        if (existing) {
-          // Update
-          const { data, error } = await this.client
-            .from(this.table)
-            .update({
-              venda_bruta: Number(venda.bruta) || 0,
-              venda_liquida: Number(venda.liquida) || 0
-            })
-            .eq('id', existing.id)
-            .select()
-            .single();
-          
-          if (error) throw error;
-          console.log('[VendasAPI] ✅ Atualizada:', venda.ficha, anoMes);
-          return data;
-        } else {
-          // Insert - pega empresa atual só para o insert (se campo for obrigatório)
-          const empresaId = await getEmpresaId();
-          
-          const { data, error } = await this.client
-            .from(this.table)
-            .insert({
-              uid,
-              ficha: venda.ficha,
-              ano_mes: anoMes,
-              venda_bruta: Number(venda.bruta) || 0,
-              venda_liquida: Number(venda.liquida) || 0,
-              empresa_id: empresaId
-            })
-            .select()
-            .single();
-          
-          if (error) throw error;
-          console.log('[VendasAPI] ✅ Criada:', venda.ficha, anoMes);
-          return data;
+        if (error) {
+          console.error('[VendasAPI] Erro ao atualizar venda:', error);
+          throw error;
         }
-      } catch (error) {
-        console.error('[VendasAPI] Erro upsert:', error);
-        return null;
+        console.log('[VendasAPI] ✅ Atualizada:', venda.ficha, anoMes);
+        return data;
+      } else {
+        // Insert
+        const { data, error } = await this.client
+          .from(this.table)
+          .insert({
+            uid,
+            ficha: venda.ficha,
+            ano_mes: anoMes,
+            venda_bruta: Number(venda.bruta) || 0,
+            venda_liquida: Number(venda.liquida) || 0,
+            empresa_id: empresaId
+          })
+          .select()
+          .single();
+        
+        if (error) {
+          console.error('[VendasAPI] Erro ao inserir venda:', error);
+          throw error;
+        }
+        console.log('[VendasAPI] ✅ Criada:', venda.ficha, anoMes);
+        return data;
       }
     }
     

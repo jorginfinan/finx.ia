@@ -263,6 +263,11 @@
                 <input type="date" id="agPagDe" class="input ag-filtro-rota">
                 <label style="font-size:13px;color:#6b7280;align-self:center;">Até</label>
                 <input type="date" id="agPagAte" class="input ag-filtro-rota">
+                <select id="agFiltroTipoPag" class="input ag-filtro-rota" style="font-size:13px;">
+                  <option value="">Todos</option>
+                  <option value="recebimento">Só Recebimentos</option>
+                  <option value="pagamento">Só Pagamentos</option>
+                </select>
                 <button id="agFiltrarPag" class="btn secondary" style="padding:6px 14px;font-size:13px;">Filtrar</button>
                 <button id="agLimparPag" class="btn secondary" style="padding:6px 14px;font-size:13px;background:#f3f4f6;color:#374151;">Limpar</button>
               </div>
@@ -280,14 +285,6 @@
                 </tbody>
                 <tfoot id="agFootPagamentos">
                   <tr class="ag-total-row">
-                    <td colspan="3">Recebimentos</td>
-                    <td class="valor tipo-receb"><strong id="agTotalRecebPag">R$ 0,00</strong></td>
-                  </tr>
-                  <tr class="ag-total-row">
-                    <td colspan="3">Pagamentos</td>
-                    <td class="valor despesa"><strong id="agTotalPagoPag">R$ 0,00</strong></td>
-                  </tr>
-                  <tr class="ag-total-row" style="border-top:2px solid #e5e7eb;">
                     <td colspan="3"><strong>Saldo</strong></td>
                     <td class="valor"><strong id="agTotalPagamentosTabela">R$ 0,00</strong></td>
                   </tr>
@@ -476,18 +473,24 @@
     });
     
     // Filtro de data dos pagamentos
-    document.getElementById('agFiltrarPag')?.addEventListener('click', function() {
-      const de  = document.getElementById('agPagDe')?.value || '';
-      const ate = document.getElementById('agPagAte')?.value || '';
-      renderTabelaPagamentos(de, ate);
-      recalcularCards(de, ate);
-    });
+    function aplicarFiltrosPag() {
+      const de   = document.getElementById('agPagDe')?.value || '';
+      const ate  = document.getElementById('agPagAte')?.value || '';
+      const tipo = document.getElementById('agFiltroTipoPag')?.value || '';
+      renderTabelaPagamentos(de, ate, tipo);
+      recalcularCards(de, ate, tipo);
+    }
+    
+    document.getElementById('agFiltrarPag')?.addEventListener('click', aplicarFiltrosPag);
+    
+    document.getElementById('agFiltroTipoPag')?.addEventListener('change', aplicarFiltrosPag);
     
     document.getElementById('agLimparPag')?.addEventListener('click', function() {
       document.getElementById('agPagDe').value = '';
       document.getElementById('agPagAte').value = '';
-      renderTabelaPagamentos('', '');
-      recalcularCards('', '');
+      document.getElementById('agFiltroTipoPag').value = '';
+      renderTabelaPagamentos('', '', '');
+      recalcularCards('', '', '');
     });
   }
   
@@ -615,20 +618,41 @@
     const fichaRotaMap = new Map(
       (window.fichas || []).map(f => [String(f.ficha).trim(), String(f.area || '').trim()])
     );
-    return todasDespesas.filter(d => {
-      const dGerente = (d.gerenteNome || '').toLowerCase();
-      const nomeMatch = dGerente.includes(gerenteNome.toLowerCase());
-      const rotaMatch = gerenteRota && dGerente.includes(gerenteRota);
-      if (!nomeMatch && !rotaMatch) return false;
+    
+    // Normaliza texto: remove acentos, lowercase, trim
+    const norm = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    
+    const nomeNorm   = norm(gerenteNome);
+    // Nome sem número para match parcial (ex: "005 wewerton" → "wewerton")
+    const nomeSoNome = nomeNorm.replace(/^\d+\s*/, '');
+    const rotaPad    = (gerenteRota || '').padStart(3, '0');
+    
+    const result = todasDespesas.filter(d => {
+      const dg = norm(d.gerenteNome);
+      
+      // Match pelo número da rota no início: "005 ..." 
+      const rotaMatch = rotaPad && dg.startsWith(rotaPad);
+      // Match pelo nome completo normalizado
+      const nomeMatch = nomeNorm && dg.includes(nomeNorm);
+      // Match só pelo nome sem número (cobre grafias diferentes)
+      const nomeParc  = nomeSoNome.length > 2 && dg.includes(nomeSoNome);
+      
+      if (!rotaMatch && !nomeMatch && !nomeParc) return false;
+      
       const dataRef = d.data || d.periodoFim || '';
       if (dataRef < de || dataRef > ate) return false;
-      if (d.isHidden) return false;
+      
+      // ✅ NÃO filtra isHidden — a prestação mostra todas as despesas,
+      // inclusive as marcadas como ocultas (QUINZENA, AJUDA, etc.)
       return true;
     }).map(d => {
       const fichaStr = String(d.ficha || '').trim();
       const rotaDaFicha = fichaStr ? (fichaRotaMap.get(fichaStr) || '') : '';
       return { ...d, rota: d.rota && d.rota.trim() ? d.rota : rotaDaFicha };
     }).sort((a, b) => (a.data || '').localeCompare(b.data || ''));
+    
+    console.log(`[AG-Despesas] Gerente: "${gerenteNome}" | Rota: ${rotaPad} | Total window.despesas: ${todasDespesas.length} | Encontradas: ${result.length} | Período: ${de} → ${ate}`);
+    return result;
   }
   
   function buscarPagamentos(gerenteRota, gerenteNome, de, ate) {
@@ -782,11 +806,16 @@
   // RENDER CARDS
   // ============================================
   
-  // Recalcula cards respeitando filtro de data dos pagamentos
-  function recalcularCards(filtroDe = '', filtroAte = '') {
+  // Recalcula cards respeitando filtros de data e tipo
+  function recalcularCards(filtroDe = '', filtroAte = '', filtroTipo = '') {
     let pagamentosFiltrados = dadosAnalise.pagamentos || [];
     if (filtroDe) pagamentosFiltrados = pagamentosFiltrados.filter(p => (p.data || '') >= filtroDe);
     if (filtroAte) pagamentosFiltrados = pagamentosFiltrados.filter(p => (p.data || '') <= filtroAte);
+    if (filtroTipo === 'recebimento') {
+      pagamentosFiltrados = pagamentosFiltrados.filter(p => p.isRecebido || p.tipo === 'Recebimento');
+    } else if (filtroTipo === 'pagamento') {
+      pagamentosFiltrados = pagamentosFiltrados.filter(p => !p.isRecebido && (p.isPago || p.tipo === 'Adiantamento' || p.tipo === 'Pagamento'));
+    }
     
     let totalPago = 0;
     pagamentosFiltrados.forEach(pg => {
@@ -1024,22 +1053,29 @@
     select.innerHTML = options;
   }
   
-  function renderTabelaPagamentos(filtroDe = '', filtroAte = '') {
+  function renderTabelaPagamentos(filtroDe = '', filtroAte = '', filtroTipo = '') {
     const tbody = document.getElementById('agBodyPagamentos');
     const badge = document.getElementById('agBadgePagamentos');
     let { pagamentos } = dadosAnalise;
     
-    // Aplica filtro de data se informado
+    // Aplica filtro de data
     if (filtroDe) pagamentos = pagamentos.filter(p => (p.data || '') >= filtroDe);
     if (filtroAte) pagamentos = pagamentos.filter(p => (p.data || '') <= filtroAte);
+    
+    // Aplica filtro de tipo
+    if (filtroTipo === 'recebimento') {
+      pagamentos = pagamentos.filter(p => p.isRecebido || p.tipo === 'Recebimento');
+    } else if (filtroTipo === 'pagamento') {
+      pagamentos = pagamentos.filter(p => !p.isRecebido && (p.isPago || p.tipo === 'Adiantamento' || p.tipo === 'Pagamento'));
+    }
     
     badge.textContent = pagamentos.length;
     
     if (pagamentos.length === 0) {
       tbody.innerHTML = '<tr><td colspan="4" class="ag-empty">Nenhum pagamento encontrado</td></tr>';
-      document.getElementById('agTotalRecebPag').textContent  = 'R$ 0,00';
-      document.getElementById('agTotalPagoPag').textContent   = 'R$ 0,00';
-      document.getElementById('agTotalPagamentosTabela').textContent = 'R$ 0,00';
+      const saldoEl = document.getElementById('agTotalPagamentosTabela');
+      saldoEl.textContent = 'R$ 0,00';
+      saldoEl.style.color = '';
       return;
     }
     
@@ -1081,9 +1117,6 @@
     
     // Recebimentos, Pagamentos e Saldo
     const saldo = somaRecebido - somaPago;
-    
-    document.getElementById('agTotalRecebPag').textContent = fmtBRL(somaRecebido);
-    document.getElementById('agTotalPagoPag').textContent  = fmtBRL(somaPago);
     
     const saldoEl = document.getElementById('agTotalPagamentosTabela');
     saldoEl.textContent = fmtBRL(Math.abs(saldo));
@@ -1676,6 +1709,9 @@
   
   // Injeta estilos
   injectStyles();
+  
+  // ✅ REMOVIDO: MutationObserver causava loop infinito
+  // O nav.js já chama AnaliseGerente.init() via afterShow quando a página é exibida
   
   console.log('[Análise Gerente] ✅ Módulo carregado');
   

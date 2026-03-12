@@ -343,6 +343,7 @@
             .select('*')
             .eq('empresa_id', empresaId)
             .order('data', { ascending: false })
+            .order('uid', { ascending: true })   // ← sort secundário estável evita registros perdidos na paginação
             .range(from, from + batchSize - 1);
           
           if (error) throw error;

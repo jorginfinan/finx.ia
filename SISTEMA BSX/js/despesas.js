@@ -65,10 +65,24 @@ async function saveDespesa(despesa) {
     if (despesa.id) {
       // Atualizar existente - API cuida do mapeamento
       await window.SupabaseAPI.despesas.updateByUid(despesa.uid, despesa);
+      window.AuditLog?.log('despesa_editada', {
+        uid: despesa.uid,
+        info: despesa.info || despesa.descricao || '',
+        valor: despesa.valor,
+        ficha: despesa.ficha || '',
+        data: despesa.data || ''
+      });
     } else {
       // Criar nova - API cuida do mapeamento
       despesa.uid = window.uid();
       await window.SupabaseAPI.despesas.create(despesa);
+      window.AuditLog?.log('despesa_criada', {
+        uid: despesa.uid,
+        info: despesa.info || despesa.descricao || '',
+        valor: despesa.valor,
+        ficha: despesa.ficha || '',
+        data: despesa.data || ''
+      });
     }
     
     console.log('[Despesas] ✅ Salva com sucesso');
@@ -1215,6 +1229,14 @@ if (!window.__despMenuActionsBound) {
           
           // Remove do Supabase primeiro
           await window.SupabaseAPI.despesas.deleteByUid(uid);
+          
+          window.AuditLog?.log('despesa_excluida', {
+            uid,
+            info: arr[idx].info || arr[idx].descricao || '',
+            valor: arr[idx].valor,
+            ficha: arr[idx].ficha || '',
+            data: arr[idx].data || ''
+          });
           
           // Aguarda confirmação
           await new Promise(resolve => setTimeout(resolve, 100));

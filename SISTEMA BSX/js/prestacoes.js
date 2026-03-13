@@ -986,40 +986,49 @@ async function salvarDespesaNoSupabase(despesa) {
 
 // ===== IMPORTAR DESPESAS DO EXCEL =====
 (function() {
-  // Cria o input file oculto se não existir
-  let inputFile = document.getElementById('inputImportDespesas');
-  if (!inputFile) {
-    inputFile = document.createElement('input');
-    inputFile.type = 'file';
-    inputFile.id = 'inputImportDespesas';
-    inputFile.accept = '.xlsx,.xls,.csv';
-    inputFile.style.display = 'none';
-    document.body.appendChild(inputFile);
+  // Garante que o SheetJS está carregado antes de criar o botão
+  function ensureXLSX(cb) {
+    if (typeof XLSX !== 'undefined') { cb(); return; }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    script.onload = cb;
+    script.onerror = () => console.error('[ImportDespesas] Falha ao carregar SheetJS');
+    document.head.appendChild(script);
   }
-  
-  // Cria o botão de importar se não existir
-  const btnAdd = document.getElementById('btnPcAddDespesa');
-  if (btnAdd && !document.getElementById('btnPcImportDespesa')) {
-    const btnImport = document.createElement('button');
-    btnImport.type = 'button';
-    btnImport.id = 'btnPcImportDespesa';
-    btnImport.className = 'btn ghost';
-    btnImport.innerHTML = '📥 Importar Excel';
-    btnImport.title = 'Importar despesas de arquivo Excel (colunas: Ficha, Info, Valor)';
-    btnImport.style.marginLeft = '8px';
-    
-    // Insere o botão após o botão de adicionar
-    btnAdd.parentNode.insertBefore(btnImport, btnAdd.nextSibling);
-    
-    // Evento de clique no botão
-    btnImport.addEventListener('click', function(e) {
-      e.preventDefault();
-      inputFile.click();
-    });
-  }
-  
-  // Processa o arquivo selecionado
-  inputFile.addEventListener('change', async function(e) {
+
+  function setupImportButton() {
+    // Cria o input file oculto se não existir
+    let inputFile = document.getElementById('inputImportDespesas');
+    if (!inputFile) {
+      inputFile = document.createElement('input');
+      inputFile.type = 'file';
+      inputFile.id = 'inputImportDespesas';
+      inputFile.accept = '.xlsx,.xls,.csv';
+      inputFile.style.display = 'none';
+      document.body.appendChild(inputFile);
+    }
+
+    // Cria o botão de importar se não existir
+    const btnAdd = document.getElementById('btnPcAddDespesa');
+    if (btnAdd && !document.getElementById('btnPcImportDespesa')) {
+      const btnImport = document.createElement('button');
+      btnImport.type = 'button';
+      btnImport.id = 'btnPcImportDespesa';
+      btnImport.className = 'btn ghost';
+      btnImport.innerHTML = '📥 Importar Excel';
+      btnImport.title = 'Importar despesas de arquivo Excel (colunas: Ficha, Info, Valor)';
+      btnImport.style.marginLeft = '8px';
+
+      btnAdd.parentNode.insertBefore(btnImport, btnAdd.nextSibling);
+
+      btnImport.addEventListener('click', function(e) {
+        e.preventDefault();
+        ensureXLSX(() => inputFile.click());
+      });
+    }
+
+    // Processa o arquivo selecionado
+    inputFile.addEventListener('change', async function(e) {
     const file = e.target.files[0];
     if (!file) return;
     
@@ -1067,7 +1076,23 @@ async function salvarDespesaNoSupabase(despesa) {
     
     // Limpa o input para permitir reimportar o mesmo arquivo
     inputFile.value = '';
-  });
+    }); // end inputFile change
+
+  } // end setupImportButton
+
+  // Tenta configurar imediatamente; se btnPcAddDespesa não existir ainda,
+  // aguarda o DOM estar pronto
+  if (document.getElementById('btnPcAddDespesa')) {
+    setupImportButton();
+  } else {
+    const obs = new MutationObserver(() => {
+      if (document.getElementById('btnPcAddDespesa')) {
+        obs.disconnect();
+        setupImportButton();
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+  }
 })();
 
 // Função para processar o arquivo Excel/CSV
@@ -5360,10 +5385,37 @@ window.addEventListener('vales:updated', ()=>{
       
       document.getElementById('pcIni').value = r.ini || '';
       document.getElementById('pcFim').value = r.fim || '';
+
+      // ✅ Se dados.despesas está vazio, busca da tabela despesas pelo período+gerente
+      // Evita recriar despesas com novos uid ao editar, gerando duplicatas no banco
+      let despesasParaEditor = (r.despesas || []).map(x => ({...x}));
+      if (despesasParaEditor.length === 0 && r.ini && r.fim && window.SupabaseAPI?.client) {
+        console.log('[EDIT] ⚠️ dados.despesas vazio — buscando da tabela despesas...');
+        try {
+          const { data: despBanco } = await window.SupabaseAPI.client
+            .from('despesas')
+            .select('uid, ficha, descricao, valor, data, rota, categoria')
+            .eq('gerente_nome', r.gerenteNome || '')
+            .gte('data', r.ini)
+            .lte('data', r.fim);
+          if (despBanco && despBanco.length > 0) {
+            despesasParaEditor = despBanco.map(d => ({
+              id:    d.uid,
+              ficha: d.ficha || '',
+              info:  d.descricao || '',
+              valor: Number(d.valor) || 0,
+              data:  d.data || ''
+            }));
+            console.log('[EDIT] ✅ Recuperadas', despesasParaEditor.length, 'despesas do banco');
+          }
+        } catch(e) {
+          console.warn('[EDIT] Não foi possível recuperar despesas do banco:', e);
+        }
+      }
   
       // Carrega dados
       window.prestacaoAtual = {
-        despesas:  (r.despesas  || []).map(x => ({...x})),
+        despesas:  despesasParaEditor,
         pagamentos:(r.pagamentos|| []).map(x => ({...x})),
         coletas:   (r.coletas   || []).map(x => ({...x})),
         vales:     (r.vales     || []).map(x => ({...x})),

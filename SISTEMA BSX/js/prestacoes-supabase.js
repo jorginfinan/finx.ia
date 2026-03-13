@@ -58,10 +58,11 @@
       a_pagar: Number(resumo.aPagar) || 0,
       observacoes: prestacao.saldoInfo?.observacao || null,
       fechada: prestacao.fechado || false,
-      // Dados completos em JSONB
+      // Dados completos em JSONB — despesas NÃO são salvas aqui,
+      // vivem exclusivamente na tabela despesas (fonte de verdade única)
       dados: {
         coletas: prestacao.coletas || [],
-        despesas: prestacao.despesas || [],
+        despesas: [],
         pagamentos: prestacao.pagamentos || [],
         vales: prestacao.vales || [],
         valesSel: prestacao.valesSel || [],
@@ -248,24 +249,10 @@
   // SUBSTITUIR FUNÇÕES GLOBAIS
   // ============================================
   
-  // Salvar prestação (substitui localStorage)
+  // Salvar prestação — somente Supabase
   window.salvarPrestacaoGlobal = async function(prestacao) {
     try {
-      // Salva no Supabase
       await salvarPrestacaoSupabase(prestacao);
-      
-      // Também salva no localStorage como backup
-      const arr = JSON.parse(localStorage.getItem(DB_EMPRESA_KEY) || '[]');
-      const idx = arr.findIndex(p => p.id === prestacao.id);
-      
-      if (idx > -1) {
-        arr[idx] = prestacao;
-      } else {
-        arr.push(prestacao);
-      }
-      
-      localStorage.setItem(DB_EMPRESA_KEY, JSON.stringify(arr));
-      
       return true;
     } catch(e) {
       console.error('[Prestações] Erro ao salvar:', e);
@@ -273,32 +260,20 @@
     }
   };
   
-  // Carregar prestações (carrega do Supabase)
+  // Carregar prestações — somente Supabase
   window.carregarPrestacoesGlobal = async function() {
     try {
-      const prestacoes = await carregarPrestacoesSupabase();
-      
-      // Atualiza localStorage como cache
-      localStorage.setItem(DB_EMPRESA_KEY, JSON.stringify(prestacoes));
-      
-      return prestacoes;
+      return await carregarPrestacoesSupabase();
     } catch(e) {
-      console.error('[Prestações] Erro ao carregar, usando localStorage:', e);
-      return JSON.parse(localStorage.getItem(DB_EMPRESA_KEY) || '[]');
+      console.error('[Prestações] Erro ao carregar do Supabase:', e);
+      return [];
     }
   };
   
-  // Deletar prestação
+  // Deletar prestação — somente Supabase
   window.deletarPrestacaoGlobal = async function(uid) {
     try {
-      // Deleta do Supabase
       await deletarPrestacaoSupabase(uid);
-      
-      // Deleta do localStorage
-      const arr = JSON.parse(localStorage.getItem(DB_EMPRESA_KEY) || '[]');
-      const filtered = arr.filter(p => p.id !== uid);
-      localStorage.setItem(DB_EMPRESA_KEY, JSON.stringify(filtered));
-      
       return true;
     } catch(e) {
       console.error('[Prestações] Erro ao deletar:', e);

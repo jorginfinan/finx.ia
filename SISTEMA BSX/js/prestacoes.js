@@ -986,113 +986,66 @@ async function salvarDespesaNoSupabase(despesa) {
 
 // ===== IMPORTAR DESPESAS DO EXCEL =====
 (function() {
-  // Garante que o SheetJS está carregado antes de criar o botão
-  function ensureXLSX(cb) {
-    if (typeof XLSX !== 'undefined') { cb(); return; }
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-    script.onload = cb;
-    script.onerror = () => console.error('[ImportDespesas] Falha ao carregar SheetJS');
-    document.head.appendChild(script);
-  }
+  // Input file oculto — criado uma vez no body
+  function getOrCreateInput() {
+    let inp = document.getElementById('inputImportDespesas');
+    if (!inp) {
+      inp = document.createElement('input');
+      inp.type = 'file';
+      inp.id = 'inputImportDespesas';
+      inp.accept = '.xlsx,.xls,.csv';
+      inp.style.display = 'none';
+      document.body.appendChild(inp);
 
-  function setupImportButton() {
-    // Cria o input file oculto se não existir
-    let inputFile = document.getElementById('inputImportDespesas');
-    if (!inputFile) {
-      inputFile = document.createElement('input');
-      inputFile.type = 'file';
-      inputFile.id = 'inputImportDespesas';
-      inputFile.accept = '.xlsx,.xls,.csv';
-      inputFile.style.display = 'none';
-      document.body.appendChild(inputFile);
-    }
-
-    // Cria o botão de importar se não existir
-    const btnAdd = document.getElementById('btnPcAddDespesa');
-    if (btnAdd && !document.getElementById('btnPcImportDespesa')) {
-      const btnImport = document.createElement('button');
-      btnImport.type = 'button';
-      btnImport.id = 'btnPcImportDespesa';
-      btnImport.className = 'btn ghost';
-      btnImport.innerHTML = '📥 Importar Excel';
-      btnImport.title = 'Importar despesas de arquivo Excel (colunas: Ficha, Info, Valor)';
-      btnImport.style.marginLeft = '8px';
-
-      btnAdd.parentNode.insertBefore(btnImport, btnAdd.nextSibling);
-
-      btnImport.addEventListener('click', function(e) {
-        e.preventDefault();
-        ensureXLSX(() => inputFile.click());
+      inp.addEventListener('change', async function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+          const despesasImportadas = await processarExcelDespesas(file);
+          if (despesasImportadas.length === 0) {
+            window.showNotification('Nenhuma despesa encontrada no arquivo', 'error');
+            return;
+          }
+          const confirma = confirm(
+            `Foram encontradas ${despesasImportadas.length} despesas.\n\n` +
+            `Deseja importar?\n\n` +
+            `Primeiras 3:\n` +
+            despesasImportadas.slice(0, 3).map(d =>
+              `• ${d.ficha || '-'} | ${d.info || '-'} | R$ ${Number(d.valor || 0).toFixed(2)}`
+            ).join('\n')
+          );
+          if (!confirma) { inp.value = ''; return; }
+          for (const desp of despesasImportadas) {
+            await pcAddDespesa({
+              ficha: String(desp.ficha || '').trim(),
+              info:  String(desp.info  || '').trim(),
+              valor: Number(desp.valor) || 0
+            });
+          }
+          pcRender();
+          pcSchedule({ render: true });
+          window.showNotification(`✅ ${despesasImportadas.length} despesas importadas!`, 'success');
+        } catch (error) {
+          console.error('[ImportDespesas] Erro:', error);
+          window.showNotification('Erro ao importar: ' + error.message, 'error');
+        }
+        inp.value = '';
       });
     }
-
-    // Processa o arquivo selecionado
-    inputFile.addEventListener('change', async function(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    try {
-      const despesasImportadas = await processarExcelDespesas(file);
-      
-      if (despesasImportadas.length === 0) {
-        window.showNotification('Nenhuma despesa encontrada no arquivo', 'error');
-        return;
-      }
-      
-      // Confirma a importação
-      const confirma = confirm(
-        `Foram encontradas ${despesasImportadas.length} despesas.\n\n` +
-        `Deseja importar?\n\n` +
-        `Primeiras 3:\n` +
-        despesasImportadas.slice(0, 3).map(d => 
-          `• ${d.ficha || '-'} | ${d.info || '-'} | R$ ${Number(d.valor || 0).toFixed(2)}`
-        ).join('\n')
-      );
-      
-      if (!confirma) {
-        inputFile.value = '';
-        return;
-      }
-      
-      // Adiciona cada despesa
-      for (const desp of despesasImportadas) {
-        await pcAddDespesa({
-          ficha: String(desp.ficha || '').trim(),
-          info: String(desp.info || '').trim(),
-          valor: Number(desp.valor) || 0
-        });
-      }
-      
-      pcRender();
-      pcSchedule({ render: true });
-      
-      window.showNotification(`✅ ${despesasImportadas.length} despesas importadas!`, 'success');
-      
-    } catch (error) {
-      console.error('[ImportDespesas] Erro:', error);
-      window.showNotification('Erro ao importar: ' + error.message, 'error');
-    }
-    
-    // Limpa o input para permitir reimportar o mesmo arquivo
-    inputFile.value = '';
-    }); // end inputFile change
-
-  } // end setupImportButton
-
-  // Tenta configurar imediatamente; se btnPcAddDespesa não existir ainda,
-  // aguarda o DOM estar pronto
-  if (document.getElementById('btnPcAddDespesa')) {
-    setupImportButton();
-  } else {
-    const obs = new MutationObserver(() => {
-      if (document.getElementById('btnPcAddDespesa')) {
-        obs.disconnect();
-        setupImportButton();
-      }
-    });
-    obs.observe(document.body, { childList: true, subtree: true });
+    return inp;
   }
+
+  // Delegação no document — funciona independente de quando o botão é criado/recriado
+  document.addEventListener('click', function(e) {
+    if (!e.target.matches('#btnPcImportDespesa')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const inp = getOrCreateInput();
+    // setTimeout necessário: alguns browsers exigem que o click venha de evento direto
+    // Forçamos via dispatchEvent nativo para contornar restrições de segurança
+    inp.dispatchEvent(new MouseEvent('click', { bubbles: false, cancelable: true }));
+  }, true); // capture=true garante que rodamos antes de qualquer stopPropagation
+
 })();
 
 // Função para processar o arquivo Excel/CSV

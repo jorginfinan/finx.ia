@@ -3570,29 +3570,21 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
           console.log('✅ [Saldo Especial] Saldo salvo:', saldoNovo);
           
         } else if (idx > -1 && prevRec && prevRec.saldoInfo) {
-          // Edição de prestação com saldo acumulado normal
-          const resultadoAnterior = Number(prevRec.saldoInfo?.resultadoSemana || 0);
-          const resultadoAtual    = Number(prestacaoAtual.saldoInfo?.resultadoSemana || 0);
-          const mudouResultado = Math.abs(resultadoAtual - resultadoAnterior) > 0.009;
-
-          if (!mudouResultado) {
-            console.log('ℹ️ Edição não alterou (coletas - despesas). Mantendo saldo acumulado no Supabase.');
-          } else {
-            const saldoAtual = await window.SaldoAcumulado.getSaldo(recPrest.gerenteId, empresaId);
-            const saldoAnteriorPrestacao = prevRec.saldoInfo.saldoCarregarNovo || 0;
-            const saldoCorrigido = Math.max(0, saldoAtual - saldoAnteriorPrestacao);
-            const novoSaldoFinal = saldoCorrigido + saldoNovo;
-            
-            await window.SaldoAcumulado.setSaldo(recPrest.gerenteId, empresaId, novoSaldoFinal);
-            
-            console.log('🔄 Editando prestação - Saldo ajustado:', {
-              saldoAtual,
-              saldoAnteriorPrestacao,
-              saldoCorrigido,
-              novoSaldoAdicionado: saldoNovo,
-              novoSaldoFinal
-            });
-          }
+          // ✅ FIX BUG #3: Edição de prestação com saldo acumulado normal
+          // O pcCalcular() JÁ faz o estorno do efeito da prestação anterior antes de calcular.
+          // Portanto, saldoNovo já é o valor correto final. Salvar diretamente.
+          // O código antigo fazia um SEGUNDO estorno aqui, causando dupla contagem.
+          
+          console.log('🔄 Editando prestação - Salvando saldo diretamente (estorno já feito em pcCalcular):', {
+            saldoNovo,
+            saldoInfoAnterior: {
+              anterior: prevRec.saldoInfo.saldoCarregarAnterior,
+              novo: prevRec.saldoInfo.saldoCarregarNovo
+            },
+            saldoInfoAtual: prestacaoAtual.saldoInfo
+          });
+          
+          await window.SaldoAcumulado.setSaldo(recPrest.gerenteId, empresaId, saldoNovo);
         } else {
           // Nova prestação ou edição sem saldoInfo anterior
           console.log('💾 Salvando saldo para prestação:', {
@@ -3636,13 +3628,34 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
       });
       console.log('💰 Despesas válidas a salvar:', despesasValidas.length, 'de', (prestacaoAtual.despesas || []).length);
 
+      // ✅ FIX: Coleta UIDs existentes no banco para este período+gerente
+      // Isso permite detectar despesas removidas e limpá-las
+      const uidsSalvos = new Set();
+      
       for (const d of despesasValidas) {
         const dataLanc = (d.data || fim || ini || new Date().toISOString().slice(0,10)).slice(0,10);
         const despesaUid = d.id || uid();
+        // ✅ Atualiza o id da despesa no objeto local para manter consistência
+        d.id = despesaUid;
+        uidsSalvos.add(despesaUid);
         
         console.log('💰 Processando despesa:', { uid: despesaUid, info: d.info, valor: d.valor });
         
         try {
+          // ✅ FIX: Antes de upsert, verifica se já existe para preservar campo oculta
+          let ocultaAtual = false;
+          try {
+            const { data: existente } = await window.SupabaseAPI.client
+              .from('despesas')
+              .select('oculta')
+              .eq('uid', despesaUid)
+              .maybeSingle();
+            if (existente) {
+              ocultaAtual = existente.oculta || false;
+            }
+          } catch(_){}
+          
+          // ✅ FIX: Sempre usa upsert para evitar duplicatas
           if (window.SupabaseAPI?.despesas?.upsert) {
             await window.SupabaseAPI.despesas.upsert({
               uid: despesaUid,
@@ -3653,31 +3666,46 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
               data: dataLanc,
               periodo_ini: ini,
               periodo_fim: fim,
-              oculta: false,
+              oculta: ocultaAtual,   // ✅ FIX: Preserva estado oculta
               rota: '',
               categoria: '',
               editada: false
             });
-            console.log('✅ Despesa salva via upsert:', despesaUid);
-          } else {
-            await window.SupabaseAPI.despesas.create({
-              uid: despesaUid,
-              gerente_nome: g?.nome || '',
-              ficha: d.ficha || '',
-              descricao: d.info || '',
-              valor: Number(d.valor) || 0,
-              data: dataLanc,
-              periodo_ini: ini,
-              periodo_fim: fim,
-              oculta: false,
-              rota: '',
-              categoria: '',
-              editada: false
-            });
-            console.log('✅ Despesa salva via create:', despesaUid);
+            console.log('✅ Despesa upsert:', despesaUid);
           }
         } catch(e) {
           console.error('❌ Erro ao salvar despesa:', despesaUid, e);
+        }
+      }
+
+      // ✅ FIX: Remove despesas órfãs do Supabase (removidas da prestação pelo usuário)
+      // Só faz isso ao EDITAR (quando __prestBeingEdited existe)
+      if (window.__prestBeingEdited?.id && uidsSalvos.size > 0) {
+        try {
+          const empresaIdClean = await (window.getEmpresaAtual?.() || Promise.resolve(null));
+          if (empresaIdClean) {
+            const { data: despBanco } = await window.SupabaseAPI.client
+              .from('despesas')
+              .select('uid')
+              .eq('gerente_nome', g?.nome || '')
+              .eq('periodo_ini', ini)
+              .eq('periodo_fim', fim)
+              .eq('empresa_id', empresaIdClean);
+            
+            if (despBanco) {
+              const orphans = despBanco.filter(d => !uidsSalvos.has(d.uid));
+              for (const orph of orphans) {
+                console.log('🗑️ Removendo despesa órfã:', orph.uid);
+                try {
+                  await window.SupabaseAPI.despesas.deleteByUid(orph.uid);
+                } catch(e) {
+                  console.warn('Erro ao remover órfã:', orph.uid, e);
+                }
+              }
+            }
+          }
+        } catch(e) {
+          console.warn('Erro ao limpar despesas órfãs:', e);
         }
       }
 
@@ -3723,7 +3751,35 @@ async function __applyValesOnSave(prevRec, recPrest){
       console.log('[Vales] ✅ Vales recarregados do Supabase antes de aplicar descontos');
     }
     
-    const prevMap = new Map((prevRec?.valeParcAplicado || []).map(x => [x.id, Number(x.aplicado)||0]));
+    // ✅ FIX BUG #4: Se editando, busca prevMap do log do Supabase como fonte confiável
+    // Isso previne re-desconto quando prevRec.valeParcAplicado estava vazio
+    let prevMap = new Map((prevRec?.valeParcAplicado || []).map(x => [x.id, Number(x.aplicado)||0]));
+    
+    // Se estamos editando E prevMap está vazio, busca do vales_log
+    const isEditing = !!recPrest?.id && !!prevRec;
+    if (isEditing && prevMap.size === 0 && window.SupabaseAPI?.client) {
+      console.log('[Vales] ⚠️ prevMap vazio ao editar — consultando vales_log...');
+      try {
+        const { data: logs } = await window.SupabaseAPI.client
+          .from('vales_log')
+          .select('vale_id, delta')
+          .eq('prestacao_id', recPrest.id);
+        
+        if (logs && logs.length > 0) {
+          // Reconstrói prevMap a partir dos logs
+          const logMap = new Map();
+          logs.forEach(l => {
+            const existing = logMap.get(l.vale_id) || 0;
+            logMap.set(l.vale_id, existing + (Number(l.delta) || 0));
+          });
+          prevMap = logMap;
+          console.log('[Vales] ✅ prevMap reconstruído dos logs:', prevMap.size, 'vales');
+        }
+      } catch(e) {
+        console.warn('[Vales] Erro ao buscar logs para prevMap:', e);
+      }
+    }
+    
     const curMap  = new Map((prestacaoAtual?.valeParcAplicado || []).map(x => [x.id, Number(x.aplicado)||0]));
     const eventos = [];
     const valesParaAtualizar = [];
@@ -3750,6 +3806,7 @@ async function __applyValesOnSave(prevRec, recPrest){
       const delta = +(cur - prev);
       if (Math.abs(delta) < 1e-6) continue;
 
+      // ✅ FIX: Busca saldo REAL do Supabase (não do cache local que pode estar desatualizado)
       let saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
       if (window.SupabaseAPI?.client) {
         try {
@@ -3768,6 +3825,13 @@ async function __applyValesOnSave(prevRec, recPrest){
       
       let saldoDepois  = +(saldoAntes - delta);
       if (saldoDepois < EPS) saldoDepois = 0;
+
+      console.log('[Vales] 💰 Aplicando desconto:', {
+        vale: v.cod, valeId: v.id,
+        prev, cur, delta,
+        saldoAntes, saldoDepois,
+        isEditing
+      });
 
       v.valor = Number(saldoDepois.toFixed(2));
       v.saldo = v.valor;
@@ -3794,6 +3858,19 @@ async function __applyValesOnSave(prevRec, recPrest){
     }
 
     if (eventos.length){
+      // ✅ FIX: Se editando, remove logs antigos desta prestação antes de inserir novos
+      if (isEditing && window.SupabaseAPI?.client) {
+        try {
+          await window.SupabaseAPI.client
+            .from('vales_log')
+            .delete()
+            .eq('prestacao_id', recPrest.id);
+          console.log('[Vales] 🗑️ Logs antigos removidos para re-inserção');
+        } catch(e) {
+          console.warn('[Vales] Erro ao limpar logs antigos:', e);
+        }
+      }
+      
       if (window.SupabaseAPI?.vales) {
         for (const upd of valesParaAtualizar) {
           await window.SupabaseAPI.vales.update(upd.id, { 
@@ -3801,21 +3878,24 @@ async function __applyValesOnSave(prevRec, recPrest){
             valor: upd.saldo,
             quitado: upd.quitado 
           });
+          
+          // ✅ FIX: Verifica se o update persistiu
+          try {
+            const { data: check } = await window.SupabaseAPI.client
+              .from('vales')
+              .select('saldo')
+              .eq('uid', upd.id)
+              .single();
+            if (check && Math.abs(Number(check.saldo) - upd.saldo) > 0.01) {
+              console.error('[Vales] ❌ Saldo não persistiu! Esperado:', upd.saldo, 'Real:', check.saldo);
+            }
+          } catch(_){}
         }
       }
       
-      const eventosNaoDuplicados = [];
-      for (const ev of eventos) {
-        const jaTem = await verificarLogDuplicado(ev.valeId, recPrest.id);
-        if (!jaTem) {
-          eventosNaoDuplicados.push(ev);
-        } else {
-          console.log('[Vales] ⚠️ Log duplicado ignorado para vale:', ev.valeId, 'período:', ev.periodoIni, '-', ev.periodoFim);
-        }
-      }
-      
-      if (eventosNaoDuplicados.length) {
-        window.valesLog?.bulkAdd?.(eventosNaoDuplicados);
+      // Insere novos logs (sem verificar duplicata pois já limpamos)
+      if (eventos.length) {
+        window.valesLog?.bulkAdd?.(eventos);
       }
     }
     try { renderValesPrestacao?.(); } catch {}
@@ -5339,30 +5419,60 @@ window.addEventListener('vales:updated', ()=>{
       document.getElementById('pcIni').value = r.ini || '';
       document.getElementById('pcFim').value = r.fim || '';
 
-      // ✅ Se dados.despesas está vazio, busca da tabela despesas pelo período+gerente
-      // Evita recriar despesas com novos uid ao editar, gerando duplicatas no banco
-      let despesasParaEditor = (r.despesas || []).map(x => ({...x}));
-      if (despesasParaEditor.length === 0 && r.ini && r.fim && window.SupabaseAPI?.client) {
-        console.log('[EDIT] ⚠️ dados.despesas vazio — buscando da tabela despesas...');
+      // ✅ FIX: SEMPRE busca despesas da tabela `despesas` do Supabase como fonte primária.
+      // Isso preserva os UIDs originais e evita duplicatas ao re-salvar.
+      // Fallback: usa dados.despesas do JSONB (snapshot) se a query falhar.
+      let despesasParaEditor = [];
+      let usouFontePrimaria = false;
+      
+      if (r.ini && r.fim && window.SupabaseAPI?.client) {
+        console.log('[EDIT] 📥 Buscando despesas da tabela despesas (fonte primária)...');
         try {
-          const { data: despBanco } = await window.SupabaseAPI.client
+          const empresaId = await (window.getEmpresaAtual?.() || Promise.resolve(null));
+          
+          let query = window.SupabaseAPI.client
             .from('despesas')
-            .select('uid, ficha, descricao, valor, data, rota, categoria')
-            .eq('gerente_nome', r.gerenteNome || '')
-            .gte('data', r.ini)
-            .lte('data', r.fim);
+            .select('uid, ficha, descricao, valor, data, rota, categoria');
+          
+          // Filtro por período (usa periodo_ini/periodo_fim se disponível, senão data)
+          query = query.eq('gerente_nome', r.gerenteNome || '');
+          query = query.or(`and(periodo_ini.eq.${r.ini},periodo_fim.eq.${r.fim}),and(data.gte.${r.ini},data.lte.${r.fim})`);
+          
+          if (empresaId) {
+            query = query.eq('empresa_id', empresaId);
+          }
+          
+          const { data: despBanco } = await query;
+          
           if (despBanco && despBanco.length > 0) {
-            despesasParaEditor = despBanco.map(d => ({
-              id:    d.uid,
+            // Deduplica por uid
+            const uidSet = new Set();
+            despesasParaEditor = despBanco.filter(d => {
+              if (uidSet.has(d.uid)) return false;
+              uidSet.add(d.uid);
+              return true;
+            }).map(d => ({
+              id:    d.uid,           // ← Preserva o UID original!
               ficha: d.ficha || '',
               info:  d.descricao || '',
               valor: Number(d.valor) || 0,
               data:  d.data || ''
             }));
-            console.log('[EDIT] ✅ Recuperadas', despesasParaEditor.length, 'despesas do banco');
+            usouFontePrimaria = true;
+            console.log('[EDIT] ✅ Recuperadas', despesasParaEditor.length, 'despesas da tabela (UIDs preservados)');
           }
         } catch(e) {
-          console.warn('[EDIT] Não foi possível recuperar despesas do banco:', e);
+          console.warn('[EDIT] Erro ao buscar despesas da tabela:', e);
+        }
+      }
+      
+      // Fallback: usa snapshot do JSONB se não conseguiu da tabela
+      if (!usouFontePrimaria) {
+        despesasParaEditor = (r.despesas || []).map(x => ({...x}));
+        if (despesasParaEditor.length > 0) {
+          console.log('[EDIT] ⚠️ Usando snapshot JSONB:', despesasParaEditor.length, 'despesas');
+        } else {
+          console.log('[EDIT] ⚠️ Nenhuma despesa encontrada para esta prestação');
         }
       }
   

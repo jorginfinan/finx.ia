@@ -164,6 +164,12 @@
 
       console.log('[Saldo] Salvando - valor:', valor, 'gerente:', gId, 'empresa:', eId);
 
+      // ✅ FIX: Garantir que saldo nunca fique negativo
+      const valorSeguro = Math.max(0, Number(valor) || 0);
+      if (valor < 0) {
+        console.warn('[Saldo] ⚠️ Tentativa de salvar saldo negativo:', valor, '→ corrigido para 0');
+      }
+
       const timestamp = new Date().toISOString();
 
       // Verifica se já existe registro de saldo para (gerente, empresa)
@@ -185,7 +191,7 @@
         console.log('[Saldo] Atualizando registro existente:', existing.id);
         ({ error } = await window.SupabaseAPI.client
           .from('saldo_acumulado')
-          .update({ saldo: valor })
+          .update({ saldo: valorSeguro })
           .eq('id', existing.id));
       } else {
         console.log('[Saldo] Inserindo novo registro');
@@ -194,7 +200,7 @@
           .insert([{
             gerente_id: gId,
             empresa_id: eId,
-            saldo: valor,
+            saldo: valorSeguro,
             created_at: timestamp
           }]));
       }
@@ -204,11 +210,11 @@
         throw error;
       }
 
-      console.log('[Saldo] ✅ Saldo salvo com sucesso:', valor);
+      console.log('[Saldo] ✅ Saldo salvo com sucesso:', valorSeguro);
 
       // Dispara evento
       window.dispatchEvent(new CustomEvent('saldo:atualizado', {
-        detail: { gerenteId, empresaId, saldo: valor }
+        detail: { gerenteId, empresaId, saldo: valorSeguro }
       }));
 
       return { ok: true };

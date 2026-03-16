@@ -58,11 +58,21 @@
       a_pagar: Number(resumo.aPagar) || 0,
       observacoes: prestacao.saldoInfo?.observacao || null,
       fechada: prestacao.fechado || false,
-      // Dados completos em JSONB — despesas NÃO são salvas aqui,
-      // vivem exclusivamente na tabela despesas (fonte de verdade única)
+      // Dados completos em JSONB
+      // ✅ FIX: Despesas são salvas como snapshot no JSONB para que
+      // ao reabrir a prestação elas carreguem corretamente.
+      // A tabela `despesas` continua sendo a fonte de verdade para relatórios,
+      // mas o snapshot garante que a edição funcione sem perda.
       dados: {
         coletas: prestacao.coletas || [],
-        despesas: [],
+        despesas: (prestacao.despesas || []).map(d => ({
+          id: d.id,
+          ficha: d.ficha || '',
+          info: d.info || '',
+          valor: Number(d.valor) || 0,
+          data: d.data || '',
+          _despesaFixaId: d._despesaFixaId || null
+        })),
         pagamentos: prestacao.pagamentos || [],
         vales: prestacao.vales || [],
         valesSel: prestacao.valesSel || [],

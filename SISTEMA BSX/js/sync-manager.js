@@ -175,17 +175,11 @@
   }
   
   function syncFinanceiro() {
-    debounce('financeiro', () => {
+    debounce('financeiro', async () => {
       try {
-        // Recarrega dados do financeiro
-        if (window.lanc && Array.isArray(window.lanc)) {
-          const key = 'bsx_fin_lanc';
-          try {
-            const raw = localStorage.getItem(key);
-            window.lanc = raw ? JSON.parse(raw) : [];
-          } catch(e) {
-            console.error('Erro ao recarregar financeiro:', e);
-          }
+        // ✅ FIX: Recarrega do Supabase se disponível
+        if (typeof window.loadFinanceiro === 'function') {
+          await window.loadFinanceiro();
         }
         
         // Atualiza interface
@@ -205,17 +199,11 @@
   }
   
   function syncDespesas() {
-    debounce('despesas', () => {
+    debounce('despesas', async () => {
       try {
-        // Recarrega despesas
-        if (window.despesas && Array.isArray(window.despesas)) {
-          const key = 'bsx_despesas_v1';
-          try {
-            const raw = localStorage.getItem(key);
-            window.despesas = raw ? JSON.parse(raw) : [];
-          } catch(e) {
-            console.error('Erro ao recarregar despesas:', e);
-          }
+        // ✅ FIX: Recarrega do Supabase
+        if (typeof window.loadDespesas === 'function') {
+          await window.loadDespesas();
         }
         
         // Atualiza interface
@@ -231,11 +219,11 @@
   }
   
   function syncVales() {
-    debounce('vales', () => {
+    debounce('vales', async () => {
       try {
-        // Recarrega vales
-        if (typeof window.__valesReload === 'function') {
-          window.__valesReload();
+        // ✅ FIX: Recarrega do Supabase (assíncrono)
+        if (typeof window.__valesReloadAsync === 'function') {
+          await window.__valesReloadAsync();
         }
         
         // Atualiza interfaces

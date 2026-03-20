@@ -19,6 +19,7 @@ async function loadDespesas() {
       // Mapear campos do Supabase para JS
       id: d.id,
       uid: d.uid || d.id,
+      prestacaoUid: d.prestacao_uid || '',
       ficha: d.ficha || '',
       gerenteId: d.gerente_id || '',
       gerenteNome: d.gerente_nome || '', // gerente_nome → gerenteNome

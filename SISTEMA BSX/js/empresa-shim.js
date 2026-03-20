@@ -5,7 +5,7 @@
   
   // Configuração
   const EMPRESA_KEY = 'CURRENT_COMPANY';
-  const EMPRESAS = ['BSX', 'BETPLAY', 'EMANUEL'];
+  const EMPRESAS = ['BSX', 'BSXTV', 'BETPLAY', 'EMANUEL'];
   const DEFAULT = 'BSX';
   
   // Bancos que devem ser isolados por empresa

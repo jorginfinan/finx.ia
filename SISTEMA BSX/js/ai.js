@@ -1730,7 +1730,7 @@
 
   function renderGreeting() {
     const c = getCompany();
-    const nice = { BSX: 'BSX', BETPLAY: 'BetPlay', EMANUEL: 'Emanuel' }[c] || c;
+    const nice = { BSX: 'BSX', BSXTV: 'BSXTV', BETPLAY: 'BetPlay', EMANUEL: 'Emanuel' }[c] || c;
     if (!el.msgs) return;
     el.msgs.innerHTML = '';
     const row = document.createElement('div');

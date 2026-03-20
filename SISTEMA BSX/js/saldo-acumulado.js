@@ -11,6 +11,7 @@
   // Mapeamento de empresas (nome → UUID)
   let empresasMap = {
     'BSX': 'b61cf5cb-e232-44b1-87b2-951adf7ea14c',
+    'BSXTV': '54175954-7599-4fbb-9fd9-77b1b60820d4',
     'BETPLAY': '89a64c64-e583-4c39-8384-cef84f0f22db',
     'EMANUEL': '6d56f410-9b72-455b-9153-264d2c60f25b'
   };

@@ -400,7 +400,8 @@
           rota: despesa.rota || '',
           categoria: despesa.categoria || '',
           editada: false,
-          empresa_id: empresaId
+          empresa_id: empresaId,
+          prestacao_uid: despesa.prestacao_uid || despesa.prestacaoUid || null
         };
         
         const { data, error } = await this.client
@@ -435,10 +436,11 @@
           rota: despesa.rota || '',
           categoria: despesa.categoria || '',
           editada: despesa.editada || false,
-          empresa_id: empresaId
+          empresa_id: empresaId,
+          prestacao_uid: despesa.prestacao_uid || despesa.prestacaoUid || null
         };
         
-        console.log('[DespesasAPI] 📤 Upsert despesa:', despesaSupabase.uid, despesaSupabase.descricao);
+        console.log('[DespesasAPI] 📤 Upsert despesa:', despesaSupabase.uid, despesaSupabase.descricao, 'prest:', despesaSupabase.prestacao_uid);
         
         const { data, error } = await this.client
           .from(this.table)
@@ -497,6 +499,9 @@
         if (patch.rota !== undefined) patchSupabase.rota = patch.rota;
         if (patch.categoria !== undefined) patchSupabase.categoria = patch.categoria;
         if (patch.editada !== undefined) patchSupabase.editada = patch.editada;
+        if (patch.prestacao_uid !== undefined || patch.prestacaoUid !== undefined) {
+          patchSupabase.prestacao_uid = patch.prestacao_uid || patch.prestacaoUid;
+        }
         
         console.log('[API] 📤 Enviando para Supabase:', patchSupabase);
         
@@ -539,6 +544,26 @@
       } catch (error) {
         console.error('Erro ao deletar despesa:', error);
         return false;
+      }
+    }
+    
+    // ✅ NOVO: Buscar despesas por prestacao_uid (FK direta)
+    async getByPrestacaoUid(prestacaoUid) {
+      try {
+        const empresaId = await getEmpresaId();
+        
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('empresa_id', empresaId)
+          .eq('prestacao_uid', prestacaoUid)
+          .order('data', { ascending: true });
+        
+        if (error) throw error;
+        return data || [];
+      } catch (error) {
+        console.error('[DespesasAPI] Erro getByPrestacaoUid:', error);
+        return [];
       }
     }
   }

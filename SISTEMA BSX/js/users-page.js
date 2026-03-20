@@ -9,7 +9,7 @@
   const permGridEl = page.querySelector('#permGrid');
   const tblBody = page.querySelector('#userTable tbody');
 
-  const COMPANIES = ['BSX', 'BetPlay', 'Emanuel'];
+  const COMPANIES = ['BSX', 'BSXTV', 'BetPlay', 'Emanuel'];
 
   // grupos → chaves canônicas do seu RBAC (auth-rbac.js)
   const PERMS_UI = [

@@ -1141,9 +1141,58 @@ async function processarExcelDespesas(file) {
   });
 }
 
-// Expõe função globalmente para debug
-window.importarDespesasExcel = function() {
-  document.getElementById('inputImportDespesas')?.click();
+// Expõe função globalmente — cria o input se não existir
+window.__importDespesasExcel = window.importarDespesasExcel = function() {
+  let inp = document.getElementById('inputImportDespesas');
+  if (!inp) {
+    inp = document.createElement('input');
+    inp.type = 'file';
+    inp.id = 'inputImportDespesas';
+    inp.accept = '.xlsx,.xls,.csv';
+    inp.style.display = 'none';
+    document.body.appendChild(inp);
+
+    inp.addEventListener('change', async function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        if (typeof processarExcelDespesas !== 'function') {
+          alert('Função de processamento não carregada. Recarregue a página.');
+          return;
+        }
+        const despesasImportadas = await processarExcelDespesas(file);
+        if (despesasImportadas.length === 0) {
+          window.showNotification?.('Nenhuma despesa encontrada no arquivo', 'error') || alert('Nenhuma despesa encontrada.');
+          return;
+        }
+        const confirma = confirm(
+          'Encontradas ' + despesasImportadas.length + ' despesas.\n\n' +
+          'Deseja importar?\n\n' +
+          'Primeiras 3:\n' +
+          despesasImportadas.slice(0, 3).map(function(d) {
+            return '• ' + (d.ficha || '-') + ' | ' + (d.info || '-') + ' | R$ ' + Number(d.valor || 0).toFixed(2);
+          }).join('\n')
+        );
+        if (!confirma) { inp.value = ''; return; }
+        for (const desp of despesasImportadas) {
+          await pcAddDespesa({
+            ficha: String(desp.ficha || '').trim(),
+            info:  String(desp.info  || '').trim(),
+            valor: Number(desp.valor) || 0
+          });
+        }
+        pcRender();
+        pcSchedule({ render: true });
+        window.showNotification?.('✅ ' + despesasImportadas.length + ' despesas importadas!', 'success') || alert(despesasImportadas.length + ' despesas importadas!');
+      } catch (error) {
+        console.error('[ImportDespesas] Erro:', error);
+        window.showNotification?.('Erro ao importar: ' + error.message, 'error') || alert('Erro: ' + error.message);
+      }
+      inp.value = '';
+    });
+  }
+  console.log('[ImportDespesas] ✅ Abrindo seletor de arquivo...');
+  inp.click();
 };
 
 // ===== DESPESAS FIXAS (Recorrentes Semanais) =====

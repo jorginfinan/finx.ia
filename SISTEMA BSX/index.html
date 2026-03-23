@@ -709,10 +709,100 @@
             </table>
             <div class="pc-actions">
               <button class="btn" id="btnPcAddDespesa">Adicionar Despesa</button>
-              <button class="btn" id="btnPcImportDespesa" onclick="window.__importDespesasExcel()" title="Importar despesas de arquivo Excel/CSV">📥 Importar Excel</button>
+              <button class="btn" id="btnPcImportExcel" style="background:#2563eb;color:#fff">📥 Importar Excel</button>
               <button class="btn ghost" id="btnPcLimpar">Limpar Despesas</button>
-              <button class="btn ghost" onclick="abrirGerenciadorDespesasFixas()" title="Ver despesas fixas cadastradas">📌 Despesas Fixas</button>
             </div>
+            <input type="file" id="impDespFile" accept=".xlsx,.xls,.csv" style="display:none">
+            <script>
+            // === IMPORTAR DESPESAS EXCEL — 100% autocontido ===
+            (function(){
+              var btn = document.getElementById('btnPcImportExcel');
+              var inp = document.getElementById('impDespFile');
+              if(!btn||!inp) return;
+
+              btn.onclick = function(e){
+                e.preventDefault();
+                console.log('[IMPORT] Botão clicado');
+                inp.value = '';
+                inp.click();
+              };
+
+              inp.onchange = function(){
+                var file = inp.files && inp.files[0];
+                if(!file){ console.log('[IMPORT] Nenhum arquivo'); return; }
+                console.log('[IMPORT] Arquivo:', file.name);
+
+                if(typeof XLSX==='undefined'){
+                  alert('Biblioteca XLSX não carregada. Recarregue a página (Ctrl+Shift+R).');
+                  return;
+                }
+
+                var reader = new FileReader();
+                reader.onload = function(ev){
+                  try{
+                    var wb = XLSX.read(new Uint8Array(ev.target.result), {type:'array'});
+                    var ws = wb.Sheets[wb.SheetNames[0]];
+                    var rows = XLSX.utils.sheet_to_json(ws, {header:1});
+                    if(rows.length<2){ alert('Arquivo vazio ou sem dados.'); return; }
+
+                    var h = rows[0].map(function(x){ return String(x||'').toLowerCase().trim(); });
+                    var fi=-1, ii=-1, vi=-1;
+                    for(var c=0;c<h.length;c++){
+                      if(fi<0 && /ficha|cod/.test(h[c])) fi=c;
+                      if(ii<0 && /info|desc|obs/.test(h[c])) ii=c;
+                      if(vi<0 && /valor|total|r\$/.test(h[c])) vi=c;
+                    }
+                    if(fi<0) fi=0; if(ii<0) ii=1; if(vi<0) vi=2;
+
+                    var despesas=[];
+                    for(var r=1;r<rows.length;r++){
+                      var row=rows[r]; if(!row||!row.length) continue;
+                      var ficha=String(row[fi]||'').trim();
+                      var info=String(row[ii]||'').trim();
+                      var val=row[vi];
+                      if(typeof val==='string') val=val.replace(/[R$\s]/g,'').replace(/\./g,'').replace(',','.');
+                      val=parseFloat(val)||0;
+                      if(info||val>0) despesas.push({ficha:ficha,info:info,valor:val});
+                    }
+
+                    if(!despesas.length){ alert('Nenhuma despesa encontrada no arquivo.'); return; }
+
+                    var preview=despesas.slice(0,3).map(function(d){
+                      return '• '+(d.ficha||'-')+' | '+(d.info||'-')+' | R$ '+d.valor.toFixed(2);
+                    }).join('\n');
+
+                    if(!confirm(despesas.length+' despesas encontradas.\n\nImportar?\n\n'+preview)) return;
+
+                    var added=0;
+                    for(var i=0;i<despesas.length;i++){
+                      var d=despesas[i];
+                      if(typeof pcAddDespesa==='function'){
+                        pcAddDespesa({ficha:d.ficha,info:d.info,valor:d.valor});
+                        added++;
+                      } else {
+                        window.prestacaoAtual=window.prestacaoAtual||{despesas:[]};
+                        window.prestacaoAtual.despesas=window.prestacaoAtual.despesas||[];
+                        var id=typeof uid==='function'?uid():'d_'+Math.random().toString(36).slice(2,10);
+                        window.prestacaoAtual.despesas.push({id:id,ficha:d.ficha,info:d.info,valor:d.valor});
+                        added++;
+                      }
+                    }
+
+                    try{if(typeof pcRender==='function')pcRender();}catch(ex){}
+                    try{if(typeof pcSchedule==='function')pcSchedule({render:true});}catch(ex){}
+                    alert(added+' despesas importadas!');
+                    console.log('[IMPORT] OK:',added,'despesas');
+                  }catch(err){
+                    console.error('[IMPORT] ERRO:',err);
+                    alert('Erro ao processar: '+err.message);
+                  }
+                };
+                reader.readAsArrayBuffer(file);
+              };
+
+              console.log('[IMPORT] ✅ Botão Importar Excel pronto');
+            })();
+            </script>
           </div>
 
 <!-- COLUNA DIREITA -->

@@ -1041,9 +1041,8 @@ async function salvarDespesaNoSupabase(despesa) {
     e.preventDefault();
     e.stopPropagation();
     const inp = getOrCreateInput();
-    // setTimeout necessário: alguns browsers exigem que o click venha de evento direto
-    // Forçamos via dispatchEvent nativo para contornar restrições de segurança
-    inp.dispatchEvent(new MouseEvent('click', { bubbles: false, cancelable: true }));
+    // ✅ FIX: inp.click() funciona em todos os browsers (dispatchEvent era bloqueado)
+    inp.click();
   }, true); // capture=true garante que rodamos antes de qualquer stopPropagation
 
 })();

@@ -1037,7 +1037,7 @@ async function salvarDespesaNoSupabase(despesa) {
 
   // Delegação no document — funciona independente de quando o botão é criado/recriado
   document.addEventListener('click', function(e) {
-    if (!e.target.matches('#btnPcImportDespesa')) return;
+    const btn = e.target.closest('#btnPcImportDespesa'); if (!btn) return;
     e.preventDefault();
     e.stopPropagation();
     const inp = getOrCreateInput();

@@ -3707,6 +3707,7 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
           if (window.SupabaseAPI?.despesas?.upsert) {
             await window.SupabaseAPI.despesas.upsert({
               uid: despesaUid,
+              prestacao_uid: recPrest.id,  // ✅ FIX BUG #2: vincula despesa à prestação
               gerente_nome: g?.nome || '',
               ficha: d.ficha || '',
               descricao: d.info || '',
@@ -3719,7 +3720,7 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
               categoria: '',
               editada: false
             });
-            console.log('✅ Despesa upsert:', despesaUid);
+            console.log('✅ Despesa upsert:', despesaUid, '→ prestacao:', recPrest.id);
           }
         } catch(e) {
           console.error('❌ Erro ao salvar despesa:', despesaUid, e);
@@ -3730,24 +3731,41 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
       // Só faz isso ao EDITAR (quando __prestBeingEdited existe)
       if (window.__prestBeingEdited?.id && uidsSalvos.size > 0) {
         try {
-          const empresaIdClean = await (window.getEmpresaAtual?.() || Promise.resolve(null));
-          if (empresaIdClean) {
-            const { data: despBanco } = await window.SupabaseAPI.client
-              .from('despesas')
-              .select('uid')
-              .eq('gerente_nome', g?.nome || '')
-              .eq('periodo_ini', ini)
-              .eq('periodo_fim', fim)
-              .eq('empresa_id', empresaIdClean);
-            
-            if (despBanco) {
-              const orphans = despBanco.filter(d => !uidsSalvos.has(d.uid));
-              for (const orph of orphans) {
-                console.log('🗑️ Removendo despesa órfã:', orph.uid);
-                try {
-                  await window.SupabaseAPI.despesas.deleteByUid(orph.uid);
-                } catch(e) {
-                  console.warn('Erro ao remover órfã:', orph.uid, e);
+          // ✅ FIX BUG #3: Guard — sem gerente identificado, a query filtraria gerente_nome=''
+          // podendo deletar despesas de outros gerentes. Aborta se g.nome não estiver disponível.
+          if (!g?.nome) {
+            console.warn('[Prestações] ⚠️ Pulando remoção de órfãs: gerente não identificado em window.gerentes');
+          } else {
+            const empresaIdClean = await (window.getEmpresaAtual?.() || Promise.resolve(null));
+            if (empresaIdClean) {
+              // ✅ FIX BUG #3: Prioriza filtro por prestacao_uid (preciso) com fallback por período+gerente
+              let query = window.SupabaseAPI.client
+                .from('despesas')
+                .select('uid')
+                .eq('empresa_id', empresaIdClean);
+
+              if (recPrest.id) {
+                // Filtro preciso: apenas despesas vinculadas a esta prestação
+                query = query.eq('prestacao_uid', recPrest.id);
+              } else {
+                // Fallback: filtra por período + gerente
+                query = query
+                  .eq('gerente_nome', g.nome)
+                  .eq('periodo_ini', ini)
+                  .eq('periodo_fim', fim);
+              }
+
+              const { data: despBanco } = await query;
+              
+              if (despBanco) {
+                const orphans = despBanco.filter(d => !uidsSalvos.has(d.uid));
+                for (const orph of orphans) {
+                  console.log('🗑️ Removendo despesa órfã:', orph.uid);
+                  try {
+                    await window.SupabaseAPI.despesas.deleteByUid(orph.uid);
+                  } catch(e) {
+                    console.warn('Erro ao remover órfã:', orph.uid, e);
+                  }
                 }
               }
             }

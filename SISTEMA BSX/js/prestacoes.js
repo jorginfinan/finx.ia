@@ -2373,7 +2373,10 @@ const valePg = valesAplicados.reduce((sum, v) => {
       prestacaoAtual.resumo = {
         ...(prestacaoAtual.resumo || {}),
         saldoNegAcarreado: novoSaldo,
-        baseComissao: baseComissao
+        saldoAnterior: saldoAnterior,           // ✅ Saldo ANTES de aplicar essa prestação
+        baseParaSaldo: baseParaSaldo,           // ✅ Base efetiva (coletas-despesas ou coletas)
+        baseComissao: baseComissao,
+        usandoSegundaComissaoComSaldo: true     // ✅ Flag para renderização correta
       };
       
       console.log('📊 [SaldoAcumulado] saldoInfo definido:', prestacaoAtual.saldoInfo);
@@ -2623,13 +2626,20 @@ const restam = aPagar - (pagos + adiantPg) + pagamentosDivida;
   // Verifica se o gerente atual é 50% com saldo acumulado
   const _gerenteAtual50 = prestacaoAtual.saldoInfo?.regraEspecial === 'GERENTE_50_SALDO';
   
+  // ✅ Verifica se gerente atual usa regra de 2ª comissão COM saldo
+  const _gerenteAtual2comSaldo = prestacaoAtual.saldoInfo?.regraEspecial === 'SEGUNDA_COMISSAO';
+  
   const _saldoFlags = {
     // ✅ IMPORTANTE: Só preserva usandoSaldo50 se o gerente atual realmente usa essa regra
     usandoSaldo50: _gerenteAtual50 && (prestacaoAtual.resumo?.usandoSaldo50 || false),
     saldoAnterior: _gerenteAtual50 ? (prestacaoAtual.resumo?.saldoAnterior || 0) : 0,
     descontoSaldo: _gerenteAtual50 ? (prestacaoAtual.resumo?.descontoSaldo || 0) : 0,
     resultadoSemComissao: _gerenteAtual50 ? (prestacaoAtual.resumo?.resultadoSemComissao || 0) : 0,
-    comissaoVirtual: _gerenteAtual50 ? (prestacaoAtual.resumo?.comissaoVirtual || 0) : 0
+    comissaoVirtual: _gerenteAtual50 ? (prestacaoAtual.resumo?.comissaoVirtual || 0) : 0,
+    // ✅ NOVO: flags da regra de 2ª comissão com saldo
+    usandoSegundaComissaoComSaldo: _gerenteAtual2comSaldo,
+    saldoAnteriorCom2: _gerenteAtual2comSaldo ? (prestacaoAtual.saldoInfo?.saldoCarregarAnterior || 0) : 0,
+    baseParaSaldo: _gerenteAtual2comSaldo ? (prestacaoAtual.resumo?.baseParaSaldo || 0) : 0
   };
   
   console.log('🔄 [Resumo] Flags de saldo:', { _gerenteAtual50, _saldoFlags });
@@ -2661,6 +2671,10 @@ const restam = aPagar - (pagos + adiantPg) + pagamentosDivida;
     descontoSaldo: _saldoFlags.descontoSaldo,
     resultadoSemComissao: _saldoFlags.resultadoSemComissao,
     comissaoVirtual: _saldoFlags.comissaoVirtual,
+    // ✅ NOVO: Flags da regra de 2ª comissão com saldo
+    usandoSegundaComissaoComSaldo: _saldoFlags.usandoSegundaComissaoComSaldo,
+    saldoAnteriorCom2: _saldoFlags.saldoAnteriorCom2,
+    baseParaSaldo: _saldoFlags.baseParaSaldo,
 resultadoSemana: coletas - despesasTot,
 // saldo negativo acumulado que já existia ANTES dessa prestação
 negAnterior: (
@@ -3161,58 +3175,113 @@ if (!dataURL) {
 // SEQUÊNCIA PARA MODELO COM 2ª COMISSÃO
 // ========================================
 if (temSegundaComissao) {
-  // 1. Coletas
-  ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', fmtBRL(coletas2), 
-               { bold:true, size:R_BOLD });
+  // ✅ Verifica se está usando saldo acumulado (regra coletas-despesas)
+  const usandoSaldoCom2_b = r.usandoSegundaComissaoComSaldo === true;
+  const saldoAntCom2_b = Number(r.saldoAnteriorCom2 || 0);
+  const baseParaSaldo2_b = Number(r.baseParaSaldo || 0);
+  const saldoCarry2_b = Number(r.saldoNegAcarreado || 0);
   
-  // 2. Base Comissão
-  const baseComissao2 = Number(r.baseComissao || coletas2);
-  ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Base Comissão', fmtBRL(baseComissao2), 
-               { color:'#16a34a', valueColor:'#16a34a', size:R_LINE });
-  
-  // 3. Saldo a Carregar
-  const saldoCarry2 = Number(r.saldoNegAcarreado || 0);
-  ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo a Carregar', fmtBRL(saldoCarry2), 
-               { valueColor:'#b91c1c', size:R_LINE });
-  
-  // 4. Comissão 1
-  ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
-    'Comissão 1 (' + (Number(r.perc)||0) + '%)',
-    fmtBRL(c1),
-    { valueColor:'#16a34a', size: R_LINE }
-  );
-  
-  // 5. Resultado (Coletas - Com. 1)
-  const resIntermediario = coletas2 - c1;
-  ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
-    'Resultado (Coletas - Com. 1)',
-    fmtBRL(resIntermediario),
-    { size: R_LINE }
-  );
-  
-  // 6. Comissão 2
-  const rot = r?.flags?.sequencial ? 'Comissão 2 (seq.)' : 'Comissão 2';
-  ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
-    rot + ' (' + (Number(r.perc2)||0) + '%)',
-    fmtBRL(c2),
-    { valueColor:'#16a34a', size: R_LINE }
-  );
-  
-  // 7. Despesas
-  ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Despesas', fmtBRL(despesas2), 
-               { valueColor:'#b91c1c', size:R_LINE });
-  
-  // 8. Total (Coletas - Despesas - Comissões)
-  const totalIntermediario = coletas2 - despesas2 - c1 - c2;
-  ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 
-    'Total (Coletas - Despesas - Comissões)', 
-    fmtBRL(totalIntermediario), 
-    { bold:true, size:R_BOLD }
-  );
-  
-  // 9. Resultado FINAL (sem deve anterior)
-  ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', fmtBRL(totalIntermediario),
-               { bold:true, size:R_BOLD });
+  if (usandoSaldoCom2_b) {
+    // ============================================
+    // RENDERIZAÇÃO COM SALDO ACUMULADO (despesas saem primeiro)
+    // ============================================
+    
+    // 1. Coletas
+    ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', fmtBRL(coletas2), 
+                 { bold:true, size:R_BOLD });
+    
+    // 2. Despesas (PRIMEIRO descontadas)
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Despesas', fmtBRL(despesas2), 
+                 { valueColor:'#b91c1c', size:R_LINE });
+    
+    // 3. Total (Coletas - Despesas) = BASE
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Total (Coletas - Despesas)', 
+                 fmtBRL(baseParaSaldo2_b), 
+                 { bold:true, color:'#16a34a', valueColor:'#16a34a', size:R_BOLD });
+    
+    // 4. Saldo Anterior (do banco)
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo Anterior', 
+                 fmtBRL(saldoAntCom2_b), 
+                 { valueColor:'#b91c1c', size:R_LINE });
+    
+    // 5. Comissão 1
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+      'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+      fmtBRL(c1),
+      { valueColor:'#16a34a', size: R_LINE }
+    );
+    
+    // 6. Comissão 2
+    const rotB = r?.flags?.sequencial ? 'Comissão 2 (seq.)' : 'Comissão 2';
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+      rotB + ' (' + (Number(r.perc2)||0) + '%)',
+      fmtBRL(c2),
+      { valueColor:'#16a34a', size: R_LINE }
+    );
+    
+    // 7. Saldo a Carregar (novo)
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo a Carregar', 
+                 fmtBRL(saldoCarry2_b), 
+                 { valueColor:'#b91c1c', bold:true, size:R_LINE });
+    
+    // 8. Resultado FINAL
+    const resultadoFinalB = baseParaSaldo2_b - c1 - c2;
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', fmtBRL(resultadoFinalB),
+                 { bold:true, size:R_BOLD });
+    
+  } else {
+    // ============================================
+    // SEM SALDO ACUMULADO (sequência antiga)
+    // ============================================
+    
+    // 1. Coletas
+    ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', fmtBRL(coletas2), 
+                 { bold:true, size:R_BOLD });
+    
+    // 2. Base Comissão
+    const baseComissao2 = Number(r.baseComissao || coletas2);
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Base Comissão', fmtBRL(baseComissao2), 
+                 { color:'#16a34a', valueColor:'#16a34a', size:R_LINE });
+    
+    // 3. Comissão 1
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+      'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+      fmtBRL(c1),
+      { valueColor:'#16a34a', size: R_LINE }
+    );
+    
+    // 4. Resultado (Coletas - Com. 1)
+    const resIntermediario = coletas2 - c1;
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+      'Resultado (Coletas - Com. 1)',
+      fmtBRL(resIntermediario),
+      { size: R_LINE }
+    );
+    
+    // 5. Comissão 2
+    const rotB2 = r?.flags?.sequencial ? 'Comissão 2 (seq.)' : 'Comissão 2';
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+      rotB2 + ' (' + (Number(r.perc2)||0) + '%)',
+      fmtBRL(c2),
+      { valueColor:'#16a34a', size: R_LINE }
+    );
+    
+    // 6. Despesas
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Despesas', fmtBRL(despesas2), 
+                 { valueColor:'#b91c1c', size:R_LINE });
+    
+    // 7. Total
+    const totalIntermediario = coletas2 - despesas2 - c1 - c2;
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 
+      'Total (Coletas - Despesas - Comissões)', 
+      fmtBRL(totalIntermediario), 
+      { bold:true, size:R_BOLD }
+    );
+    
+    // 8. Resultado
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', fmtBRL(totalIntermediario),
+                 { bold:true, size:R_BOLD });
+  }
 
 } 
 // ========================================
@@ -4513,63 +4582,120 @@ window.prestToDataURL = function(rec) {
     // SEQUÊNCIA PARA MODELO COM 2ª COMISSÃO
     // ========================================
     if (temSegundaComissao && typeof drawKV2 === 'function') {
-      // 1. Coletas
-      ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', 
-                   window.fmtBRL ? window.fmtBRL(coletas2) : String(coletas2), 
-                   { bold:true, size:R_BOLD });
-      
-      // 2. Base Comissão
-      const baseComissao2 = Number(r.baseComissao || coletas2);
-      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Base Comissão', 
-                   window.fmtBRL ? window.fmtBRL(baseComissao2) : String(baseComissao2), 
-                   { color:'#16a34a', valueColor:'#16a34a', size:R_LINE });
-      
-      // 3. Saldo a Carregar
+      // ✅ Verifica se está usando saldo acumulado (regra coletas-despesas)
+      const usandoSaldoCom2 = r.usandoSegundaComissaoComSaldo === true;
+      const saldoAntCom2 = Number(r.saldoAnteriorCom2 || 0);
+      const baseParaSaldo2 = Number(r.baseParaSaldo || 0);
       const saldoCarry2 = Number(r.saldoNegAcarreado || 0);
-      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo a Carregar', 
-                   window.fmtBRL ? window.fmtBRL(saldoCarry2) : String(saldoCarry2), 
-                   { valueColor:'#b91c1c', size:R_LINE });
       
-      // 4. Comissão 1
-      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
-        'Comissão 1 (' + (Number(r.perc)||0) + '%)',
-        window.fmtBRL ? window.fmtBRL(c1) : String(c1),
-        { valueColor:'#16a34a', size: R_LINE }
-      );
-      
-      // 5. Resultado (Coletas - Com. 1)
-      const resIntermediario = coletas2 - c1;
-      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
-        'Resultado (Coletas - Com. 1)',
-        window.fmtBRL ? window.fmtBRL(resIntermediario) : String(resIntermediario),
-        { size: R_LINE }
-      );
-      
-      // 6. Comissão 2
-      const rot = r?.flags?.sequencial ? 'Comissão 2 (seq.)' : 'Comissão 2';
-      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
-        rot + ' (' + (Number(r.perc2)||0) + '%)',
-        window.fmtBRL ? window.fmtBRL(c2) : String(c2),
-        { valueColor:'#16a34a', size: R_LINE }
-      );
-      
-      // 7. Despesas
-      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Despesas', 
-                   window.fmtBRL ? window.fmtBRL(despesas2) : String(despesas2), 
-                   { valueColor:'#b91c1c', size:R_LINE });
-      
-      // 8. Total (Coletas - Despesas - Comissões)
-      const totalIntermediario = coletas2 - despesas2 - c1 - c2;
-      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 
-        'Total (Coletas - Despesas - Comissões)', 
-        window.fmtBRL ? window.fmtBRL(totalIntermediario) : String(totalIntermediario), 
-        { bold:true, size:R_BOLD }
-      );
-      
-      // 9. Resultado FINAL (sem deve anterior)
-      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', 
-                   window.fmtBRL ? window.fmtBRL(totalIntermediario) : String(totalIntermediario),
-                   { bold:true, size:R_BOLD });
+      if (usandoSaldoCom2) {
+        // ============================================
+        // RENDERIZAÇÃO COM SALDO ACUMULADO (despesas saem primeiro)
+        // ============================================
+        
+        // 1. Coletas
+        ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', 
+                     window.fmtBRL ? window.fmtBRL(coletas2) : String(coletas2), 
+                     { bold:true, size:R_BOLD });
+        
+        // 2. Despesas (PRIMEIRO descontadas)
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Despesas', 
+                     window.fmtBRL ? window.fmtBRL(despesas2) : String(despesas2), 
+                     { valueColor:'#b91c1c', size:R_LINE });
+        
+        // 3. Total (Coletas - Despesas) = BASE
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Total (Coletas - Despesas)', 
+                     window.fmtBRL ? window.fmtBRL(baseParaSaldo2) : String(baseParaSaldo2), 
+                     { bold:true, color:'#16a34a', valueColor:'#16a34a', size:R_BOLD });
+        
+        // 4. Saldo Anterior (do banco)
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo Anterior', 
+                     window.fmtBRL ? window.fmtBRL(saldoAntCom2) : String(saldoAntCom2), 
+                     { valueColor:'#b91c1c', size:R_LINE });
+        
+        // 5. Comissão 1
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+          'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+          window.fmtBRL ? window.fmtBRL(c1) : String(c1),
+          { valueColor:'#16a34a', size: R_LINE }
+        );
+        
+        // 6. Comissão 2
+        const rot = r?.flags?.sequencial ? 'Comissão 2 (seq.)' : 'Comissão 2';
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+          rot + ' (' + (Number(r.perc2)||0) + '%)',
+          window.fmtBRL ? window.fmtBRL(c2) : String(c2),
+          { valueColor:'#16a34a', size: R_LINE }
+        );
+        
+        // 7. Saldo a Carregar (novo, após abater base)
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo a Carregar', 
+                     window.fmtBRL ? window.fmtBRL(saldoCarry2) : String(saldoCarry2), 
+                     { valueColor:'#b91c1c', bold:true, size:R_LINE });
+        
+        // 8. Resultado FINAL
+        const resultadoFinal = baseParaSaldo2 - c1 - c2;
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', 
+                     window.fmtBRL ? window.fmtBRL(resultadoFinal) : String(resultadoFinal),
+                     { bold:true, size:R_BOLD });
+        
+      } else {
+        // ============================================
+        // SEM SALDO ACUMULADO (sequência antiga, base = coletas)
+        // ============================================
+        
+        // 1. Coletas
+        ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', 
+                     window.fmtBRL ? window.fmtBRL(coletas2) : String(coletas2), 
+                     { bold:true, size:R_BOLD });
+        
+        // 2. Base Comissão
+        const baseComissao2 = Number(r.baseComissao || coletas2);
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Base Comissão', 
+                     window.fmtBRL ? window.fmtBRL(baseComissao2) : String(baseComissao2), 
+                     { color:'#16a34a', valueColor:'#16a34a', size:R_LINE });
+        
+        // 3. Comissão 1
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+          'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+          window.fmtBRL ? window.fmtBRL(c1) : String(c1),
+          { valueColor:'#16a34a', size: R_LINE }
+        );
+        
+        // 4. Resultado (Coletas - Com. 1)
+        const resIntermediario = coletas2 - c1;
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+          'Resultado (Coletas - Com. 1)',
+          window.fmtBRL ? window.fmtBRL(resIntermediario) : String(resIntermediario),
+          { size: R_LINE }
+        );
+        
+        // 5. Comissão 2
+        const rot = r?.flags?.sequencial ? 'Comissão 2 (seq.)' : 'Comissão 2';
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+          rot + ' (' + (Number(r.perc2)||0) + '%)',
+          window.fmtBRL ? window.fmtBRL(c2) : String(c2),
+          { valueColor:'#16a34a', size: R_LINE }
+        );
+        
+        // 6. Despesas
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Despesas', 
+                     window.fmtBRL ? window.fmtBRL(despesas2) : String(despesas2), 
+                     { valueColor:'#b91c1c', size:R_LINE });
+        
+        // 7. Total
+        const totalIntermediario = coletas2 - despesas2 - c1 - c2;
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 
+          'Total (Coletas - Despesas - Comissões)', 
+          window.fmtBRL ? window.fmtBRL(totalIntermediario) : String(totalIntermediario), 
+          { bold:true, size:R_BOLD }
+        );
+        
+        // 8. Resultado
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', 
+                     window.fmtBRL ? window.fmtBRL(totalIntermediario) : String(totalIntermediario),
+                     { bold:true, size:R_BOLD });
+      }
 
     } 
     // ========================================

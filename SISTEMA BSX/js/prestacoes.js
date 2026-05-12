@@ -2183,10 +2183,13 @@ const valePg = valesAplicados.reduce((sum, v) => {
 }, 0);
 
   // ======= CONFIGURAÇÕES DO GERENTE =======
-  const temSegundaComissao = !!g.temSegundaComissao || (g.comissao2 > 0);
-  const comissaoPorRotaPositiva = !!g.comissaoPorRotaPositiva;
+  // ✅ CORREÇÃO: 2ª comissão SOMENTE pela flag explícita (não automático por valor > 0)
+  // Suporta camelCase (cache) e snake_case (Supabase)
+  const temSegundaComissao = !!g.temSegundaComissao || !!g.tem_segunda_comissao;
+  const comissaoPorRotaPositiva = !!g.comissaoPorRotaPositiva || !!g.comissao_por_rota_positiva;
   const baseCalculo = (g.baseCalculo || g.base_calculo || 'COLETAS_MENOS_DESPESAS').toUpperCase();
-  const perc2 = Number(g.comissao2) || 0;
+  // perc2 só vale se a flag estiver ativa
+  const perc2 = temSegundaComissao ? (Number(g.comissao2) || 0) : 0;
   
   // ======= CÁLCULO BASEADO NO MODELO =======
   let baseComissao = 0;
@@ -2198,22 +2201,26 @@ const valePg = valesAplicados.reduce((sum, v) => {
         const empresaAtualCheck = window.getCompany ? window.getCompany() : 'BSX';
         const empresaSemSaldoAcumulado = empresaAtualCheck === 'EMANUEL';
         
-        // ✅ NOVA REGRA: Saldo acumulado funciona para:
-        // 1. Gerentes com temSaldoAcumulado = true (qualquer %, incluindo 50%)
-        // 2. Gerentes com 2ª comissão (perc1 < 50)
+        // ✅ NOVA REGRA (v3): Saldo acumulado é controlado APENAS pela flag explícita
+        // Funciona para QUALQUER porcentagem de comissão (10%, 20%, 25%, 30%, 40%, 50%)
+        // REMOVIDA a regra automática "(perc1 < 50 && temSegundaComissao)"
         const temSaldoAcumuladoConfig = g.temSaldoAcumulado === true || g.tem_saldo_acumulado === true;
         
         const usaSaldoAcumulado = !empresaSemSaldoAcumulado && 
         window.SaldoAcumulado && g && perc1 > 0 && 
-        (temSaldoAcumuladoConfig || (perc1 < 50 && temSegundaComissao));
+        temSaldoAcumuladoConfig;
         
-        // Verifica se é gerente 50% com saldo acumulado (sem 2ª comissão)
+        // ✅ Gerente 50% com saldo acumulado: regra especial mantida (metade do negativo vai p/ banco)
+        // Só ativa se NÃO tiver 2ª comissão (gerente 50% puro com saldo)
         const isGerente50ComSaldo = !temSegundaComissao && perc1 >= 50 && temSaldoAcumuladoConfig;
         
         console.log('🔍 [DEBUG] Verificação Saldo Acumulado:', {
           gerente: g.nome || g.numero,
           perc1,
           temSegundaComissao,
+          'g.temSegundaComissao': g.temSegundaComissao,
+          'g.tem_segunda_comissao': g.tem_segunda_comissao,
+          'g.comissao2': g.comissao2,
           'g.temSaldoAcumulado': g.temSaldoAcumulado,
           'g.tem_saldo_acumulado': g.tem_saldo_acumulado,
           temSaldoAcumuladoConfig,

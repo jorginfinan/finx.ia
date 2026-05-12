@@ -2285,61 +2285,69 @@ const valePg = valesAplicados.reduce((sum, v) => {
     // ============================================
     // REGRA ESPECIAL: Gerentes com 2ª comissão
     // ============================================
-    // - Saldo acumula apenas COLETAS (sem despesas)
-    // - Comissão 1 (25%): Só paga quando saldo a carregar = 0
-    // - Comissão 2 (5%): Paga sempre que coletas > 0
-    // - Se coletas ≤ 0: Não paga nenhuma comissão
+    // - Saldo acumula a BASE configurada (COLETAS ou COLETAS-DESPESAS)
+    // - Comissão 1: Só paga quando saldo a carregar = 0
+    // - Comissão 2: Paga sempre que a base > 0
+    // - Se base ≤ 0: Não paga nenhuma comissão, acumula no saldo
     // ============================================
     
     if (temSegundaComissao) {
       // ============================================
-      // REGRA PARA GERENTES COM 2ª COMISSÃO:
-      // - Coletas > Saldo: Paga 25% + 5% sobre (Coletas - Saldo), zera saldo
-      // - Coletas <= Saldo e Coletas > 0: Paga só 5% sobre Coletas, reduz saldo
-      // - Coletas <= 0: Não paga nada, aumenta saldo
+      // ✅ REGRA CORRIGIDA: respeita baseCalculo do gerente
+      // - Base do gerente = COLETAS ou COLETAS - DESPESAS (padrão)
+      // - Base > Saldo: Paga com1 + com2 sobre (Base - Saldo), zera saldo
+      // - Base <= Saldo e Base > 0: Paga só com2 sobre Base, reduz saldo
+      // - Base <= 0: Não paga nada, aumenta saldo
       // ============================================
       
       const saldoAnterior = saldoParaCalcular || 0;
       let novoSaldo = 0;
       
-      if (coletas <= 0) {
-        // Coletas negativas ou zero: não paga nenhuma comissão, aumenta saldo
+      // ✅ Base usada pra comparar com saldo segue a configuração do gerente
+      // Default: COLETAS - DESPESAS (cobre 'COLETAS_MENOS_DESPESAS' e 'COLETAS_DESPESAS')
+      const baseParaSaldo = baseCalculo === 'COLETAS' 
+        ? coletas 
+        : (coletas - despesasTot);
+      
+      if (baseParaSaldo <= 0) {
+        // Base negativa ou zero: não paga nenhuma comissão, aumenta saldo
         valorComissao1 = 0;
         valorComissao2 = 0;
         baseComissao = 0;
-        novoSaldo = saldoAnterior + Math.abs(coletas);
+        novoSaldo = saldoAnterior + Math.abs(baseParaSaldo);
         
-      } else if (coletas > saldoAnterior) {
-        // Coletas MAIORES que saldo: paga comissões
-        // - Comissão 1: sobre (Coletas - Saldo)
-        // - Comissão 2: sobre (Coletas - Comissão1) - SEMPRE baseado nas coletas totais
-        const baseParaComissao = coletas - saldoAnterior;
+      } else if (baseParaSaldo > saldoAnterior) {
+        // Base MAIOR que saldo: paga comissões
+        // - Comissão 1: sobre (Base - Saldo)
+        // - Comissão 2: sobre (Base - Comissão1)
+        const baseParaComissao = baseParaSaldo - saldoAnterior;
         baseComissao = baseParaComissao;
         valorComissao1 = baseParaComissao * (perc1 / 100);
         
-        // ✅ NOVA REGRA: Comissão 2 é calculada sobre (Coletas - Comissão1)
-        // Se não tem comissão 1, calcula direto sobre as coletas
-        const baseParaComissao2 = valorComissao1 > 0 ? (coletas - valorComissao1) : coletas;
+        // ✅ Comissão 2 sobre (Base - Comissão1); se com1 = 0, é sobre a Base inteira
+        const baseParaComissao2 = valorComissao1 > 0 ? (baseParaSaldo - valorComissao1) : baseParaSaldo;
         valorComissao2 = baseParaComissao2 * (perc2 / 100);
         novoSaldo = 0;
         
       } else {
-        // Coletas MENORES ou IGUAIS ao saldo: só paga 5% sobre coletas, reduz saldo
+        // Base MENOR ou IGUAL ao saldo: só paga com2 sobre a Base, reduz saldo
         baseComissao = 0;
         valorComissao1 = 0;
-        valorComissao2 = coletas * (perc2 / 100);
-        novoSaldo = saldoAnterior - coletas;
+        valorComissao2 = baseParaSaldo * (perc2 / 100);
+        novoSaldo = saldoAnterior - baseParaSaldo;
       }
       
       // Resultado = Coletas - Despesas - Comissões
       resultado = coletas - despesasTot - valorComissao1 - valorComissao2;
       
       // Calcula a base usada para comissão 2 (para exibição)
-      const baseComissao2Usada = valorComissao1 > 0 ? (coletas - valorComissao1) : coletas;
+      const baseComissao2Usada = valorComissao1 > 0 ? (baseParaSaldo - valorComissao1) : baseParaSaldo;
       
       console.log('📊 [SaldoAcumulado] Gerente com 2ª comissão - Cálculo:', {
         coletas,
         despesasTot,
+        baseCalculo,
+        baseParaSaldo,
         saldoAnterior,
         novoSaldo,
         baseComissao,
@@ -2349,8 +2357,8 @@ const valePg = valesAplicados.reduce((sum, v) => {
         perc2: perc2 + '%',
         valorComissao2,
         resultado,
-        regra: coletas > saldoAnterior ? 'Coletas > Saldo: Com2 = 5% de (Coletas - Com1)' : 
-               coletas > 0 ? 'Coletas <= Saldo: Com2 = 5% de Coletas' : 'Coletas <= 0: não paga nada'
+        regra: baseParaSaldo > saldoAnterior ? 'Base > Saldo: Com1+Com2 sobre excedente' : 
+               baseParaSaldo > 0 ? 'Base <= Saldo: Com2 = ' + perc2 + '% da Base' : 'Base <= 0: não paga nada'
       });
       
       // ✅ IMPORTANTE: Define saldoInfo para que o salvamento atualize o Supabase

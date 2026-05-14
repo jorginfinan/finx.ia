@@ -44,6 +44,14 @@
     ['vales_view','Vales (ver)'],
     ['vales_edit','Vales (editar)'],
   ]},
+
+  { title: 'Máquinas / Estoque', items: [
+    ['maquinas_view',       'Máquinas (ver)'],
+    ['maquinas_cadastrar',  'Cadastrar / editar máquina'],
+    ['maquinas_entregar',   'Entregar máquina a vendedor'],
+    ['maquinas_devolver',   'Registrar devolução / troca'],
+    ['maquinas_excluir',    'Dar baixa / excluir máquina'],
+  ]},
 ];
   
 

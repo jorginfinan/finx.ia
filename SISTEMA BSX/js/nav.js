@@ -10,7 +10,9 @@
     historico: 'pageHistorico',
     audit: 'pageHistorico',
     'analise-gerente': 'pageAnaliseGerente',
-    'analise': 'pageAnaliseGerente'
+    'analise': 'pageAnaliseGerente',
+    'maquinas-cad':     'pageMaquinasCadastro',
+    'maquinas-estoque': 'pageMaquinasEstoque'
   };
 
   function pageIdFor(key){
@@ -55,6 +57,14 @@
     // ✅ Inicializa Análise por Gerente
     if (key === 'analise-gerente' || key === 'analise' || id === 'pageAnaliseGerente') {
       try { window.AnaliseGerente?.init?.(); } catch(_) {}
+    }
+    // ✅ Inicializa Cadastro de Máquinas
+    if (key === 'maquinas-cad' || id === 'pageMaquinasCadastro') {
+      try { window.MaquinasCadastro?.init?.(); } catch(_) {}
+    }
+    // ✅ Inicializa Estoque de Máquinas
+    if (key === 'maquinas-estoque' || id === 'pageMaquinasEstoque') {
+      try { window.MaquinasEstoque?.init?.(); } catch(_) {}
     }
   };
 

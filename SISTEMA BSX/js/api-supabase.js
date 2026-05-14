@@ -875,6 +875,356 @@
   }
   
   // ============================================
+  // API DE MÁQUINAS — cadastro principal
+  // ============================================
+  
+  class MaquinasAPI {
+    constructor() {
+      this.table = 'maquinas';
+      this.client = supabaseClient;
+    }
+
+    // Lista todas as máquinas da empresa atual
+    async getAll() {
+      try {
+        const empresaId = await getEmpresaId();
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('empresa_id', empresaId)
+          .order('data_entrada', { ascending: false });
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[MaquinasAPI] getAll:', e);
+        return [];
+      }
+    }
+
+    // Apenas máquinas no estoque (sem vendedor)
+    async getEstoque() {
+      try {
+        const empresaId = await getEmpresaId();
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('empresa_id', empresaId)
+          .eq('status', 'estoque')
+          .eq('ativo', true)
+          .order('data_entrada', { ascending: false });
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[MaquinasAPI] getEstoque:', e);
+        return [];
+      }
+    }
+
+    // Apenas máquinas com vendedores
+    async getComVendedores() {
+      try {
+        const empresaId = await getEmpresaId();
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('empresa_id', empresaId)
+          .eq('status', 'com_vendedor')
+          .eq('ativo', true)
+          .order('gerente_atual_nome');
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[MaquinasAPI] getComVendedores:', e);
+        return [];
+      }
+    }
+
+    // Máquinas de um gerente específico (raro mas pode acontecer ter mais de uma)
+    async getByGerente(gerenteId) {
+      try {
+        const empresaId = await getEmpresaId();
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('empresa_id', empresaId)
+          .eq('gerente_atual_id', gerenteId)
+          .eq('status', 'com_vendedor');
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[MaquinasAPI] getByGerente:', e);
+        return [];
+      }
+    }
+
+    async getById(id) {
+      try {
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('id', id)
+          .single();
+        if (error) throw error;
+        return data;
+      } catch (e) {
+        console.error('[MaquinasAPI] getById:', e);
+        return null;
+      }
+    }
+
+    async getBySerial(serial) {
+      try {
+        const empresaId = await getEmpresaId();
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('empresa_id', empresaId)
+          .eq('serial', serial)
+          .maybeSingle();
+        if (error) throw error;
+        return data;
+      } catch (e) {
+        console.error('[MaquinasAPI] getBySerial:', e);
+        return null;
+      }
+    }
+
+    async create(maquina) {
+      try {
+        const empresaId = await getEmpresaId();
+        const { data, error } = await this.client
+          .from(this.table)
+          .insert([{ ...maquina, empresa_id: empresaId }])
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      } catch (e) {
+        console.error('[MaquinasAPI] create:', e);
+        throw e;
+      }
+    }
+
+    async update(id, patch) {
+      try {
+        const { data, error } = await this.client
+          .from(this.table)
+          .update(patch)
+          .eq('id', id)
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      } catch (e) {
+        console.error('[MaquinasAPI] update:', e);
+        throw e;
+      }
+    }
+
+    async delete(id) {
+      try {
+        const { error } = await this.client
+          .from(this.table)
+          .delete()
+          .eq('id', id);
+        if (error) throw error;
+        return true;
+      } catch (e) {
+        console.error('[MaquinasAPI] delete:', e);
+        return false;
+      }
+    }
+
+    // Estatísticas para o dashboard de estoque
+    async getEstatisticas() {
+      try {
+        const empresaId = await getEmpresaId();
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('status')
+          .eq('empresa_id', empresaId)
+          .eq('ativo', true);
+        if (error) throw error;
+        const stats = {
+          total: data?.length || 0,
+          estoque: 0,
+          com_vendedor: 0,
+          manutencao: 0,
+          baixada: 0
+        };
+        (data || []).forEach(m => {
+          if (stats[m.status] !== undefined) stats[m.status]++;
+        });
+        return stats;
+      } catch (e) {
+        console.error('[MaquinasAPI] getEstatisticas:', e);
+        return { total: 0, estoque: 0, com_vendedor: 0, manutencao: 0, baixada: 0 };
+      }
+    }
+  }
+
+
+  // ============================================
+  // API DE MOVIMENTAÇÕES — histórico completo de cada máquina
+  // ============================================
+  
+  class MaquinasMovimentacoesAPI {
+    constructor() {
+      this.table = 'maquinas_movimentacoes';
+      this.client = supabaseClient;
+    }
+
+    // Histórico completo de uma máquina específica
+    async getByMaquina(maquinaId) {
+      try {
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('maquina_id', maquinaId)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[MovsAPI] getByMaquina:', e);
+        return [];
+      }
+    }
+
+    // Todas movimentações da empresa (com filtros opcionais)
+    async getAll(filters = {}) {
+      try {
+        const empresaId = await getEmpresaId();
+        let query = this.client
+          .from(this.table)
+          .select('*')
+          .eq('empresa_id', empresaId);
+
+        if (filters.tipo) query = query.eq('tipo', filters.tipo);
+        if (filters.gerenteId) query = query.eq('gerente_id', filters.gerenteId);
+        if (filters.ficha) query = query.eq('ficha', filters.ficha);
+        if (filters.maquinaId) query = query.eq('maquina_id', filters.maquinaId);
+        if (filters.dataInicio) query = query.gte('data_evento', filters.dataInicio);
+        if (filters.dataFim) query = query.lte('data_evento', filters.dataFim);
+
+        const { data, error } = await query.order('created_at', { ascending: false }).limit(500);
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[MovsAPI] getAll:', e);
+        return [];
+      }
+    }
+
+    async create(movimentacao) {
+      try {
+        const empresaId = await getEmpresaId();
+        const usuario = window.getUsuarioAtual ? window.getUsuarioAtual() : { id: null, nome: 'Sistema' };
+        const payload = {
+          ...movimentacao,
+          empresa_id: empresaId,
+          usuario_id: movimentacao.usuario_id || usuario.id,
+          usuario_nome: movimentacao.usuario_nome || usuario.nome
+        };
+        const { data, error } = await this.client
+          .from(this.table)
+          .insert([payload])
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      } catch (e) {
+        console.error('[MovsAPI] create:', e);
+        throw e;
+      }
+    }
+
+    async delete(id) {
+      try {
+        const { error } = await this.client
+          .from(this.table)
+          .delete()
+          .eq('id', id);
+        if (error) throw error;
+        return true;
+      } catch (e) {
+        console.error('[MovsAPI] delete:', e);
+        return false;
+      }
+    }
+  }
+
+
+  // ============================================
+  // API DE HISTÓRICO DE CHIPS — rastreamento independente
+  // ============================================
+  
+  class MaquinasChipsAPI {
+    constructor() {
+      this.table = 'maquinas_chips_historico';
+      this.client = supabaseClient;
+    }
+
+    // Histórico de um chip específico (onde já esteve)
+    async getByChip(numeroChip) {
+      try {
+        const empresaId = await getEmpresaId();
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('empresa_id', empresaId)
+          .eq('numero_chip', numeroChip)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[ChipsAPI] getByChip:', e);
+        return [];
+      }
+    }
+
+    async getAll() {
+      try {
+        const empresaId = await getEmpresaId();
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('empresa_id', empresaId)
+          .order('created_at', { ascending: false })
+          .limit(1000);
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[ChipsAPI] getAll:', e);
+        return [];
+      }
+    }
+
+    async create(registro) {
+      try {
+        const empresaId = await getEmpresaId();
+        const usuario = window.getUsuarioAtual ? window.getUsuarioAtual() : { id: null, nome: 'Sistema' };
+        const payload = {
+          ...registro,
+          empresa_id: empresaId,
+          usuario_id: registro.usuario_id || usuario.id,
+          usuario_nome: registro.usuario_nome || usuario.nome
+        };
+        const { data, error } = await this.client
+          .from(this.table)
+          .insert([payload])
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      } catch (e) {
+        console.error('[ChipsAPI] create:', e);
+        throw e;
+      }
+    }
+  }
+  
+  
+  // ============================================
   // EXPORTAR API
   // ============================================
   
@@ -885,6 +1235,9 @@
     prestacoes: new PrestacoesAPI(),
     fichas: new FichasAPI(),
     vendas: new VendasAPI(),
+    maquinas: new MaquinasAPI(),                              // ⬅️ NOVA
+    maquinasMovimentacoes: new MaquinasMovimentacoesAPI(),    // ⬅️ NOVA
+    maquinasChips: new MaquinasChipsAPI(),                    // ⬅️ NOVA
     client: supabaseClient
   };
   
@@ -892,6 +1245,6 @@
   window.SupabaseAPI.users = window.SupabaseAPI.usuarios;
   
   console.log('✅ API Supabase carregada!');
-  console.log('📊 Tabelas: usuarios, gerentes, despesas, prestacoes, fichas, vendas');
+  console.log('📊 Tabelas: usuarios, gerentes, despesas, prestacoes, fichas, vendas, maquinas, maquinas_movimentacoes, maquinas_chips_historico');
   
 })();

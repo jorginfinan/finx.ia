@@ -281,6 +281,79 @@
       console.log('[Audit-Auto] ✅ SupabaseAPI.despesas interceptado');
     }
     
+    // ===== INTERCEPTAR SUPABASE API - MÁQUINAS =====
+    if (window.SupabaseAPI?.maquinas) {
+      // Criar máquina
+      interceptFunction(window.SupabaseAPI.maquinas, 'create', {
+        action: 'maquina_criada_api',
+        getDetails: ([data], result) => ({
+          id: result?.id,
+          serial: data.serial,
+          modelo: data.modelo,
+          status: data.status
+        })
+      });
+      
+      // Atualizar máquina
+      interceptFunction(window.SupabaseAPI.maquinas, 'update', {
+        action: 'maquina_atualizada_api',
+        getDetails: ([id, patch]) => ({
+          id,
+          changes: Object.keys(patch).join(', ')
+        })
+      });
+      
+      // Deletar máquina
+      interceptFunction(window.SupabaseAPI.maquinas, 'delete', {
+        before: async ([id]) => {
+          try {
+            const m = await window.SupabaseAPI.maquinas.getById(id);
+            window.AuditLog.log('maquina_excluida_api', {
+              id,
+              serial: m?.serial || 'desconhecido',
+              modelo: m?.modelo || ''
+            });
+          } catch(e) {}
+        }
+      });
+      
+      console.log('[Audit-Auto] ✅ SupabaseAPI.maquinas interceptado');
+    }
+    
+    // ===== INTERCEPTAR SUPABASE API - MOVIMENTAÇÕES =====
+    if (window.SupabaseAPI?.maquinasMovimentacoes) {
+      interceptFunction(window.SupabaseAPI.maquinasMovimentacoes, 'create', {
+        action: 'maquina_movimentacao',
+        getDetails: ([data], result) => ({
+          id: result?.id,
+          maquina_id: data.maquina_id,
+          tipo: data.tipo,
+          gerente: data.gerente_nome || null,
+          ficha: data.ficha || null,
+          chip: data.chip_numero || null,
+          motivo: data.motivo || null
+        })
+      });
+      
+      console.log('[Audit-Auto] ✅ SupabaseAPI.maquinasMovimentacoes interceptado');
+    }
+    
+    // ===== INTERCEPTAR SUPABASE API - HISTÓRICO DE CHIPS =====
+    if (window.SupabaseAPI?.maquinasChips) {
+      interceptFunction(window.SupabaseAPI.maquinasChips, 'create', {
+        action: 'chip_evento',
+        getDetails: ([data]) => ({
+          numero_chip: data.numero_chip,
+          evento: data.evento,
+          maquina_id: data.maquina_id || null,
+          gerente: data.gerente_nome || null,
+          ficha: data.ficha || null
+        })
+      });
+      
+      console.log('[Audit-Auto] ✅ SupabaseAPI.maquinasChips interceptado');
+    }
+    
     // ===== INTERCEPTAR SALDO ACUMULADO =====
     if (window.SaldoAcumulado) {
       interceptFunction(window.SaldoAcumulado, 'setSaldo', {

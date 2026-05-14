@@ -159,6 +159,32 @@
 
 
 
+<!-- Máquinas (grupo recolhível) -->
+<button class="sb-item sb-group" data-group="maquinas" aria-expanded="false" aria-label="Máquinas" title="Máquinas">
+  <span class="ico" aria-hidden="true">
+    <!-- POS/máquina -->
+    <svg viewBox="0 0 24 24"><path d="M4 3h16a1 1 0 0 1 1 1v6H3V4a1 1 0 0 1 1-1Zm-1 9h18v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-8Zm4 4h4M7 18h2"/></svg>
+  </span>
+  <span class="label">Máquinas</span>
+  <span class="chev" aria-hidden="true">
+    <svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+  </span>
+</button>
+<nav class="sb-sub" data-sub="maquinas" hidden>
+  <button class="sb-subitem" data-tab="maquinas-cad" data-perm="maquinas_view" title="Cadastro de Máquinas">
+    <span class="ico" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg>
+    </span>
+    <span class="label">Cadastro de Máquinas</span>
+  </button>
+  <button class="sb-subitem" data-tab="maquinas-estoque" data-perm="maquinas_view" title="Estoque">
+    <span class="ico" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M3 7h18v13H3zM3 7l2-3h14l2 3M8 11h8"/></svg>
+    </span>
+    <span class="label">Estoque</span>
+  </button>
+</nav>
+
 <!-- Despesas -->
 <button class="sb-item" data-tab="desp" data-perm="despesas_view" aria-label="Despesas" title="Despesas">
   <span class="ico" aria-hidden="true">
@@ -1440,6 +1466,331 @@ function pgDivAddFromForm(){
     </section>
 
 
+<!-- ============================================================================
+     PÁGINA: CADASTRO DE MÁQUINAS
+     ============================================================================ -->
+<section id="pageMaquinasCadastro" class="container hidden" data-perm="maquinas_view">
+  <h2>🖥️ Cadastro de Máquinas</h2>
+
+  <div class="grid">
+    <!-- ===== FORMULÁRIO DE CADASTRO ===== -->
+    <div class="card" data-perm="maquinas_cadastrar">
+      <h3 id="maqFormTitulo">Nova Máquina</h3>
+      <form id="formMaquina" class="form-grid" autocomplete="off">
+
+        <label>Serial (nº de série) <span style="color:#dc2626">*</span>
+          <input name="serial" required placeholder="ex.: SN-2024-001234" />
+        </label>
+
+        <label>ID da Máquina
+          <input name="id_maquina" placeholder="ex.: MQ-001" />
+        </label>
+
+        <label>Modelo
+          <input name="modelo" placeholder="ex.: Ingenico iWL250" />
+        </label>
+
+        <label>Data de Entrada <span style="color:#dc2626">*</span>
+          <input name="data_entrada" type="date" required />
+        </label>
+
+        <label style="grid-column:1/-1">Observação Geral
+          <textarea name="observacao_geral" rows="2" placeholder="Notas gerais sobre a máquina"></textarea>
+        </label>
+
+        <!-- Destino: estoque OU vendedor -->
+        <fieldset style="grid-column:1/-1; border:1px solid #e5e7eb; border-radius:10px; padding:12px;">
+          <legend style="padding:0 8px; font-weight:600;">Destino inicial</legend>
+          <label style="display:inline-flex; align-items:center; gap:6px; margin-right:16px;">
+            <input type="radio" name="destino" value="estoque" checked />
+            Manter no estoque
+          </label>
+          <label style="display:inline-flex; align-items:center; gap:6px;">
+            <input type="radio" name="destino" value="entrega" />
+            Já entregar a um vendedor
+          </label>
+        </fieldset>
+
+        <!-- Bloco de entrega (só aparece se "entrega" estiver selecionado) -->
+        <div id="maqBlocoEntrega" style="grid-column:1/-1; display:none; padding:12px; background:#f9fafb; border-radius:10px;">
+          <div class="form-grid">
+            <label>Gerente <span style="color:#dc2626">*</span>
+              <select name="gerente_id" id="selMaqGerente">
+                <option value="">Selecione...</option>
+              </select>
+            </label>
+            <label>Ficha (vendedor)
+              <input name="ficha" list="listFichasMaq" placeholder="ex.: 0301 (opcional)" />
+              <datalist id="listFichasMaq"></datalist>
+            </label>
+            <label>Número do Chip
+              <input name="chip_numero" placeholder="ex.: 85 99999-9999" />
+            </label>
+            <label style="grid-column:1/-1">Observação da entrega
+              <textarea name="entrega_obs" rows="2" placeholder="Obrigatório se o gerente já tiver outra máquina ativa"></textarea>
+            </label>
+          </div>
+        </div>
+
+        <div style="grid-column:1/-1; display:flex; justify-content:flex-end; gap:10px;">
+          <button class="btn ghost" type="button" id="btnLimparMaquina">Limpar</button>
+          <button class="btn" type="submit" id="btnSalvarMaquina">Salvar Máquina</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- ===== TABELA DE MÁQUINAS ===== -->
+    <div class="card">
+      <h3>Todas as Máquinas</h3>
+
+      <div class="tool-row" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+        <input id="maqBusca" type="search" placeholder="Buscar por serial, modelo, gerente..." style="flex:1; min-width:200px;" />
+        <select id="maqFiltroStatus" style="min-width:160px;">
+          <option value="">Todos os status</option>
+          <option value="estoque">No estoque</option>
+          <option value="com_vendedor">Com vendedor</option>
+          <option value="manutencao">Em manutenção</option>
+          <option value="baixada">Baixada</option>
+        </select>
+      </div>
+
+      <div class="table-wrap" style="overflow:auto; max-height:600px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Serial</th>
+              <th>Modelo</th>
+              <th>Status</th>
+              <th>Gerente / Ficha</th>
+              <th>Chip</th>
+              <th>Entrada</th>
+              <th class="tv-right">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyMaquinas">
+            <tr><td colspan="7" style="text-align:center; color:#6b7280; padding:30px;">Carregando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- =========================================================================
+     DIALOG: ENTREGAR / TROCAR MÁQUINA
+     ========================================================================= -->
+<dialog id="dlgMaqEntregar">
+  <header class="card"><strong id="dlgEntregarTitulo">Entregar Máquina</strong></header>
+  <form id="formEntregar" class="card" style="margin:0; min-width:380px; max-width:520px;">
+    <input type="hidden" name="maquina_id" />
+    <div style="margin-bottom:10px; padding:10px; background:#f3f4f6; border-radius:8px;">
+      <div style="font-size:12px; color:#6b7280;">Máquina</div>
+      <div id="dlgEntregarMaquinaInfo" style="font-weight:600;"></div>
+    </div>
+
+    <div class="form-grid">
+      <label>Gerente <span style="color:#dc2626">*</span>
+        <select name="gerente_id" id="dlgSelGerente" required>
+          <option value="">Selecione...</option>
+        </select>
+      </label>
+      <label>Ficha (vendedor)
+        <input name="ficha" list="listFichasMaq2" placeholder="opcional" />
+        <datalist id="listFichasMaq2"></datalist>
+      </label>
+      <label>Data <span style="color:#dc2626">*</span>
+        <input name="data_evento" type="date" required />
+      </label>
+      <label>Número do Chip
+        <input name="chip_numero" placeholder="ex.: 85 99999-9999" />
+      </label>
+      <label style="grid-column:1/-1">
+        Observação <span id="dlgEntregarObsObrigatoria" style="color:#dc2626; display:none">* (obrigatória — explicar)</span>
+        <textarea name="observacao" rows="3" id="dlgEntregarObs" placeholder="Ex.: pegou nova máquina antes de devolver a anterior"></textarea>
+      </label>
+    </div>
+
+    <div id="dlgEntregarAviso" style="display:none; margin-top:10px; padding:10px; background:#fef3c7; border-left:4px solid #f59e0b; border-radius:6px; font-size:13px; color:#92400e;">
+      ⚠️ Este gerente já tem máquina(s) ativa(s). Explique o motivo na observação.
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px;">
+      <button class="btn ghost" type="button" data-close-dlg="dlgMaqEntregar">Cancelar</button>
+      <button class="btn" type="submit">Confirmar Entrega</button>
+    </div>
+  </form>
+</dialog>
+
+
+<!-- =========================================================================
+     DIALOG: DEVOLVER MÁQUINA
+     ========================================================================= -->
+<dialog id="dlgMaqDevolver">
+  <header class="card"><strong>Devolver Máquina</strong></header>
+  <form id="formDevolver" class="card" style="margin:0; min-width:380px; max-width:520px;">
+    <input type="hidden" name="maquina_id" />
+    <div style="margin-bottom:10px; padding:10px; background:#f3f4f6; border-radius:8px;">
+      <div style="font-size:12px; color:#6b7280;">Máquina</div>
+      <div id="dlgDevolverMaquinaInfo" style="font-weight:600;"></div>
+    </div>
+
+    <div class="form-grid">
+      <label>Data da Devolução <span style="color:#dc2626">*</span>
+        <input name="data_evento" type="date" required />
+      </label>
+      <label>Motivo da Devolução <span style="color:#dc2626">*</span>
+        <select name="motivo" required>
+          <option value="">Selecione...</option>
+          <option>Problema técnico</option>
+          <option>Troca por outra máquina</option>
+          <option>Chip não pega na região</option>
+          <option>Vendedor saiu</option>
+          <option>Fim de contrato</option>
+          <option>Outro</option>
+        </select>
+      </label>
+      <label style="grid-column:1/-1; display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" name="chip_devolvido" id="chkChipDevolvido" />
+        Chip também foi devolvido
+      </label>
+      <label style="grid-column:1/-1">Observação
+        <textarea name="observacao" rows="2" placeholder="Detalhes sobre a devolução"></textarea>
+      </label>
+
+      <!-- Bloco de troca: já entregar outra máquina -->
+      <fieldset style="grid-column:1/-1; border:1px solid #e5e7eb; border-radius:10px; padding:12px;">
+        <legend style="padding:0 8px; font-weight:600;">Troca de máquina?</legend>
+        <label style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
+          <input type="checkbox" id="chkFazerTroca" />
+          Entregar OUTRA máquina ao mesmo vendedor agora
+        </label>
+        <div id="blocoTroca" style="display:none;" class="form-grid">
+          <label style="grid-column:1/-1">Nova máquina (do estoque)
+            <select id="selTrocaMaquina">
+              <option value="">Selecione...</option>
+            </select>
+          </label>
+          <label style="grid-column:1/-1">Chip da nova máquina
+            <input id="inpTrocaChip" placeholder="opcional" />
+          </label>
+        </div>
+      </fieldset>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px;">
+      <button class="btn ghost" type="button" data-close-dlg="dlgMaqDevolver">Cancelar</button>
+      <button class="btn" type="submit">Confirmar Devolução</button>
+    </div>
+  </form>
+</dialog>
+
+
+<!-- =========================================================================
+     DIALOG: HISTÓRICO DA MÁQUINA
+     ========================================================================= -->
+<dialog id="dlgMaqHistorico">
+  <header class="card"><strong>Histórico da Máquina</strong></header>
+  <div class="card" style="margin:0; min-width:520px; max-width:700px; max-height:70vh; overflow:auto;">
+    <div id="dlgHistoricoInfo" style="margin-bottom:12px; padding:10px; background:#f3f4f6; border-radius:8px;"></div>
+    <div id="dlgHistoricoLista">Carregando...</div>
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px;">
+      <button class="btn" type="button" data-close-dlg="dlgMaqHistorico">Fechar</button>
+    </div>
+  </div>
+</dialog>
+
+
+<!-- ============================================================================
+     PÁGINA: ESTOQUE (controle/dashboard)
+     ============================================================================ -->
+<section id="pageMaquinasEstoque" class="container hidden" data-perm="maquinas_view">
+  <h2>📦 Controle de Estoque</h2>
+
+  <!-- KPIs em cards -->
+  <div class="cards" id="estoqueCards" style="margin-bottom:20px;">
+    <div class="card-fin" style="background:linear-gradient(135deg,#10b981,#059669); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">No Estoque</div>
+      <div class="big" id="kpiEstoque">0</div>
+      <div style="font-size:11px; opacity:0.8;">disponíveis</div>
+    </div>
+    <div class="card-fin" style="background:linear-gradient(135deg,#3b82f6,#2563eb); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Com Vendedores</div>
+      <div class="big" id="kpiComVendedor">0</div>
+      <div style="font-size:11px; opacity:0.8;">em uso</div>
+    </div>
+    <div class="card-fin" style="background:linear-gradient(135deg,#f59e0b,#d97706); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Manutenção</div>
+      <div class="big" id="kpiManutencao">0</div>
+      <div style="font-size:11px; opacity:0.8;">em reparo</div>
+    </div>
+    <div class="card-fin" style="background:linear-gradient(135deg,#6b7280,#4b5563); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Baixadas</div>
+      <div class="big" id="kpiBaixadas">0</div>
+      <div style="font-size:11px; opacity:0.8;">inativas</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- Estoque da empresa -->
+    <div class="card">
+      <h3>🏢 Estoque da Empresa (disponíveis)</h3>
+      <div style="margin-bottom:10px;">
+        <input id="estoqueBusca" type="search" placeholder="Buscar..." style="width:100%;" />
+      </div>
+      <div class="table-wrap" style="overflow:auto; max-height:500px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Serial</th>
+              <th>Modelo</th>
+              <th>Entrada</th>
+              <th>Observação</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyEstoque">
+            <tr><td colspan="4" style="text-align:center; color:#6b7280; padding:30px;">Carregando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Distribuição por gerente/vendedor -->
+    <div class="card">
+      <h3>🧑‍💼 Distribuição por Gerente / Vendedor</h3>
+      <div style="margin-bottom:10px;">
+        <input id="distrBusca" type="search" placeholder="Buscar gerente, ficha ou serial..." style="width:100%;" />
+      </div>
+      <div class="table-wrap" style="overflow:auto; max-height:500px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Gerente</th>
+              <th>Ficha</th>
+              <th>Serial</th>
+              <th>Modelo</th>
+              <th>Chip</th>
+              <th>Desde</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyDistribuicao">
+            <tr><td colspan="6" style="text-align:center; color:#6b7280; padding:30px;">Carregando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ações -->
+  <div class="card" style="margin-top:16px;">
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <button class="btn ghost" id="btnExportarEstoque" data-perm="maquinas_view">📥 Exportar CSV</button>
+      <button class="btn ghost" id="btnAtualizarEstoque">🔄 Atualizar</button>
+    </div>
+  </div>
+</section>
+
+
   <!-- DIALOG: Novo lançamento -->
   <dialog id="dlgLanc">
     <header class="card"><strong>Novo lançamento</strong></header>
@@ -1731,6 +2082,8 @@ function pgDivAddFromForm(){
 <script src="js/core.js" defer></script>
 <script src="js/gerentes.js"></script>
 <script src="js/fichas.js" defer></script>
+<script src="js/maquinas.js" defer></script>
+<script src="js/estoque.js" defer></script>
 <script src="js/saldo-acumulado.js"></script>
 <script src="js/saldo-acumulado-ui.js"></script>
 <script src="ajuste-saldo-manual.js"></script>

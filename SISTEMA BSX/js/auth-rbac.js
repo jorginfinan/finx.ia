@@ -344,6 +344,13 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
     'despesas_view':     ['despesas_view','despesas'],
     'despesas_edit':     ['despesas_edit'],
 
+    // Máquinas → Estoque
+    'maquinas_view':       ['maquinas_view','maquinas','estoque','estoque_view'],
+    'maquinas_cadastrar':  ['maquinas_cadastrar','maquinas_edit','estoque_edit'],
+    'maquinas_entregar':   ['maquinas_entregar'],
+    'maquinas_devolver':   ['maquinas_devolver'],
+    'maquinas_excluir':    ['maquinas_excluir','maquinas_baixa'],
+
     // Usuários (admin)
     'usuarios':          ['usuarios','admin']
   };

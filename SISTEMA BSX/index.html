@@ -127,7 +127,7 @@
 </button>
 
 <!-- Analise - Gerentes-->
-<button class="sb-item" data-tab="analise-gerente">
+<button class="sb-item" data-tab="analise-gerente" data-perm="admin_only">
   <span class="sb-icon">📊</span>
   <span class="sb-label">Análise Gerente</span>
 </button>
@@ -240,7 +240,7 @@
     <!-- TOPO -->
     <header class="topbar">
       <!-- 1. Chat IA -->
-      <button id="btnAI" class="btn secondary" title="Assistente IA">💬</button>
+      <button id="btnAI" class="btn secondary" title="Assistente IA" data-perm="admin_only">💬</button>
       
       <!-- 2. Seletor de Empresas -->
       <select id="empresaSelect" class="user-badge" style="background:#222;color:#fff;border:1px solid #000;border-radius:8px;padding:6px 10px;">
@@ -374,7 +374,7 @@
       </section>
 
             <!-- ANÁLISE POR GERENTE -->
-<section id="pageAnaliseGerente" class="page-section" style="display:none">
+<section id="pageAnaliseGerente" class="page-section" style="display:none" data-perm="admin_only">
   <h1>📊 Análise por Gerente</h1>
   <div id="analiseGerenteContent"></div>
 </section>
@@ -2112,7 +2112,7 @@ function pgDivAddFromForm(){
       document.getElementById('dlgLanc')?.close();
     });
   </script>
-<aside id="aiPanel" class="ai is-hidden" aria-label="Assistente IA">
+<aside id="aiPanel" class="ai is-hidden" aria-label="Assistente IA" data-perm="admin_only">
   <header class="ai__head" id="aiDragHandle">
     <div class="ai__title">
       <strong>Assistente IA</strong>

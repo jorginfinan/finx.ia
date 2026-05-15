@@ -24,6 +24,91 @@
 
   if (!el.panel) return;
 
+  // ============================================================
+  // 🔒 PROTEÇÃO DE ACESSO — Chatbot IA é EXCLUSIVO para admin
+  // ============================================================
+  // Verificações:
+  //   1. Usuário precisa estar logado e ter role === 'admin'
+  //   2. A empresa atual precisa estar nas companies permitidas
+  //      (admin sem restrição de empresas = acesso total)
+  // ============================================================
+  function isAdminAtual() {
+    try {
+      const cu = window.UserAuth?.currentUser?.();
+      return !!(cu && cu.role === 'admin');
+    } catch (_) { return false; }
+  }
+
+  function temAcessoEmpresaAtual() {
+    try {
+      const cu = window.UserAuth?.currentUser?.();
+      if (!cu) return false;
+      // admin sem companies declaradas = acesso total
+      if (!Array.isArray(cu.companies) || cu.companies.length === 0) return true;
+      const empAtual = (localStorage.getItem('CURRENT_COMPANY') || 'BSX').toUpperCase();
+      return cu.companies.map(c => String(c).toUpperCase()).includes(empAtual);
+    } catch (_) { return false; }
+  }
+
+  function podeUsarIA() {
+    return isAdminAtual() && temAcessoEmpresaAtual();
+  }
+
+  function esconderTudoIA() {
+    try {
+      if (el.btnAI) {
+        el.btnAI.style.display = 'none';
+        el.btnAI.setAttribute('aria-hidden', 'true');
+      }
+      if (el.panel) {
+        el.panel.classList.add('is-hidden');
+        el.panel.style.display = 'none';
+        el.panel.setAttribute('aria-hidden', 'true');
+      }
+    } catch (_) {}
+  }
+
+  function mostrarTudoIA() {
+    try {
+      if (el.btnAI) {
+        el.btnAI.style.display = '';
+        el.btnAI.removeAttribute('aria-hidden');
+      }
+      if (el.panel) {
+        el.panel.style.display = '';
+        el.panel.removeAttribute('aria-hidden');
+        // não tira is-hidden (panel só abre clicando no botão)
+      }
+    } catch (_) {}
+  }
+
+  // Verifica imediatamente
+  if (!podeUsarIA()) {
+    console.warn('[AI] 🔒 Acesso negado ao chatbot IA (não-admin ou empresa restrita)');
+    esconderTudoIA();
+    // Reavalia em mudanças (login/logout/troca de empresa)
+    document.addEventListener('auth:login', () => {
+      if (podeUsarIA()) { mostrarTudoIA(); location.reload(); } // recarrega pra inicializar tudo
+    });
+    document.addEventListener('empresa:change', () => {
+      if (!podeUsarIA()) esconderTudoIA();
+    });
+    return; // ⛔ NÃO INICIALIZA o resto do módulo
+  }
+
+  // Reavalia em troca de empresa enquanto rodando
+  document.addEventListener('empresa:change', () => {
+    if (!podeUsarIA()) {
+      console.warn('[AI] 🔒 Empresa atual fora do alcance — escondendo chatbot');
+      esconderTudoIA();
+    }
+  });
+
+  // Reavalia em logout
+  document.addEventListener('auth:logout', () => {
+    esconderTudoIA();
+  });
+
   // ===== CONTEXTO CONVERSACIONAL AVANÇADO =====
   const conversationContext = {
     lastTopic: null,

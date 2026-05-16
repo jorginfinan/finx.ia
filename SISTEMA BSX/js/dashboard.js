@@ -443,19 +443,19 @@ function renderAlerts(ym){
         <span class="alert-ico">⚠️</span>
         <strong>${totalVendedores} ${totalVendedores === 1 ? 'vendedor está' : 'vendedores estão'} acima da média de despesas</strong>
       </div>
-      <ul class="alert-list alert-rotas-grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px;list-style:none;padding:0;">
+      <div class="rota-alert-grid">
         ${rotas.map(([rota, n]) => `
-          <li class="alert-ficha" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
-            <span>
-              <span class="ficha-rota">${esc(rota)}</span>
-              <span class="alert-badge">${n} ${n === 1 ? 'vendedor' : 'vendedores'}</span>
-            </span>
-            <button class="btn small" data-desp-rota="${encodeURIComponent(rota)}">
+          <div class="rota-alert-card">
+            <div class="rota-alert-head">
+              <span class="rota-alert-nome">${esc(rota)}</span>
+              <span class="rota-alert-count">${n} ${n === 1 ? 'vendedor' : 'vendedores'}</span>
+            </div>
+            <button class="btn rota-alert-btn" data-desp-rota="${encodeURIComponent(rota)}">
               👁️ Mostrar detalhes
             </button>
-          </li>
+          </div>
         `).join('')}
-      </ul>
+      </div>
     </div>
   `;
 

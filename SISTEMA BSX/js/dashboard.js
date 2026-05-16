@@ -426,40 +426,56 @@ function renderAlerts(ym){
     return;
   }
 
-   // mostra o nome do gerente, numero de fichas e lista das fichas
-   box.innerHTML = dados.map(gr => `
+  // resumo: total de vendedores (fichas) acima da média — sem detalhar ficha
+  const totalVendedores = dados.reduce((s, gr) => s + gr.fichas.length, 0);
+  const ehSingular = totalVendedores === 1;
+
+  box.innerHTML = `
     <div class="alert-item">
       <div class="alert-title">
         <span class="alert-ico">⚠️</span>
-        <strong>${esc(gr.gerente)}</strong>
-        <span class="alert-badge">${gr.fichas.length} ${gr.fichas.length === 1 ? 'despesa' : 'despesas'} em alerta</span>
+        <strong>${totalVendedores} ${ehSingular ? 'vendedor está' : 'vendedores estão'} acima da média de despesas</strong>
       </div>
-      <ul class="alert-list">
-        ${gr.fichas.map(f => `
-          <li class="alert-ficha">
-            <span class="ficha-numero">${esc(f.ficha)}</span>
-            ${f.rota ? `<span class="ficha-rota">${esc(f.rota)}</span>` : ''}
-          </li>
-        `).join('')}
-      </ul>
-      <button class="btn small" data-desp-det="${encodeURIComponent(gr.gerente)}" style="margin-top:8px;">
+      <button class="btn small" data-desp-rel style="margin-top:8px;">
         👁️ Mostrar detalhes
       </button>
     </div>
-  `).join('');
-  // handler do botão +detalhes → vai para DESPESAS com gerente e mês atual
+  `;
+
+  // handler do botão → vai para RELATÓRIOS com o período do mês selecionado no dashboard
   const ymAtual = (document.getElementById('dashMes')?.value) || ymNow();
-  box.querySelectorAll('[data-desp-det]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const nome = decodeURIComponent(btn.getAttribute('data-desp-det')||'');
-      gotoDespesasDetalhes(nome, ymAtual);
-    });
+  box.querySelector('[data-desp-rel]')?.addEventListener('click', ()=>{
+    gotoRelatorioDespesas(ymAtual);
   });
 
   box.classList.add('has-alert');
 }
 
-// ===== 3) NAVEGAÇÃO: ir para a página de Despesas com filtros preenchidos =====
+// ===== 3) NAVEGAÇÃO: ir para o RELATÓRIO com o período do mês selecionado =====
+window.gotoRelatorioDespesas = function(ym){
+  ym = ym || ymNow();
+
+  // abre a aba de Relatórios de Prestações
+  try { if (typeof window.switchTab === 'function') window.switchTab('prest-rel'); } catch(_){}
+
+  // preenche o período (De/Até) com o mês em que a análise foi gerada
+  const de  = document.getElementById('relDe');
+  const ate = document.getElementById('relAte');
+  if (de){
+    de.value = ymFirst(ym);
+    de.dispatchEvent(new Event('change', { bubbles:true }));
+  }
+  if (ate){
+    ate.value = ymLast(ym);
+    ate.dispatchEvent(new Event('change', { bubbles:true }));
+  }
+
+  // dispara a busca do relatório
+  const btnAplicar = document.getElementById('btnRelAplicar');
+  if (btnAplicar) btnAplicar.click();
+};
+
+// ===== NAVEGAÇÃO: ir para a página de Despesas com filtros preenchidos =====
 window.gotoDespesasDetalhes = function(gerenteNome, ym){
   try { if (typeof window.switchTab === 'function') window.switchTab('desp'); } catch(_){}
 

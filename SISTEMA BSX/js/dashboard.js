@@ -443,37 +443,43 @@ function renderAlerts(ym){
         <span class="alert-ico">⚠️</span>
         <strong>${totalVendedores} ${totalVendedores === 1 ? 'vendedor está' : 'vendedores estão'} acima da média de despesas</strong>
       </div>
-      <ul class="alert-list">
+      <ul class="alert-list alert-rotas-grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px;list-style:none;padding:0;">
         ${rotas.map(([rota, n]) => `
-          <li class="alert-ficha">
-            <span class="ficha-rota">${esc(rota)}</span>
-            <span class="alert-badge">${n} ${n === 1 ? 'vendedor' : 'vendedores'}</span>
+          <li class="alert-ficha" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+            <span>
+              <span class="ficha-rota">${esc(rota)}</span>
+              <span class="alert-badge">${n} ${n === 1 ? 'vendedor' : 'vendedores'}</span>
+            </span>
+            <button class="btn small" data-desp-rota="${encodeURIComponent(rota)}">
+              👁️ Mostrar detalhes
+            </button>
           </li>
         `).join('')}
       </ul>
-      <button class="btn small" data-desp-mes style="margin-top:8px;">
-        👁️ Mostrar detalhes
-      </button>
     </div>
   `;
 
-  // handler do botão → vai para DESPESAS com o período do mês selecionado no dashboard
+  // handler dos botões → vai para DESPESAS com o mês do dashboard e a rota selecionada
   const ymAtual = (document.getElementById('dashMes')?.value) || ymNow();
-  box.querySelector('[data-desp-mes]')?.addEventListener('click', ()=>{
-    gotoDespesasMes(ymAtual);
+  box.querySelectorAll('[data-desp-rota]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const rota = decodeURIComponent(btn.getAttribute('data-desp-rota') || '');
+      gotoDespesasMes(ymAtual, rota);
+    });
   });
 
   box.classList.add('has-alert');
 }
 
-// ===== 3) NAVEGAÇÃO: ir para a página de DESPESAS com o período do mês selecionado =====
-window.gotoDespesasMes = function(ym){
+// ===== 3) NAVEGAÇÃO: ir para a página de DESPESAS no mês do dashboard, filtrando por rota =====
+window.gotoDespesasMes = function(ym, rota){
   ym = ym || ymNow();
 
   // abre a aba de Despesas
   try { if (typeof window.switchTab === 'function') window.switchTab('desp'); } catch(_){}
 
   // preenche o período (De/Até) com o mês selecionado no dashboard
+  // (o change de cada campo já reconstrói os filtros e re-renderiza a tabela)
   const de  = document.getElementById('despDe');
   const ate = document.getElementById('despAte');
   if (de){
@@ -483,6 +489,15 @@ window.gotoDespesasMes = function(ym){
   if (ate){
     ate.value = ymLast(ym);
     ate.dispatchEvent(new Event('change', { bubbles:true }));
+  }
+
+  // filtra pela rota selecionada (busca o elemento depois do change das datas,
+  // pois os filtros são recriados ao mudar o período)
+  const inpRota = document.getElementById('despBuscaRota');
+  if (inpRota){
+    inpRota.value = (rota && rota !== '(sem rota)') ? rota : '';
+    inpRota.dispatchEvent(new Event('input',  { bubbles:true }));
+    inpRota.dispatchEvent(new Event('change', { bubbles:true }));
   }
 
   // re-renderiza a tabela de despesas

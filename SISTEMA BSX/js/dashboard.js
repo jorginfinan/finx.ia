@@ -426,41 +426,56 @@ function renderAlerts(ym){
     return;
   }
 
-  // resumo: total de vendedores (fichas) acima da média — sem detalhar ficha
-  const totalVendedores = dados.reduce((s, gr) => s + gr.fichas.length, 0);
-  const ehSingular = totalVendedores === 1;
+  // resumo por ROTA: quantos vendedores estão acima da média — sem detalhar ficha
+  const byRota = new Map();
+  for (const gr of dados){
+    for (const f of gr.fichas){
+      const rota = (f.rota || '').trim() || '(sem rota)';
+      byRota.set(rota, (byRota.get(rota) || 0) + 1);
+    }
+  }
+  const rotas = Array.from(byRota.entries()).sort((a,b)=> b[1] - a[1]);
+  const totalVendedores = rotas.reduce((s,[,n])=> s + n, 0);
 
   box.innerHTML = `
     <div class="alert-item">
       <div class="alert-title">
         <span class="alert-ico">⚠️</span>
-        <strong>${totalVendedores} ${ehSingular ? 'vendedor está' : 'vendedores estão'} acima da média de despesas</strong>
+        <strong>${totalVendedores} ${totalVendedores === 1 ? 'vendedor está' : 'vendedores estão'} acima da média de despesas</strong>
       </div>
-      <button class="btn small" data-desp-rel style="margin-top:8px;">
+      <ul class="alert-list">
+        ${rotas.map(([rota, n]) => `
+          <li class="alert-ficha">
+            <span class="ficha-rota">${esc(rota)}</span>
+            <span class="alert-badge">${n} ${n === 1 ? 'vendedor' : 'vendedores'}</span>
+          </li>
+        `).join('')}
+      </ul>
+      <button class="btn small" data-desp-mes style="margin-top:8px;">
         👁️ Mostrar detalhes
       </button>
     </div>
   `;
 
-  // handler do botão → vai para RELATÓRIOS com o período do mês selecionado no dashboard
+  // handler do botão → vai para DESPESAS com o período do mês selecionado no dashboard
   const ymAtual = (document.getElementById('dashMes')?.value) || ymNow();
-  box.querySelector('[data-desp-rel]')?.addEventListener('click', ()=>{
-    gotoRelatorioDespesas(ymAtual);
+  box.querySelector('[data-desp-mes]')?.addEventListener('click', ()=>{
+    gotoDespesasMes(ymAtual);
   });
 
   box.classList.add('has-alert');
 }
 
-// ===== 3) NAVEGAÇÃO: ir para o RELATÓRIO com o período do mês selecionado =====
-window.gotoRelatorioDespesas = function(ym){
+// ===== 3) NAVEGAÇÃO: ir para a página de DESPESAS com o período do mês selecionado =====
+window.gotoDespesasMes = function(ym){
   ym = ym || ymNow();
 
-  // abre a aba de Relatórios de Prestações
-  try { if (typeof window.switchTab === 'function') window.switchTab('prest-rel'); } catch(_){}
+  // abre a aba de Despesas
+  try { if (typeof window.switchTab === 'function') window.switchTab('desp'); } catch(_){}
 
-  // preenche o período (De/Até) com o mês em que a análise foi gerada
-  const de  = document.getElementById('relDe');
-  const ate = document.getElementById('relAte');
+  // preenche o período (De/Até) com o mês selecionado no dashboard
+  const de  = document.getElementById('despDe');
+  const ate = document.getElementById('despAte');
   if (de){
     de.value = ymFirst(ym);
     de.dispatchEvent(new Event('change', { bubbles:true }));
@@ -470,9 +485,8 @@ window.gotoRelatorioDespesas = function(ym){
     ate.dispatchEvent(new Event('change', { bubbles:true }));
   }
 
-  // dispara a busca do relatório
-  const btnAplicar = document.getElementById('btnRelAplicar');
-  if (btnAplicar) btnAplicar.click();
+  // re-renderiza a tabela de despesas
+  if (typeof window.renderDespesas === 'function') window.renderDespesas();
 };
 
 // ===== NAVEGAÇÃO: ir para a página de Despesas com filtros preenchidos =====

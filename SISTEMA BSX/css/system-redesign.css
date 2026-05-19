@@ -121,6 +121,11 @@ html, body {
 .topbar {
   background: var(--card-bg) !important;
   border-bottom: 1px solid var(--line) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 0 16px !important;
+  height: var(--top-h);
 }
 
 .topbar .logo {
@@ -135,19 +140,154 @@ html, body {
   color: var(--brand) !important;
 }
 
-/* Company selector in topbar */
-.topbar select,
-.topbar #companySelect {
+/* Spacer */
+.topbar-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---- Chat IA button ---- */
+.topbar-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
   background: var(--page-bg) !important;
-  color: var(--text) !important;
+  color: var(--navy) !important;
   border: 1px solid var(--line) !important;
   border-radius: var(--radius-sm) !important;
-  padding: 8px 12px !important;
+  padding: 8px 14px !important;
+  font-size: 13px !important;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.topbar-btn:hover {
+  background: #e2e8f0 !important;
+  border-color: var(--line-2) !important;
+  transform: translateY(-1px);
+}
+
+.topbar-btn svg {
+  flex-shrink: 0;
+}
+
+.topbar-btn-label {
+  font-size: 13px;
+}
+
+/* ---- Company Switcher ---- */
+.company-switcher {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%);
+  border-radius: var(--radius-sm);
+  padding: 0;
+  position: relative;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
+  border: 1px solid var(--navy-3);
+  transition: box-shadow var(--transition), border-color var(--transition);
+}
+
+.company-switcher:hover {
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.20);
+  border-color: var(--brand);
+}
+
+.company-switcher:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-glow);
+}
+
+.company-switcher-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+  color: var(--brand);
+  border-right: 1px solid rgba(255, 255, 255, 0.10);
+  flex-shrink: 0;
+}
+
+.company-switcher select,
+#empresaSelect {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background: transparent !important;
+  border: none !important;
+  color: var(--sb-fg) !important;
+  font-weight: 700 !important;
+  font-size: 14px !important;
+  padding: 9px 36px 9px 12px !important;
+  cursor: pointer;
+  min-width: 140px;
+  font-family: inherit;
+  outline: none !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23FACC15' d='M5 7.5L0.67 2.5h8.66z'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 12px center !important;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0 !important;
+}
+
+.company-switcher select option,
+#empresaSelect option {
+  background: var(--navy) !important;
+  color: var(--sb-fg) !important;
+  padding: 10px !important;
   font-weight: 600;
   font-size: 14px;
 }
 
-/* Topbar toggle */
+/* ---- User Area (right side) ---- */
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+  height: 32px;
+}
+
+.topbar-greeting,
+.topbar-greeting#userBadge {
+  color: var(--text-dim) !important;
+  font-size: 13px !important;
+  font-weight: 600;
+  white-space: nowrap;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+.topbar-logout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--page-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+
+.topbar-logout:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: var(--danger);
+  transform: translateY(-1px);
+}
+
+.topbar-logout:active {
+  transform: translateY(0);
+}
+
+/* Topbar toggle (sidebar) */
 #sbToggle {
   background: var(--navy) !important;
   color: var(--brand-2) !important;
@@ -803,39 +943,81 @@ tr.tr-det td {
 
 /* ---- Tablet/Small desktop (up to 900px) ---- */
 @media (max-width: 900px) {
-  /* Topbar mobile adjustments */
+  /* Topbar mobile: navy background */
   .topbar, header {
     background: var(--navy) !important;
     border-bottom: 1px solid var(--navy-3) !important;
-    padding: 10px 12px !important;
+    padding: 0 10px !important;
+    gap: 8px !important;
+    flex-wrap: nowrap !important;
   }
 
   .topbar .logo {
     color: var(--brand) !important;
   }
 
-  /* Sidebar mobile */
-  .topbar select,
-  .topbar #companySelect {
-    background: var(--navy-2) !important;
-    color: var(--sb-fg) !important;
-    border: 1px solid var(--navy-3) !important;
-  }
-
+  /* Menu toggle */
   .topbar .sb-open,
-  .topbar #menuToggle,
-  .topbar button[onclick*="sidebar"],
-  .topbar button[data-action="toggle-menu"] {
+  .topbar #menuToggle {
     background: var(--navy-2) !important;
     color: var(--brand-2) !important;
     border: 1px solid var(--navy-3) !important;
+    order: -1;
   }
 
-  .topbar #btnChatIA,
-  .topbar .ai-chat-btn {
+  /* Chat IA button — icon only on mobile */
+  .topbar-btn {
     background: var(--navy-2) !important;
     color: var(--brand) !important;
     border: 1px solid var(--navy-3) !important;
+    padding: 8px !important;
+  }
+
+  .topbar-btn-label {
+    display: none;
+  }
+
+  /* Company switcher: shrink */
+  .company-switcher {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .company-switcher-icon {
+    display: none;
+  }
+
+  .company-switcher select,
+  #empresaSelect {
+    min-width: 100px !important;
+    font-size: 13px !important;
+    padding: 8px 28px 8px 10px !important;
+  }
+
+  /* User area: compact */
+  .topbar-user {
+    border-left: 1px solid var(--navy-3);
+    gap: 6px;
+    padding-left: 8px;
+  }
+
+  .topbar-greeting,
+  .topbar-greeting#userBadge {
+    display: none !important;
+  }
+
+  .topbar-logout {
+    background: var(--navy-2) !important;
+    border-color: var(--navy-3) !important;
+    color: var(--sb-fg) !important;
+    width: 34px;
+    height: 34px;
+  }
+
+  .topbar-logout:hover {
+    background: rgba(220, 38, 38, 0.15) !important;
+    border-color: rgba(220, 38, 38, 0.30) !important;
+    color: #fca5a5 !important;
   }
 
   /* Grid layouts: single column */

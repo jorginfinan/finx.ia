@@ -1,0 +1,776 @@
+/* ================================================================
+   DASHBOARD REDESIGN — FINX.IA
+   Premium dark theme with glassmorphism, gradients & micro-animations
+   Scoped to #pageInicio to avoid side-effects on other pages
+   ================================================================ */
+
+/* ====== DESIGN TOKENS (Dashboard only) ============================== */
+#pageInicio {
+  --dash-bg: #0c0e14;
+  --dash-bg-2: #131620;
+  --dash-surface: rgba(255, 255, 255, 0.04);
+  --dash-surface-2: rgba(255, 255, 255, 0.07);
+  --dash-glass: rgba(255, 255, 255, 0.06);
+  --dash-glass-border: rgba(255, 255, 255, 0.10);
+  --dash-glass-hover: rgba(255, 255, 255, 0.10);
+  --dash-text: #e8eaed;
+  --dash-text-dim: #8b92a5;
+  --dash-text-bright: #ffffff;
+  --dash-green: #10b981;
+  --dash-green-2: #059669;
+  --dash-green-glow: rgba(16, 185, 129, 0.25);
+  --dash-amber: #f59e0b;
+  --dash-amber-2: #d97706;
+  --dash-amber-glow: rgba(245, 158, 11, 0.20);
+  --dash-red: #ef4444;
+  --dash-red-dim: rgba(239, 68, 68, 0.15);
+  --dash-blue: #6366f1;
+  --dash-blue-dim: rgba(99, 102, 241, 0.15);
+  --dash-radius: 16px;
+  --dash-radius-sm: 10px;
+  --dash-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --dash-transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ====== PAGE BACKGROUND ============================================= */
+#pageInicio {
+  background: linear-gradient(160deg, var(--dash-bg) 0%, var(--dash-bg-2) 100%);
+  min-height: calc(100vh - var(--top-h, 56px));
+  padding: 24px !important;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  color: var(--dash-text);
+}
+
+/* ====== CONTAINER ==================================================== */
+#pageInicio.container {
+  max-width: 1320px;
+  margin: 0 auto;
+}
+
+/* ====== GRID LAYOUT ================================================== */
+#pageInicio .dash-grid {
+  display: grid !important;
+  gap: 20px;
+  align-items: start;
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas:
+    "caixa   painel"
+    "alertas alertas"
+    "tabela  tabela" !important;
+}
+
+/* ====== CARD BASE (Glass) ============================================ */
+#pageInicio .card {
+  background: var(--dash-glass) !important;
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid var(--dash-glass-border) !important;
+  border-radius: var(--dash-radius) !important;
+  box-shadow: var(--dash-shadow) !important;
+  padding: 20px !important;
+  transition: transform var(--dash-transition), box-shadow var(--dash-transition), border-color var(--dash-transition);
+  color: var(--dash-text);
+  position: relative;
+  overflow: hidden;
+}
+
+#pageInicio .card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+}
+
+/* Subtle pattern overlay on cards */
+#pageInicio .card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 20% -30%, rgba(255,255,255,0.03) 0%, transparent 70%);
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* ====== CARD TITLE =================================================== */
+#pageInicio .card-title {
+  font-weight: 700 !important;
+  font-size: 15px;
+  color: var(--dash-text-dim) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.8px !important;
+  margin: 0 0 16px !important;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ====== CARD CAIXA (Saldo) =========================================== */
+#pageInicio .card-caixa {
+  grid-area: caixa !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: linear-gradient(135deg, #059669 0%, #10b981 50%, #14b8a6 100%) !important;
+  border: 1px solid rgba(16, 185, 129, 0.30) !important;
+  color: #fff !important;
+  position: relative;
+}
+
+#pageInicio .card-caixa::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 90% 20%, rgba(255,255,255,0.12) 0%, transparent 50%),
+    radial-gradient(circle at 10% 80%, rgba(0,0,0,0.10) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+#pageInicio .card-caixa::after {
+  content: '💰';
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-60%);
+  font-size: 56px;
+  opacity: 0.12;
+  pointer-events: none;
+  filter: grayscale(0.3);
+}
+
+#pageInicio .card-caixa .hero {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 28px 24px 16px;
+  position: relative;
+  z-index: 1;
+}
+
+#pageInicio .card-caixa .hero .title {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  opacity: 0.85;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#pageInicio .card-caixa .hero .saldo {
+  font-size: 36px !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.5px !important;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.20) !important;
+  line-height: 1.1;
+}
+
+#pageInicio .card-caixa .bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px !important;
+  background: rgba(0, 0, 0, 0.15) !important;
+  backdrop-filter: blur(8px) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
+  position: relative;
+  z-index: 1;
+}
+
+#pageInicio .card-caixa .badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  color: #fff;
+  backdrop-filter: blur(4px);
+}
+
+#pageInicio .card-caixa #dashMes {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none !important;
+  background: rgba(255, 255, 255, 0.95) !important;
+  color: #111 !important;
+  padding: 8px 12px;
+  border-radius: var(--dash-radius-sm);
+  font-weight: 600;
+  font-size: 14px;
+  inline-size: 175px;
+  cursor: pointer;
+  transition: box-shadow var(--dash-transition);
+}
+
+#pageInicio .card-caixa #dashMes:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.30);
+}
+
+/* ====== CARD PAINEL (KPIs) =========================================== */
+#pageInicio .card-painel {
+  grid-area: painel !important;
+  background: var(--dash-glass) !important;
+}
+
+#pageInicio .card-painel .kpis {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 8px !important;
+  list-style: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+#pageInicio .card-painel .kpis li {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  padding: 12px 14px !important;
+  background: var(--dash-surface) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  border-radius: var(--dash-radius-sm) !important;
+  transition: background var(--dash-transition), border-color var(--dash-transition);
+}
+
+#pageInicio .card-painel .kpis li:hover {
+  background: var(--dash-surface-2) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+#pageInicio .card-painel .kpis span {
+  color: var(--dash-text-dim) !important;
+  font-weight: 500 !important;
+  font-size: 13px !important;
+}
+
+#pageInicio .card-painel .kpis strong {
+  font-weight: 700 !important;
+  color: var(--dash-text-bright) !important;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+#pageInicio .card-painel hr {
+  border: none !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+  margin: 14px 0 !important;
+}
+
+#pageInicio .card-painel .maior {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#pageInicio .card-painel .maior span {
+  color: var(--dash-text-dim);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+#pageInicio .card-painel .maior strong {
+  font-weight: 700;
+  color: var(--dash-red);
+  font-size: 14px;
+}
+
+/* ====== CARD ALERTAS ================================================= */
+#pageInicio .card-alertas {
+  grid-area: alertas !important;
+  background: var(--dash-glass) !important;
+}
+
+#pageInicio .card-alertas .muted {
+  color: var(--dash-text-dim);
+  font-size: 14px;
+}
+
+#pageInicio .card-alertas .alert-item {
+  background: rgba(245, 158, 11, 0.08) !important;
+  border: 1px solid rgba(245, 158, 11, 0.20) !important;
+  border-radius: 12px !important;
+  padding: 16px !important;
+  margin: 0 !important;
+}
+
+#pageInicio .card-alertas .alert-title {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  margin-bottom: 12px !important;
+  font-weight: 700 !important;
+  color: var(--dash-amber) !important;
+  font-size: 14px;
+}
+
+#pageInicio .card-alertas .alert-title strong {
+  color: var(--dash-text);
+}
+
+/* Alert rota grid */
+#pageInicio .rota-alert-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+#pageInicio .rota-alert-card {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(245, 158, 11, 0.18) !important;
+  border-radius: var(--dash-radius-sm) !important;
+  padding: 12px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: background var(--dash-transition), border-color var(--dash-transition);
+}
+
+#pageInicio .rota-alert-card:hover {
+  background: rgba(255, 255, 255, 0.07) !important;
+  border-color: rgba(245, 158, 11, 0.35) !important;
+}
+
+#pageInicio .rota-alert-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#pageInicio .rota-alert-nome {
+  font-weight: 700 !important;
+  color: var(--dash-amber) !important;
+  font-size: 13px !important;
+}
+
+#pageInicio .rota-alert-count {
+  background: var(--dash-amber) !important;
+  color: #000 !important;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+#pageInicio .rota-alert-card .btn {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: var(--dash-text) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--dash-transition);
+}
+
+#pageInicio .rota-alert-card .btn:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(255, 255, 255, 0.20) !important;
+}
+
+/* ====== CARD TABELA ================================================== */
+#pageInicio .card-tabela {
+  grid-area: tabela !important;
+  background: var(--dash-glass) !important;
+}
+
+/* Tool row (search + buttons) */
+#pageInicio .tool-row {
+  display: flex !important;
+  gap: 10px !important;
+  align-items: center !important;
+  margin-bottom: 16px !important;
+}
+
+#pageInicio .tool-row input {
+  flex: 1;
+  padding: 10px 14px !important;
+  background: var(--dash-surface) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-radius: var(--dash-radius-sm) !important;
+  color: var(--dash-text) !important;
+  font-size: 14px;
+  transition: border-color var(--dash-transition), box-shadow var(--dash-transition);
+}
+
+#pageInicio .tool-row input::placeholder {
+  color: var(--dash-text-dim);
+}
+
+#pageInicio .tool-row input:focus {
+  outline: none;
+  border-color: var(--dash-blue) !important;
+  box-shadow: 0 0 0 3px var(--dash-blue-dim);
+}
+
+#pageInicio .tool-row .btn {
+  padding: 10px 18px;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: var(--dash-text) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: var(--dash-radius-sm);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--dash-transition);
+  white-space: nowrap;
+}
+
+#pageInicio .tool-row .btn:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+#pageInicio .tool-row .btn.ghost {
+  background: transparent !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: var(--dash-text-dim) !important;
+}
+
+#pageInicio .tool-row .btn.ghost:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: var(--dash-text) !important;
+}
+
+/* Table wrapper */
+#pageInicio .table-wrap {
+  overflow: auto !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* Custom scrollbar inside table */
+#pageInicio .table-wrap::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+#pageInicio .table-wrap::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+#pageInicio .table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+
+#pageInicio .table-wrap::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.20);
+}
+
+/* Table */
+#pageInicio .table {
+  width: 100% !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  background: transparent !important;
+}
+
+#pageInicio .table thead th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 2 !important;
+  background: linear-gradient(135deg, #1a1d2e 0%, #1e2235 100%) !important;
+  color: var(--dash-text-dim) !important;
+  text-align: left !important;
+  padding: 14px 16px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.8px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+  white-space: nowrap;
+}
+
+#pageInicio .table thead th:first-child {
+  border-radius: 12px 0 0 0;
+}
+
+#pageInicio .table thead th:last-child {
+  border-radius: 0 12px 0 0;
+}
+
+#pageInicio .table tbody tr {
+  transition: background var(--dash-transition);
+}
+
+#pageInicio .table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+#pageInicio .table tbody td {
+  padding: 14px 16px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
+  color: var(--dash-text) !important;
+  font-size: 14px;
+  vertical-align: middle !important;
+}
+
+#pageInicio .table tbody td div[style*="color:#6b7280"],
+#pageInicio .table tbody td div[style*="color: #6b7280"] {
+  color: var(--dash-text-dim) !important;
+}
+
+/* Value negative (red) */
+#pageInicio .table tbody td[style*="color:#b91c1c"],
+#pageInicio .table tbody td[style*="color: #b91c1c"] {
+  color: var(--dash-red) !important;
+}
+
+/* Value positive (green) */
+#pageInicio .table tbody td[style*="color:green"],
+#pageInicio .table tbody td[style*="color: green"] {
+  color: var(--dash-green) !important;
+}
+
+/* Even rows subtle stripe */
+#pageInicio .table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.015) !important;
+}
+
+/* Footer totals */
+#pageInicio .table tfoot tr {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+#pageInicio .table tfoot td,
+#pageInicio .table tfoot th {
+  padding: 14px 16px !important;
+  font-weight: 800 !important;
+  color: var(--dash-text-bright) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-bottom: none !important;
+  background: transparent !important;
+  font-size: 14px;
+}
+
+#pageInicio .table tfoot td[style*="color:green"],
+#pageInicio .table tfoot td[style*="color: green"] {
+  color: var(--dash-green) !important;
+}
+
+/* ====== EMPTY STATE =================================================== */
+#pageInicio .table tbody td[colspan] {
+  text-align: center;
+  color: var(--dash-text-dim);
+  padding: 32px 16px !important;
+  font-size: 14px;
+}
+
+/* ====== SECTION TITLE ICON ANIMATION ================================= */
+@keyframes dashPulse {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+#pageInicio .card-alertas .alert-ico {
+  animation: dashPulse 2s ease-in-out infinite;
+  display: inline-block;
+}
+
+/* ====== CARD ENTRANCE ANIMATION ====================================== */
+@keyframes dashCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+#pageInicio .card-caixa  { animation: dashCardIn 0.4s ease-out 0.05s both; }
+#pageInicio .card-painel { animation: dashCardIn 0.4s ease-out 0.12s both; }
+#pageInicio .card-alertas { animation: dashCardIn 0.4s ease-out 0.19s both; }
+#pageInicio .card-tabela { animation: dashCardIn 0.4s ease-out 0.26s both; }
+
+/* ====== RESPONSIVE ==================================================== */
+
+/* Tablets / medium screens */
+@media (max-width: 1100px) {
+  #pageInicio .dash-grid {
+    grid-template-columns: 1fr !important;
+    grid-template-areas:
+      "caixa"
+      "painel"
+      "alertas"
+      "tabela" !important;
+  }
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  #pageInicio {
+    padding: 12px !important;
+  }
+
+  #pageInicio .dash-grid {
+    gap: 14px !important;
+  }
+
+  /* Caixa */
+  #pageInicio .card-caixa .hero {
+    padding: 20px 18px 12px;
+  }
+
+  #pageInicio .card-caixa .hero .saldo {
+    font-size: 28px !important;
+  }
+
+  #pageInicio .card-caixa .bar {
+    padding: 12px 18px !important;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  #pageInicio .card-caixa #dashMes {
+    inline-size: 100%;
+  }
+
+  /* Painel KPIs */
+  #pageInicio .card-painel .kpis li {
+    padding: 10px 12px !important;
+  }
+
+  #pageInicio .card-painel .kpis span {
+    font-size: 12px !important;
+  }
+
+  #pageInicio .card-painel .kpis strong {
+    font-size: 13px !important;
+  }
+
+  /* Tool row */
+  #pageInicio .tool-row {
+    flex-wrap: wrap !important;
+  }
+
+  #pageInicio .tool-row input {
+    min-width: 0;
+    flex: 1 1 180px;
+  }
+
+  /* Table */
+  #pageInicio .table {
+    min-width: 680px;
+  }
+
+  #pageInicio .table thead th {
+    padding: 10px 12px !important;
+    font-size: 10px !important;
+  }
+
+  #pageInicio .table tbody td {
+    padding: 10px 12px !important;
+    font-size: 13px !important;
+  }
+
+  /* Alertas */
+  #pageInicio .rota-alert-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Overflow control */
+  #pageInicio {
+    overflow-x: hidden;
+  }
+
+  #pageInicio .card {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+/* Very small screens */
+@media (max-width: 480px) {
+  #pageInicio .card-caixa .hero .saldo {
+    font-size: 24px !important;
+  }
+
+  #pageInicio .card-caixa::after {
+    font-size: 40px;
+    right: 12px;
+  }
+
+  #pageInicio .tool-row {
+    flex-direction: column;
+  }
+
+  #pageInicio .tool-row input,
+  #pageInicio .tool-row .btn {
+    width: 100%;
+  }
+}
+
+/* ====== SCROLLBAR FOR TABLE — MOBILE GRADIENT HINTS ================== */
+@media (max-width: 768px) {
+  #pageInicio .table-wrap {
+    background:
+      linear-gradient(90deg, rgba(12,14,20,1) 30%, transparent),
+      linear-gradient(90deg, transparent, rgba(12,14,20,1) 70%) 100% 0,
+      radial-gradient(farthest-side at 0 50%, rgba(255,255,255,.08), transparent),
+      radial-gradient(farthest-side at 100% 50%, rgba(255,255,255,.08), transparent) 100% 0 !important;
+    background-repeat: no-repeat;
+    background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
+    background-attachment: local, local, scroll, scroll;
+  }
+}
+
+/* ====== PRINT — keep dashboard readable on paper ===================== */
+@media print {
+  #pageInicio {
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  #pageInicio .card {
+    background: #fff !important;
+    border: 1px solid #ddd !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    color: #111 !important;
+  }
+
+  #pageInicio .card-caixa {
+    background: #059669 !important;
+    color: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #pageInicio .card-painel .kpis li {
+    background: #f9fafb !important;
+    border: 1px solid #e5e7eb !important;
+    color: #111 !important;
+  }
+
+  #pageInicio .card-painel .kpis span {
+    color: #6b7280 !important;
+  }
+
+  #pageInicio .card-painel .kpis strong {
+    color: #111 !important;
+  }
+
+  #pageInicio .table thead th {
+    background: #222 !important;
+    color: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #pageInicio .table tbody td {
+    color: #111 !important;
+    border-color: #e5e7eb !important;
+  }
+
+  #pageInicio .card-title {
+    color: #333 !important;
+  }
+}

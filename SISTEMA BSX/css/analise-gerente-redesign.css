@@ -358,6 +358,11 @@
 }
 
 /* ====== TABELAS ====================================================== */
+
+/* RESET: neutraliza regras genéricas do app.css e do JS-injected styles
+   que definem backgrounds brancos nos <tr> (ex: tr:nth-child(even){background:#f9fafb})
+   e .ag-table tr:hover{background:#f9fafb} */
+#pageAnaliseGerente table,
 #pageAnaliseGerente .ag-table {
   width: 100% !important;
   border-collapse: separate !important;
@@ -366,7 +371,28 @@
   background: transparent !important;
 }
 
-#pageAnaliseGerente .ag-table th {
+/* Force ALL tr backgrounds to transparent — kills white bleed-through */
+#pageAnaliseGerente .ag-table tr,
+#pageAnaliseGerente .ag-table tbody tr,
+#pageAnaliseGerente .ag-table tbody tr:nth-child(odd),
+#pageAnaliseGerente .ag-table tbody tr:nth-child(even) {
+  background: transparent !important;
+}
+
+/* Hover on the TR level — also transparent, let td handle the color */
+#pageAnaliseGerente .ag-table tr:hover,
+#pageAnaliseGerente .ag-table tbody tr:hover {
+  background: transparent !important;
+}
+
+/* THEAD: force dark gradient on th, transparent on tr */
+#pageAnaliseGerente .ag-table thead tr {
+  background: transparent !important;
+}
+
+#pageAnaliseGerente .ag-table th,
+#pageAnaliseGerente .ag-table thead th {
+  position: static !important;
   background: linear-gradient(135deg, #1a1d2e 0%, #1e2235 100%) !important;
   color: var(--ag-text-dim) !important;
   padding: 13px 16px !important;
@@ -379,22 +405,29 @@
   white-space: nowrap;
 }
 
+/* TFOOT: transparent row */
+#pageAnaliseGerente .ag-table tfoot tr,
+#pageAnaliseGerente .ag-table tfoot tr:nth-child(even),
+#pageAnaliseGerente .ag-table tfoot tr:nth-child(odd) {
+  background: transparent !important;
+}
+
+/* TD — the actual background lives HERE, not on TR */
 #pageAnaliseGerente .ag-table td {
   padding: 13px 16px !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
   color: var(--ag-text) !important;
+  background: transparent !important;
   transition: background var(--ag-transition);
 }
 
-#pageAnaliseGerente .ag-table tr:hover td {
-  background: rgba(255, 255, 255, 0.04) !important;
+/* Even rows: subtle stripe on td */
+#pageAnaliseGerente .ag-table tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.015) !important;
 }
 
-#pageAnaliseGerente .ag-table tr:nth-child(even) td {
-  background: rgba(255, 255, 255, 0.015);
-}
-
-#pageAnaliseGerente .ag-table tr:nth-child(even):hover td {
+/* Hover: visible highlight on td */
+#pageAnaliseGerente .ag-table tbody tr:hover td {
   background: rgba(255, 255, 255, 0.05) !important;
 }
 

@@ -867,10 +867,200 @@ tr.tr-det td {
   background: var(--text-muted);
 }
 
-/* ====== SELECTION ==================================================== */
-::selection {
-  background: var(--brand-dim);
-  color: var(--navy);
+/* ====== SIDEBAR ICON STYLES ========================================== */
+
+/* SVG icons in sidebar */
+#sidebar .ico {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+#sidebar .ico svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Active item icons get gold color */
+#sidebar .sb-item.active .ico,
+#sidebar .sb-subitem.active .ico {
+  color: var(--brand-2) !important;
+}
+
+/* Chevron icons */
+#sidebar .chev svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.6;
+  transition: transform 0.2s ease;
+}
+
+#sidebar .sb-group[aria-expanded="true"] .chev svg {
+  transform: rotate(180deg);
+}
+
+/* ====== SIDEBAR TEXT — no overflow =================================== */
+#sidebar .sb-item,
+#sidebar .sb-subitem,
+#sidebar .sb-group {
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
+}
+
+#sidebar .sb-item .label,
+#sidebar .sb-subitem .label,
+#sidebar .sb-group .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+/* ====== SIDEBAR COMPACT MODE — fixes ================================= */
+
+/* When compact, icons center and labels hide */
+body.sidebar-compact #sidebar .ico {
+  width: 22px;
+  height: 22px;
+}
+
+body.sidebar-compact #sidebar .ico svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* Hide labels, badges, chevrons */
+body.sidebar-compact #sidebar .label,
+body.sidebar-compact #sidebar .chev,
+body.sidebar-compact #sidebar .user-badge {
+  display: none !important;
+}
+
+/* Center items */
+body.sidebar-compact #sidebar .sb-item,
+body.sidebar-compact #sidebar .sb-subitem,
+body.sidebar-compact #sidebar .sb-group,
+body.sidebar-compact #sidebar .sb-bottom .btn {
+  justify-content: center !important;
+  padding: 12px !important;
+  overflow: visible !important;
+}
+
+/* Nav overflow must be visible for tooltips and popovers */
+body.sidebar-compact #sidebar .sb-nav {
+  overflow: visible !important;
+}
+
+/* Sidebar itself must not clip popovers */
+body.sidebar-compact #sidebar {
+  overflow: visible !important;
+}
+
+/* ====== COMPACT TOOLTIPS ============================================= */
+/* Show tooltip on hover using the title attribute */
+body.sidebar-compact #sidebar .sb-item,
+body.sidebar-compact #sidebar .sb-subitem,
+body.sidebar-compact #sidebar .sb-group,
+body.sidebar-compact #sidebar .sb-bottom .btn {
+  position: relative;
+}
+
+body.sidebar-compact #sidebar .sb-item:hover::after,
+body.sidebar-compact #sidebar .sb-subitem:hover::after,
+body.sidebar-compact #sidebar .sb-group:hover::after,
+body.sidebar-compact #sidebar .sb-bottom .btn:hover::after {
+  content: attr(title);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--navy);
+  color: var(--brand-2);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 200;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.30);
+  border: 1px solid var(--navy-3);
+}
+
+/* Small arrow pointing left */
+body.sidebar-compact #sidebar .sb-item:hover::before,
+body.sidebar-compact #sidebar .sb-subitem:hover::before,
+body.sidebar-compact #sidebar .sb-group:hover::before,
+body.sidebar-compact #sidebar .sb-bottom .btn:hover::before {
+  content: '';
+  position: absolute;
+  left: calc(100% + 4px);
+  top: 50%;
+  transform: translateY(-50%);
+  border: 5px solid transparent;
+  border-right-color: var(--navy);
+  z-index: 201;
+  pointer-events: none;
+}
+
+/* ====== COMPACT SUBMENU POPOVER ====================================== */
+body.sidebar-compact #sidebar .sb-sub {
+  position: absolute !important;
+  left: 72px !important;
+  top: 0;
+  min-width: 220px;
+  background: var(--sb-bg) !important;
+  border: 1px solid var(--navy-3) !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 8px !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.40) !important;
+  z-index: 200;
+}
+
+body.sidebar-compact #sidebar .sb-sub .sb-subitem {
+  justify-content: flex-start !important;
+  padding: 10px 14px !important;
+  overflow: hidden !important;
+}
+
+body.sidebar-compact #sidebar .sb-sub .label {
+  display: inline !important;
+}
+
+body.sidebar-compact #sidebar .sb-sub .ico {
+  width: 18px;
+  height: 18px;
+}
+
+body.sidebar-compact #sidebar .sb-sub .ico svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ====== TOPBAR COMPANY SELECT ======================================== */
+#empresaSelect {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23FACC15' d='M6 9L1 4h10z'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  padding-right: 30px !important;
+  cursor: pointer;
 }
 
 /* ====== PRINT ======================================================== */

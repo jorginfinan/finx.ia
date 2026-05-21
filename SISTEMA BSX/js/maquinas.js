@@ -164,13 +164,13 @@
           <td>${esc(m.chip_atual || '—')}</td>
           <td>${fmtData(m.data_entrada)}</td>
           <td class="tv-right" style="white-space:nowrap;">
-            <button class="btn ghost" data-act="historico" title="Ver histórico">📜</button>
-            <button class="btn ghost" data-act="assistencia" title="Peças / Assistência Técnica">🔧</button>
-            ${podeEncerrarManut ? '<button class="btn" data-act="encerrar-manut" title="Encerrar manutenção">✅</button>' : ''}
-            ${podeEntregar ? '<button class="btn" data-act="entregar" title="Entregar">📤</button>' : ''}
-            ${podeDevolver ? '<button class="btn" data-act="devolver" title="Devolver">📥</button>' : ''}
-            ${podeEditar ? '<button class="btn ghost" data-act="editar" title="Editar">✏️</button>' : ''}
-            ${podeBaixar ? '<button class="btn danger" data-act="baixar" title="Dar baixa">🗑️</button>' : ''}
+            <button class="btn ghost" data-act="historico" data-tip="Ver histórico completo">📜</button>
+            <button class="btn ghost" data-act="assistencia" data-tip="Peças / Assistência Técnica">🔧</button>
+            ${podeEncerrarManut ? '<button class="btn" data-act="encerrar-manut" data-tip="Encerrar manutenção (consertada ou sem conserto)">✅</button>' : ''}
+            ${podeEntregar ? '<button class="btn" data-act="entregar" data-tip="Entregar a um vendedor">📤</button>' : ''}
+            ${podeDevolver ? '<button class="btn" data-act="devolver" data-tip="Devolver máquina (do vendedor)">📥</button>' : ''}
+            ${podeEditar ? '<button class="btn ghost" data-act="editar" data-tip="Editar dados da máquina">✏️</button>' : ''}
+            ${podeBaixar ? '<button class="btn danger" data-act="baixar" data-tip="Dar baixa permanente">🗑️</button>' : ''}
           </td>
         </tr>
       `;

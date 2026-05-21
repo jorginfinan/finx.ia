@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="css/dashboard-mobile-fix.css">
   <link rel="stylesheet" href="css/dashboard-redesign.css">
   <link rel="stylesheet" href="css/analise-gerente-redesign.css">
+  <link rel="stylesheet" href="css/tooltips.css">
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -1583,8 +1584,8 @@ function pgDivAddFromForm(){
         </div>
 
         <div style="grid-column:1/-1; display:flex; justify-content:flex-end; gap:10px;">
-          <button class="btn ghost" type="button" id="btnLimparMaquina">Limpar</button>
-          <button class="btn" type="submit" id="btnSalvarMaquina">Salvar Máquina</button>
+          <button class="btn ghost" type="button" id="btnLimparMaquina" data-tip="Limpar formulário sem salvar">Limpar</button>
+          <button class="btn" type="submit" id="btnSalvarMaquina" data-tip="Salvar máquina (cadastra ou atualiza)">Salvar Máquina</button>
         </div>
       </form>
     </div>
@@ -1829,22 +1830,22 @@ function pgDivAddFromForm(){
 
   <!-- KPIs em cards -->
   <div class="cards" id="estoqueCards" style="margin-bottom:20px;">
-    <div class="card-fin" style="background:linear-gradient(135deg,#10b981,#059669); padding:18px; border-radius:12px;">
+    <div class="card-fin" data-tip="Máquinas paradas no estoque, prontas para entrega" data-tip-pos="below" style="background:linear-gradient(135deg,#10b981,#059669); padding:18px; border-radius:12px;">
       <div style="font-size:13px; opacity:0.9;">No Estoque</div>
       <div class="big" id="kpiEstoque">0</div>
       <div style="font-size:11px; opacity:0.8;">disponíveis</div>
     </div>
-    <div class="card-fin" style="background:linear-gradient(135deg,#3b82f6,#2563eb); padding:18px; border-radius:12px;">
+    <div class="card-fin" data-tip="Máquinas atualmente com vendedores em campo" data-tip-pos="below" style="background:linear-gradient(135deg,#3b82f6,#2563eb); padding:18px; border-radius:12px;">
       <div style="font-size:13px; opacity:0.9;">Com Vendedores</div>
       <div class="big" id="kpiComVendedor">0</div>
       <div style="font-size:11px; opacity:0.8;">em uso</div>
     </div>
-    <div class="card-fin" style="background:linear-gradient(135deg,#f59e0b,#d97706); padding:18px; border-radius:12px;">
+    <div class="card-fin" data-tip="Máquinas com problema técnico, em reparo" data-tip-pos="below" style="background:linear-gradient(135deg,#f59e0b,#d97706); padding:18px; border-radius:12px;">
       <div style="font-size:13px; opacity:0.9;">Manutenção</div>
       <div class="big" id="kpiManutencao">0</div>
       <div style="font-size:11px; opacity:0.8;">em reparo</div>
     </div>
-    <div class="card-fin" style="background:linear-gradient(135deg,#6b7280,#4b5563); padding:18px; border-radius:12px;">
+    <div class="card-fin" data-tip="Máquinas inativas (baixa definitiva ou sem conserto)" data-tip-pos="below" style="background:linear-gradient(135deg,#6b7280,#4b5563); padding:18px; border-radius:12px;">
       <div style="font-size:13px; opacity:0.9;">Baixadas</div>
       <div class="big" id="kpiBaixadas">0</div>
       <div style="font-size:11px; opacity:0.8;">inativas</div>
@@ -1904,8 +1905,8 @@ function pgDivAddFromForm(){
   <!-- Ações -->
   <div class="card" style="margin-top:16px;">
     <div style="display:flex; gap:10px; flex-wrap:wrap;">
-      <button class="btn ghost" id="btnExportarEstoque" data-perm="maquinas_view">📥 Exportar CSV</button>
-      <button class="btn ghost" id="btnAtualizarEstoque">🔄 Atualizar</button>
+      <button class="btn ghost" id="btnExportarEstoque" data-perm="maquinas_view" data-tip="Baixar um arquivo .csv com todas as máquinas">📥 Exportar CSV</button>
+      <button class="btn ghost" id="btnAtualizarEstoque" data-tip="Recarregar dados do servidor">🔄 Atualizar</button>
     </div>
   </div>
 </section>
@@ -1919,27 +1920,27 @@ function pgDivAddFromForm(){
 
   <!-- KPIs -->
   <div class="cards" id="pecasCards" style="margin-bottom:20px;">
-    <div class="card-fin" style="background:linear-gradient(135deg,#0ea5e9,#0369a1); padding:18px; border-radius:12px;">
+    <div class="card-fin" data-tip="Quantidade de peças diferentes cadastradas e ativas" data-tip-pos="below" style="background:linear-gradient(135deg,#0ea5e9,#0369a1); padding:18px; border-radius:12px;">
       <div style="font-size:13px; opacity:0.9;">Peças cadastradas</div>
       <div class="big" id="kpiPecasTotal">0</div>
       <div style="font-size:11px; opacity:0.8;">ativas</div>
     </div>
-    <div class="card-fin" style="background:linear-gradient(135deg,#10b981,#059669); padding:18px; border-radius:12px;">
+    <div class="card-fin" data-tip="Soma de todas as unidades disponíveis em estoque" data-tip-pos="below" style="background:linear-gradient(135deg,#10b981,#059669); padding:18px; border-radius:12px;">
       <div style="font-size:13px; opacity:0.9;">Unidades em estoque</div>
       <div class="big" id="kpiPecasUnidades">0</div>
       <div style="font-size:11px; opacity:0.8;">total</div>
     </div>
-    <div class="card-fin" style="background:linear-gradient(135deg,#f59e0b,#d97706); padding:18px; border-radius:12px;">
+    <div class="card-fin" data-tip="Peças cujo estoque atual está igual ou abaixo do mínimo" data-tip-pos="below" style="background:linear-gradient(135deg,#f59e0b,#d97706); padding:18px; border-radius:12px;">
       <div style="font-size:13px; opacity:0.9;">Estoque baixo</div>
       <div class="big" id="kpiPecasBaixo">0</div>
       <div style="font-size:11px; opacity:0.8;">peças ≤ mínimo</div>
     </div>
-    <div class="card-fin" style="background:linear-gradient(135deg,#dc2626,#991b1b); padding:18px; border-radius:12px;">
+    <div class="card-fin" data-tip="Peças com estoque zerado — precisam de reposição" data-tip-pos="below" style="background:linear-gradient(135deg,#dc2626,#991b1b); padding:18px; border-radius:12px;">
       <div style="font-size:13px; opacity:0.9;">Sem estoque</div>
       <div class="big" id="kpiPecasZero">0</div>
       <div style="font-size:11px; opacity:0.8;">zeradas</div>
     </div>
-    <div class="card-fin" style="background:linear-gradient(135deg,#6366f1,#4338ca); padding:18px; border-radius:12px;">
+    <div class="card-fin" data-tip="Valor total imobilizado em estoque pelo preço de custo" data-tip-pos="below" style="background:linear-gradient(135deg,#6366f1,#4338ca); padding:18px; border-radius:12px;">
       <div style="font-size:13px; opacity:0.9;">Valor em estoque</div>
       <div class="big" id="kpiPecasValor">R$ 0,00</div>
       <div style="font-size:11px; opacity:0.8;">por preço de custo</div>
@@ -1993,8 +1994,8 @@ function pgDivAddFromForm(){
         </label>
 
         <div style="grid-column:1/-1; display:flex; justify-content:flex-end; gap:10px;">
-          <button class="btn ghost" type="button" id="btnLimparPeca">Limpar</button>
-          <button class="btn" type="submit" id="btnSalvarPeca">Salvar Peça</button>
+          <button class="btn ghost" type="button" id="btnLimparPeca" data-tip="Limpar formulário sem salvar">Limpar</button>
+          <button class="btn" type="submit" id="btnSalvarPeca" data-tip="Salvar peça (cadastra ou atualiza)">Salvar Peça</button>
         </div>
       </form>
     </div>
@@ -2037,8 +2038,8 @@ function pgDivAddFromForm(){
 
   <div class="card" style="margin-top:16px;">
     <div style="display:flex; gap:10px; flex-wrap:wrap;">
-      <button class="btn ghost" id="btnAtualizarPecas">🔄 Atualizar</button>
-      <button class="btn ghost" id="btnExportarPecas" data-perm="maquinas_view">📥 Exportar CSV</button>
+      <button class="btn ghost" id="btnAtualizarPecas" data-tip="Recarregar lista de peças do servidor">🔄 Atualizar</button>
+      <button class="btn ghost" id="btnExportarPecas" data-perm="maquinas_view" data-tip="Baixar arquivo .csv com todas as peças">📥 Exportar CSV</button>
     </div>
   </div>
 </section>

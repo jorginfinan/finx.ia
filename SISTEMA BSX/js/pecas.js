@@ -160,12 +160,12 @@
           <td style="white-space:nowrap;">${fmtBRL(p.preco_custo)}</td>
           <td>${modelos || '—'}${maisModelos}</td>
           <td class="tv-right" style="white-space:nowrap;">
-            <button class="btn ghost" data-act="historico" title="Histórico">📜</button>
-            ${podeEditar ? '<button class="btn" data-act="entrada" title="Entrada de estoque">📥</button>' : ''}
-            ${podeEditar ? '<button class="btn ghost" data-act="saida" title="Saída de estoque">📤</button>' : ''}
-            ${podeEditar ? '<button class="btn ghost" data-act="ajuste" title="Ajuste">⚙️</button>' : ''}
-            ${podeEditar ? '<button class="btn ghost" data-act="editar" title="Editar">✏️</button>' : ''}
-            ${podeEditar ? `<button class="btn ${p.ativo ? 'danger' : ''}" data-act="${p.ativo ? 'inativar' : 'ativar'}" title="${p.ativo ? 'Inativar' : 'Ativar'}">${p.ativo ? '🗑️' : '↩️'}</button>` : ''}
+            <button class="btn ghost" data-act="historico" data-tip="Ver histórico de movimentações desta peça">📜</button>
+            ${podeEditar ? '<button class="btn" data-act="entrada" data-tip="Entrada de estoque (compra, recebimento)">📥</button>' : ''}
+            ${podeEditar ? '<button class="btn ghost" data-act="saida" data-tip="Saída manual de estoque">📤</button>' : ''}
+            ${podeEditar ? '<button class="btn ghost" data-act="ajuste" data-tip="Ajuste de inventário (correção)">⚙️</button>' : ''}
+            ${podeEditar ? '<button class="btn ghost" data-act="editar" data-tip="Editar dados da peça">✏️</button>' : ''}
+            ${podeEditar ? `<button class="btn ${p.ativo ? 'danger' : ''}" data-act="${p.ativo ? 'inativar' : 'ativar'}" data-tip="${p.ativo ? 'Inativar peça (preserva histórico)' : 'Reativar peça'}">${p.ativo ? '🗑️' : '↩️'}</button>` : ''}
           </td>
         </tr>
       `;

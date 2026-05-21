@@ -688,15 +688,17 @@
         chip_atual: chipDevolvido ? null : m.chip_atual  // mantém chip se não foi devolvido
       });
 
-      // Se foi para manutenção, registra também o evento "manutencao" na linha do tempo
+      // Se foi para manutenção, registra evento adicional na linha do tempo.
+      // Usa tipo='edicao' (já aceito pela constraint do banco) com prefixo
+      // [MANUTENÇÃO] na observação para diferenciar visualmente no histórico.
       if (enviarManutencao) {
         try {
           await window.SupabaseAPI.maquinasMovimentacoes.create({
             maquina_id: maquinaId,
-            tipo: 'manutencao',
+            tipo: 'edicao',
             data_evento: dataEvento,
             motivo,
-            observacao: `Enviada para manutenção. ${obs || ''}`.trim(),
+            observacao: `[MANUTENÇÃO] Máquina enviada para manutenção. ${obs || ''}`.trim(),
             movimentacao_anterior_id: movDev?.id || null
           });
         } catch (errMan) {
@@ -1004,9 +1006,16 @@
           'devolucao':       { ico: '🔄', cor: '#f59e0b', label: 'Devolução' },
           'troca':           { ico: '🔁', cor: '#8b5cf6', label: 'Troca de máquina' },
           'baixa':           { ico: '🗑️', cor: '#dc2626', label: 'Baixa definitiva' },
+          'manutencao':      { ico: '🔧', cor: '#f59e0b', label: 'Manutenção' },
           'edicao':          { ico: '✏️', cor: '#6b7280', label: 'Edição / Assistência' }
         };
-        const t = tipos[mv.tipo] || { ico: '•', cor: '#6b7280', label: mv.tipo };
+        // Se a observação começa com [MANUTENÇÃO], usa visual de manutenção
+        let t = tipos[mv.tipo] || { ico: '•', cor: '#6b7280', label: mv.tipo };
+        if (String(mv.observacao || '').startsWith('[MANUTENÇÃO]')) {
+          t = { ico: '🔧', cor: '#f59e0b', label: 'Manutenção' };
+        } else if (String(mv.observacao || '').startsWith('[Assistência]')) {
+          t = { ico: '🔧', cor: '#8b5cf6', label: 'Assistência técnica' };
+        }
         const detalhes = [];
         if (mv.gerente_nome) detalhes.push(`Gerente: <strong>${esc(mv.gerente_nome)}</strong>`);
         if (mv.ficha) detalhes.push(`Ficha: <strong>${esc(mv.ficha)}</strong>`);

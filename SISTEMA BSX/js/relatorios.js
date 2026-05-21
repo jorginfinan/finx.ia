@@ -794,6 +794,20 @@ async function fecharSemanaById(prestId, {forcar=false}={}){
     fromPrestId:  atual.id
   });
   
+  // ✅ APLICA O DESCONTO REAL DOS VALES NO BANCO
+  // Enquanto a prestação estava aberta, o desconto era apenas provisório
+  // (em atual.valeParcAplicado). Agora que ela está sendo fechada, debita
+  // de fato o saldo do vale e grava o log para auditoria/estorno futuro.
+  if (typeof window.__applyValesOnSave === 'function') {
+    try {
+      console.log('🔄 [fecharSemanaById] Aplicando desconto definitivo nos vales...');
+      await window.__applyValesOnSave(null, atual);
+      console.log('✅ [fecharSemanaById] Vales debitados.');
+    } catch(e) {
+      console.error('❌ [fecharSemanaById] Erro ao aplicar vales:', e);
+    }
+  }
+
   // ✅ MARCA A ATUAL COMO FECHADA
   atual.fechado   = true;
   atual.fechadoEm = new Date().toISOString();
@@ -1046,7 +1060,20 @@ async function fecharSemanaById(prestId, {forcar=false}={}){
     let carr = __getCarry();
     carr = carr.filter(c => c.fromPrestId !== prest.id);
     __setCarry(carr);
-  
+
+    // ✅ ESTORNA O DESCONTO DOS VALES (semana volta a ficar aberta)
+    // Devolve ao saldo do vale o que havia sido debitado no fechamento,
+    // mantendo valeParcAplicado intacto para o usuário continuar editando.
+    if (typeof window.__estornarValesDePrestacao === 'function') {
+      try {
+        console.log('🔄 [reopenWeek] Estornando desconto dos vales...');
+        await window.__estornarValesDePrestacao(prest);
+        console.log('✅ [reopenWeek] Vales estornados.');
+      } catch(e) {
+        console.error('❌ [reopenWeek] Erro ao estornar vales:', e);
+      }
+    }
+
     // marca como aberta novamente
     prest.fechado = false;
     delete prest.fechadoEm;

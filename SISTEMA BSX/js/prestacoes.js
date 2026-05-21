@@ -3666,7 +3666,10 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
         prestacaoAtual.valeParcAplicado =
           __backfillValeParcFromPagamentos(prestacaoAtual.pagamentos, gerenteId);
       }
-      await __applyValesOnSave(prevRec, recPrest);
+      // ✅ Enquanto a prestação está ABERTA, o desconto fica somente provisório
+      // (registrado em valeParcAplicado). O saldo real do vale só é debitado
+      // quando a semana é fechada (ver fecharSemanaById → __applyValesOnSave).
+      // Isso evita o duplo-desconto ao editar uma prestação ainda em aberto.
 
       console.log('🔍 DEBUG SALDO - Verificando condições para salvar:', {
         temSaldoAcumulado: !!window.SaldoAcumulado,
@@ -3930,7 +3933,12 @@ async function __applyValesOnSave(prevRec, recPrest){
       }
     }
     
-    const curMap  = new Map((prestacaoAtual?.valeParcAplicado || []).map(x => [x.id, Number(x.aplicado)||0]));
+    // ✅ FIX: usa recPrest (não prestacaoAtual) — assim funciona quando chamada
+    // de fora do handler de salvar (ex.: fecharSemanaById passa o registro pronto).
+    const curSource = (recPrest?.valeParcAplicado && recPrest.valeParcAplicado.length)
+      ? recPrest.valeParcAplicado
+      : (prestacaoAtual?.valeParcAplicado || []);
+    const curMap  = new Map(curSource.map(x => [x.id, Number(x.aplicado)||0]));
     const eventos = [];
     const valesParaAtualizar = [];
 
@@ -4055,6 +4063,80 @@ async function __applyValesOnSave(prevRec, recPrest){
     console.warn('__applyValesOnSave error:', e);
   }
 }
+
+// ✅ Estorna o desconto de vales de uma prestação (usado ao REABRIR).
+// Soma todos os deltas registrados em vales_log para a prestação; se o
+// resultado líquido for positivo (vale efetivamente debitado), devolve esse
+// valor ao saldo do vale e grava um log inverso para zerar a contabilidade.
+async function __estornarValesDePrestacao(rec){
+  try{
+    if (!rec?.id || !window.SupabaseAPI?.client) return;
+
+    const { data: logs, error } = await window.SupabaseAPI.client
+      .from('vales_log')
+      .select('vale_id, delta')
+      .eq('prestacao_id', rec.id);
+    if (error) throw error;
+    if (!logs || !logs.length) return;
+
+    // soma efetiva por vale
+    const efetivo = new Map();
+    logs.forEach(l => {
+      efetivo.set(l.vale_id, (efetivo.get(l.vale_id) || 0) + (Number(l.delta) || 0));
+    });
+
+    // garante cache local de vales atualizado
+    if (window.__valesReloadAsync) {
+      try { await window.__valesReloadAsync(); } catch(_){}
+    }
+
+    const reversos = [];
+    for (const [valeId, deltaEfetivo] of efetivo){
+      if (!deltaEfetivo || deltaEfetivo <= 1e-6) continue; // já estornado
+
+      const v = (window.vales||[]).find(x => x.id === valeId);
+      if (!v) continue;
+
+      const saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
+      const saldoDepois = +(saldoAntes + deltaEfetivo).toFixed(2);
+
+      v.valor = saldoDepois;
+      v.saldo = saldoDepois;
+      if (saldoDepois > 0) { v.quitado = false; delete v.quitadoEm; }
+
+      if (window.SupabaseAPI?.vales){
+        await window.SupabaseAPI.vales.update(v.id, {
+          saldo: saldoDepois,
+          valor: saldoDepois,
+          quitado: v.quitado || false
+        });
+      }
+
+      reversos.push({
+        id: (typeof uid==='function'? uid(): 'rv_'+Math.random().toString(36).slice(2,9)),
+        valeId: v.id, cod: v.cod||'', gerenteId: v.gerenteId,
+        delta: -deltaEfetivo,
+        saldoAntes, saldoDepois,
+        prestacaoId: rec.id,
+        periodoIni: rec.ini || null, periodoFim: rec.fim || null,
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    if (reversos.length && window.valesLog?.bulkAdd){
+      await window.valesLog.bulkAdd(reversos);
+    }
+
+    try { renderValesPrestacao?.(); } catch {}
+    try { window.dispatchEvent(new Event('vales:updated')); } catch {}
+  } catch(e){
+    console.warn('__estornarValesDePrestacao error:', e);
+  }
+}
+
+// Expõe globalmente para uso a partir de relatorios.js (fechar/reabrir semana)
+window.__applyValesOnSave = __applyValesOnSave;
+window.__estornarValesDePrestacao = __estornarValesDePrestacao;
 
 /* ========== VALES LOG - SUPABASE ========== */
 (function VALES_LOG_SUPABASE(){
@@ -5714,11 +5796,18 @@ window.addEventListener('vales:updated', ()=>{
   }
 
   // reabrir: move de FINALIZADAS -> ABERTAS e (opcional) abre para editar
-  window.reabrirPrestacao = function(id, opts={ open:false }){
+  window.reabrirPrestacao = async function(id, opts={ open:false }){
     try{
       const fechadas = lsRead(DB_PREST);
       const idx = fechadas.findIndex(p => p.id === id);
       if (idx === -1){ alert('Prestação não encontrada.'); return; }
+
+      // ✅ Estorna o desconto efetivo dos vales (semana volta para "aberta")
+      try {
+        await window.__estornarValesDePrestacao?.(fechadas[idx]);
+      } catch(e) {
+        console.warn('reabrirPrestacao: falha ao estornar vales:', e);
+      }
 
       const rec = fechadas[idx];
       fechadas.splice(idx, 1);

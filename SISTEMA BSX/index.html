@@ -1690,15 +1690,28 @@ function pgDivAddFromForm(){
         <input name="data_evento" type="date" required />
       </label>
       <label>Motivo da Devolução <span style="color:#dc2626">*</span>
-        <select name="motivo" required>
+        <select name="motivo" id="selDevMotivo" required>
           <option value="">Selecione...</option>
-          <option>Problema técnico</option>
-          <option>Troca por outra máquina</option>
-          <option>Chip não pega na região</option>
-          <option>Vendedor saiu</option>
-          <option>Fim de contrato</option>
-          <option>Outro</option>
+          <optgroup label="⚠️ Problemas técnicos (vai para manutenção)">
+            <option data-manut="1">Defeito / Não liga</option>
+            <option data-manut="1">Tela quebrada / com defeito</option>
+            <option data-manut="1">Bateria não carrega / fraca</option>
+            <option data-manut="1">Problema na impressora</option>
+            <option data-manut="1">Problema no leitor de cartão</option>
+            <option data-manut="1">Problema técnico (outro)</option>
+          </optgroup>
+          <optgroup label="✅ Sem defeito (vai para estoque)">
+            <option>Troca por outra máquina</option>
+            <option>Chip não pega na região</option>
+            <option>Vendedor saiu</option>
+            <option>Fim de contrato</option>
+            <option>Outro</option>
+          </optgroup>
         </select>
+      </label>
+      <label style="grid-column:1/-1; display:flex; align-items:center; gap:8px; padding:8px; background:#fef3c7; border:1px solid #fbbf24; border-radius:8px;">
+        <input type="checkbox" name="enviar_manutencao" id="chkEnviarManutencao" />
+        <span><strong>🔧 Enviar para manutenção</strong> — máquina apresenta defeito/problema técnico</span>
       </label>
       <label style="grid-column:1/-1; display:flex; align-items:center; gap:8px;">
         <input type="checkbox" name="chip_devolvido" id="chkChipDevolvido" />
@@ -1731,6 +1744,63 @@ function pgDivAddFromForm(){
     <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px;">
       <button class="btn ghost" type="button" data-close-dlg="dlgMaqDevolver">Cancelar</button>
       <button class="btn" type="submit">Confirmar Devolução</button>
+    </div>
+  </form>
+</dialog>
+
+
+<!-- =========================================================================
+     DIALOG: ENCERRAR MANUTENÇÃO — volta ao estoque OU baixa sem conserto
+     ========================================================================= -->
+<dialog id="dlgMaqEncerrarManutencao">
+  <header class="card"><strong>Encerrar Manutenção</strong></header>
+  <form id="formEncerrarManutencao" class="card" style="margin:0; min-width:420px; max-width:560px;">
+    <input type="hidden" name="maquina_id" />
+
+    <div style="margin-bottom:10px; padding:10px; background:#f3f4f6; border-radius:8px;">
+      <div style="font-size:12px; color:#6b7280;">Máquina em manutenção</div>
+      <div id="dlgEncerrarManutInfo" style="font-weight:600;"></div>
+    </div>
+
+    <fieldset style="border:1px solid #e5e7eb; border-radius:10px; padding:12px; margin-bottom:10px;">
+      <legend style="padding:0 8px; font-weight:600;">Resultado da manutenção <span style="color:#dc2626">*</span></legend>
+
+      <label style="display:flex; align-items:flex-start; gap:8px; margin-bottom:10px; padding:10px; background:#d1fae5; border-radius:8px; cursor:pointer;">
+        <input type="radio" name="resultado" value="consertada" required style="margin-top:3px;" />
+        <span>
+          <strong>✅ Conserto concluído — voltar para o estoque</strong>
+          <div style="font-size:12px; color:#374151; margin-top:2px;">
+            A máquina foi reparada e fica disponível para entrega novamente.
+          </div>
+        </span>
+      </label>
+
+      <label style="display:flex; align-items:flex-start; gap:8px; padding:10px; background:#fee2e2; border-radius:8px; cursor:pointer;">
+        <input type="radio" name="resultado" value="sem_conserto" required style="margin-top:3px;" />
+        <span>
+          <strong>❌ Sem conserto — dar baixa (inativa)</strong>
+          <div style="font-size:12px; color:#374151; margin-top:2px;">
+            Defeito irrecuperável. A máquina vai para o grupo de baixadas e não poderá mais ser usada.
+          </div>
+        </span>
+      </label>
+    </fieldset>
+
+    <div class="form-grid">
+      <label>Data
+        <input name="data_evento" type="date" />
+      </label>
+      <label>Custo da manutenção (R$)
+        <input name="custo" type="number" step="0.01" min="0" placeholder="opcional" />
+      </label>
+      <label style="grid-column:1/-1">Observação (laudo, peças trocadas, etc.)
+        <textarea name="observacao" rows="3" placeholder="ex.: Substituída a placa principal e tela. Testado OK."></textarea>
+      </label>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px;">
+      <button class="btn ghost" type="button" data-close-dlg="dlgMaqEncerrarManutencao">Cancelar</button>
+      <button class="btn" type="submit">Confirmar</button>
     </div>
   </form>
 </dialog>

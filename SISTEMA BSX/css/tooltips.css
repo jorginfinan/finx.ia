@@ -1,22 +1,16 @@
 /* ============================================================
    TOOLTIPS INSTANTÂNEOS (sem delay)
-   Usa data-tip="texto" em qualquer elemento.
-   Mostra acima do elemento por padrão.
-   Direção custom: data-tip-pos="below|left|right" (opcional).
+   Marca elementos com data-tip="texto". O JS injeta um único
+   balão global no <body> e posiciona via getBoundingClientRect,
+   imune a overflow:hidden/auto dos containers.
+   Direção opcional: data-tip-pos="above|below|left|right" (auto-flip se perto da borda).
    ============================================================ */
 
-[data-tip] {
-  position: relative;
-}
-
-/* balão */
-[data-tip]:hover::after,
-[data-tip]:focus-visible::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
+/* O balão global (apenas UM no document) */
+#__tipBubble {
+  position: fixed;
+  z-index: 999999;
+  pointer-events: none;
   background: #111827;
   color: #f9fafb;
   padding: 5px 9px;
@@ -25,83 +19,56 @@
   font-weight: 500;
   line-height: 1.3;
   white-space: nowrap;
-  z-index: 9999;
-  pointer-events: none;
+  max-width: 280px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
-  opacity: 1;
-  /* nada de transition — instantâneo */
+  opacity: 0;
+  visibility: hidden;
+  /* sem transition — instantâneo */
+  top: 0;
+  left: 0;
 }
 
-/* setinha */
-[data-tip]:hover::before,
-[data-tip]:focus-visible::before {
+#__tipBubble.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* setinha — usa pseudo-element */
+#__tipBubble::after {
   content: '';
   position: absolute;
-  bottom: calc(100% + 2px);
-  left: 50%;
-  transform: translateX(-50%);
-  border: 4px solid transparent;
-  border-top-color: #111827;
-  z-index: 9999;
-  pointer-events: none;
+  border: 5px solid transparent;
 }
 
-/* === posição: abaixo === */
-[data-tip-pos="below"]:hover::after,
-[data-tip-pos="below"]:focus-visible::after {
-  bottom: auto;
-  top: calc(100% + 6px);
+/* === setinha por posição === */
+#__tipBubble[data-pos="above"]::after {
+  bottom: -10px;
+  left: 50%;
+  margin-left: -5px;
+  border-top-color: #111827;
 }
-[data-tip-pos="below"]:hover::before,
-[data-tip-pos="below"]:focus-visible::before {
-  bottom: auto;
-  top: calc(100% + 2px);
-  border-top-color: transparent;
+#__tipBubble[data-pos="below"]::after {
+  top: -10px;
+  left: 50%;
+  margin-left: -5px;
   border-bottom-color: #111827;
 }
-
-/* === posição: esquerda === */
-[data-tip-pos="left"]:hover::after,
-[data-tip-pos="left"]:focus-visible::after {
-  bottom: auto;
+#__tipBubble[data-pos="left"]::after {
   top: 50%;
-  left: auto;
-  right: calc(100% + 6px);
-  transform: translateY(-50%);
-}
-[data-tip-pos="left"]:hover::before,
-[data-tip-pos="left"]:focus-visible::before {
-  bottom: auto;
-  top: 50%;
-  left: auto;
-  right: calc(100% + 2px);
-  transform: translateY(-50%);
-  border: 4px solid transparent;
+  right: -10px;
+  margin-top: -5px;
   border-left-color: #111827;
 }
-
-/* === posição: direita === */
-[data-tip-pos="right"]:hover::after,
-[data-tip-pos="right"]:focus-visible::after {
-  bottom: auto;
+#__tipBubble[data-pos="right"]::after {
   top: 50%;
-  left: calc(100% + 6px);
-  transform: translateY(-50%);
-}
-[data-tip-pos="right"]:hover::before,
-[data-tip-pos="right"]:focus-visible::before {
-  bottom: auto;
-  top: 50%;
-  left: calc(100% + 2px);
-  transform: translateY(-50%);
-  border: 4px solid transparent;
+  left: -10px;
+  margin-top: -5px;
   border-right-color: #111827;
 }
 
-/* No mobile, tooltips podem atrapalhar (hover não existe). Esconde. */
+/* desabilita no mobile (sem hover) */
 @media (hover: none) {
-  [data-tip]:hover::after,
-  [data-tip]:hover::before {
-    display: none;
+  #__tipBubble {
+    display: none !important;
   }
 }

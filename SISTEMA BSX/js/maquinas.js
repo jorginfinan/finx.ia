@@ -148,6 +148,8 @@
       const podeDevolver = m.status === 'com_vendedor' && podeFazer('maquinas_devolver');
       const podeEditar = podeFazer('maquinas_cadastrar');
       const podeBaixar = podeFazer('maquinas_excluir');
+      const emManutencao = m.status === 'manutencao';
+      const podeEncerrarManut = emManutencao && podeFazer('maquinas_cadastrar');
  
       const gerenteFicha = m.gerente_atual_nome
         ? `${esc(m.gerente_atual_nome)}${m.ficha_atual ? ' / ' + esc(m.ficha_atual) : ''}`
@@ -164,6 +166,7 @@
           <td class="tv-right" style="white-space:nowrap;">
             <button class="btn ghost" data-act="historico" title="Ver histórico">📜</button>
             <button class="btn ghost" data-act="assistencia" title="Peças / Assistência Técnica">🔧</button>
+            ${podeEncerrarManut ? '<button class="btn" data-act="encerrar-manut" title="Encerrar manutenção">✅</button>' : ''}
             ${podeEntregar ? '<button class="btn" data-act="entregar" title="Entregar">📤</button>' : ''}
             ${podeDevolver ? '<button class="btn" data-act="devolver" title="Devolver">📥</button>' : ''}
             ${podeEditar ? '<button class="btn ghost" data-act="editar" title="Editar">✏️</button>' : ''}
@@ -394,6 +397,11 @@
       }
       return window.abrirAssistenciaTecnica(m);
     }
+    if (acao === 'encerrar-manut') {
+      if (m.status !== 'manutencao') return notify('Esta máquina não está em manutenção.', 'error');
+      if (!podeFazer('maquinas_cadastrar')) return notify('Sem permissão.', 'error');
+      return abrirDialogEncerrarManutencao(m);
+    }
     if (acao === 'entregar') {
       if (!podeFazer('maquinas_entregar')) return notify('Sem permissão para entregar.', 'error');
       return abrirDialogEntregar(m);
@@ -559,10 +567,27 @@
     form.reset();
     form.querySelector('[name="maquina_id"]').value = m.id;
     form.querySelector('[name="data_evento"]').value = hoje();
- 
+
     document.getElementById('dlgDevolverMaquinaInfo').textContent =
       `${m.serial}${m.modelo ? ' — ' + m.modelo : ''} (com ${m.gerente_atual_nome || '—'}${m.ficha_atual ? ' / ' + m.ficha_atual : ''})`;
- 
+
+    // ✅ Auto-marca "Enviar para manutenção" se motivo for problema técnico
+    const selMotivo = document.getElementById('selDevMotivo');
+    const chkManut  = document.getElementById('chkEnviarManutencao');
+    function syncCheckboxManut() {
+      if (!selMotivo || !chkManut) return;
+      const opt = selMotivo.options[selMotivo.selectedIndex];
+      const isManut = !!(opt && opt.dataset && opt.dataset.manut === '1');
+      chkManut.checked = isManut;
+    }
+    if (selMotivo && !selMotivo.__wiredManut) {
+      selMotivo.__wiredManut = true;
+      // 'change' + 'input' garantem reação em qualquer interação
+      selMotivo.addEventListener('change', syncCheckboxManut);
+      selMotivo.addEventListener('input', syncCheckboxManut);
+    }
+    if (chkManut) chkManut.checked = false;
+
     // Reseta bloco de troca
     document.getElementById('chkFazerTroca').checked = false;
     document.getElementById('blocoTroca').style.display = 'none';
@@ -595,13 +620,36 @@
       const motivo = String(fd.get('motivo') || '');
       const chipDevolvido = !!fd.get('chip_devolvido');
       const obs = String(fd.get('observacao') || '').trim() || null;
- 
+
       if (!motivo) throw new Error('Informe o motivo da devolução.');
+
+      // ✅ Decide se vai para manutenção usando DUAS fontes (qualquer uma basta):
+      //   1) data-manut="1" na <option> selecionada (motivos técnicos)
+      //   2) checkbox "Enviar para manutenção" marcado manualmente
+      // Lendo direto da <option> evitamos depender do listener de change ter
+      // sido disparado a tempo de marcar o checkbox.
+      const selMotivoEl = form.querySelector('[name="motivo"]');
+      const optSel = selMotivoEl && selMotivoEl.selectedIndex >= 0
+        ? selMotivoEl.options[selMotivoEl.selectedIndex]
+        : null;
+      const motivoMarcaManut = !!(optSel && optSel.dataset && optSel.dataset.manut === '1');
+      const checkboxManut    = !!fd.get('enviar_manutencao');
+      const enviarManutencao = motivoMarcaManut || checkboxManut;
+
+      console.log('[Maquinas/Devolver] decisão de status:', {
+        motivo, motivoMarcaManut, checkboxManut, enviarManutencao,
+        statusFinal: enviarManutencao ? 'manutencao' : 'estoque'
+      });
  
       const m = __cacheMaquinas.find(x => x.id === maquinaId);
       if (!m) throw new Error('Máquina não encontrada.');
  
       // ===== 1. Registra devolução =====
+      // Se a máquina tem defeito, marcamos a movimentação com essa informação
+      const obsFinal = enviarManutencao
+        ? `[MANUTENÇÃO] ${obs || 'Máquina enviada para manutenção por problema técnico'}`
+        : obs;
+
       const movDev = await window.SupabaseAPI.maquinasMovimentacoes.create({
         maquina_id: maquinaId,
         tipo: 'devolucao',
@@ -612,7 +660,7 @@
         chip_numero: m.chip_atual,
         chip_devolvido: chipDevolvido,
         motivo,
-        observacao: obs
+        observacao: obsFinal
       });
  
       // Registra histórico do chip se devolvido
@@ -629,22 +677,42 @@
         });
       }
  
-      // Atualiza estado da máquina devolvida (volta pro estoque)
+      // ✅ Define status final: manutenção (defeito) ou estoque (sem defeito)
+      const statusFinal = enviarManutencao ? 'manutencao' : 'estoque';
+
       await window.SupabaseAPI.maquinas.update(maquinaId, {
-        status: 'estoque',
+        status: statusFinal,
         gerente_atual_id: null,
         gerente_atual_nome: null,
         ficha_atual: null,
         chip_atual: chipDevolvido ? null : m.chip_atual  // mantém chip se não foi devolvido
       });
- 
+
+      // Se foi para manutenção, registra também o evento "manutencao" na linha do tempo
+      if (enviarManutencao) {
+        try {
+          await window.SupabaseAPI.maquinasMovimentacoes.create({
+            maquina_id: maquinaId,
+            tipo: 'manutencao',
+            data_evento: dataEvento,
+            motivo,
+            observacao: `Enviada para manutenção. ${obs || ''}`.trim(),
+            movimentacao_anterior_id: movDev?.id || null
+          });
+        } catch (errMan) {
+          console.warn('[Maquinas] Não foi possível gravar evento de manutenção:', errMan);
+        }
+      }
+
       if (window.AuditLog) {
         window.AuditLog.log('maquina_devolvida', {
           id: maquinaId,
           serial: m.serial,
           motivo,
           chip_devolvido: chipDevolvido,
-          gerente: m.gerente_atual_nome
+          gerente: m.gerente_atual_nome,
+          enviada_manutencao: enviarManutencao,
+          status_final: statusFinal
         });
       }
  
@@ -711,6 +779,117 @@
     }
   }
  
+  // ============================================
+  // ENCERRAR MANUTENÇÃO — volta ao estoque OU baixa por irrecuperável
+  // ============================================
+  function abrirDialogEncerrarManutencao(m) {
+    const dlg = document.getElementById('dlgMaqEncerrarManutencao');
+    if (!dlg) return;
+    const form = document.getElementById('formEncerrarManutencao');
+    form.reset();
+    form.querySelector('[name="maquina_id"]').value = m.id;
+    form.querySelector('[name="data_evento"]').value = hoje();
+    document.getElementById('dlgEncerrarManutInfo').textContent =
+      `${m.serial}${m.modelo ? ' — ' + m.modelo : ''}`;
+    dlg.showModal();
+  }
+
+  async function onSubmitEncerrarManutencao(e) {
+    e.preventDefault();
+    if (__saving) return;
+    __saving = true;
+
+    try {
+      const form = e.currentTarget;
+      const fd = new FormData(form);
+      const maquinaId = fd.get('maquina_id');
+      const resultado = String(fd.get('resultado') || '');
+      const dataEvento = String(fd.get('data_evento') || hoje());
+      const custo = Number(fd.get('custo')) || 0;
+      const obs = String(fd.get('observacao') || '').trim() || null;
+
+      if (!resultado) throw new Error('Selecione o resultado da manutenção.');
+
+      const m = __cacheMaquinas.find(x => x.id === maquinaId);
+      if (!m) throw new Error('Máquina não encontrada.');
+      if (m.status !== 'manutencao') throw new Error('Esta máquina não está em manutenção.');
+
+      if (resultado === 'consertada') {
+        // ===== ✅ CONSERTO CONCLUÍDO -> VOLTA AO ESTOQUE =====
+        if (!confirm(`Confirmar conserto da máquina ${m.serial}?\n\nEla voltará para o estoque, disponível para entrega.`)) {
+          __saving = false;
+          return;
+        }
+
+        await window.SupabaseAPI.maquinasMovimentacoes.create({
+          maquina_id: maquinaId,
+          tipo: 'edicao',
+          data_evento: dataEvento,
+          motivo: 'Manutenção concluída',
+          observacao: `✅ Conserto concluído. Voltou ao estoque.${custo ? ' Custo: R$ ' + custo.toFixed(2) + '.' : ''}${obs ? ' ' + obs : ''}`.trim()
+        });
+
+        await window.SupabaseAPI.maquinas.update(maquinaId, {
+          status: 'estoque',
+          ativo: true
+        });
+
+        if (window.AuditLog) {
+          window.AuditLog.log('maquina_manutencao_concluida', {
+            id: maquinaId, serial: m.serial, custo, observacao: obs
+          });
+        }
+
+        document.getElementById('dlgMaqEncerrarManutencao').close();
+        notify('Manutenção concluída. Máquina voltou ao estoque.', 'success');
+        await render();
+
+      } else if (resultado === 'sem_conserto') {
+        // ===== ❌ SEM CONSERTO -> BAIXA DEFINITIVA =====
+        if (!confirm(
+          `Confirmar BAIXA SEM CONSERTO da máquina ${m.serial}?\n\n` +
+          `Ela será marcada como INATIVA permanentemente e irá para o grupo "Baixadas".\n` +
+          `Esta ação não pode ser desfeita.`
+        )) {
+          __saving = false;
+          return;
+        }
+
+        await window.SupabaseAPI.maquinasMovimentacoes.create({
+          maquina_id: maquinaId,
+          tipo: 'baixa',
+          data_evento: dataEvento,
+          motivo: 'Sem conserto (manutenção irrecuperável)',
+          observacao: `❌ Defeito irrecuperável. Máquina baixada após manutenção.${custo ? ' Custo da tentativa: R$ ' + custo.toFixed(2) + '.' : ''}${obs ? ' ' + obs : ''}`.trim()
+        });
+
+        await window.SupabaseAPI.maquinas.update(maquinaId, {
+          status: 'baixada',
+          ativo: false,
+          gerente_atual_id: null,
+          gerente_atual_nome: null,
+          ficha_atual: null,
+          chip_atual: null
+        });
+
+        if (window.AuditLog) {
+          window.AuditLog.log('maquina_baixada_sem_conserto', {
+            id: maquinaId, serial: m.serial, custo, observacao: obs
+          });
+        }
+
+        document.getElementById('dlgMaqEncerrarManutencao').close();
+        notify('Máquina baixada (sem conserto).', 'success');
+        await render();
+      }
+    } catch (err) {
+      console.error('[Maquinas] Erro encerrarManutencao:', err);
+      notify(err.message || 'Erro ao encerrar manutenção', 'error');
+    } finally {
+      __saving = false;
+    }
+  }
+
   // ============================================
   // DAR BAIXA
   // ============================================
@@ -908,6 +1087,12 @@
     if (formDevolver && !formDevolver.__wired) {
       formDevolver.__wired = true;
       formDevolver.addEventListener('submit', onSubmitDevolver);
+    }
+
+    const formEncerrarManut = document.getElementById('formEncerrarManutencao');
+    if (formEncerrarManut && !formEncerrarManut.__wired) {
+      formEncerrarManut.__wired = true;
+      formEncerrarManut.addEventListener('submit', onSubmitEncerrarManutencao);
     }
  
     const chkTroca = document.getElementById('chkFazerTroca');

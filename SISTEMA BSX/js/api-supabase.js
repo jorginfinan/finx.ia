@@ -1225,9 +1225,474 @@
   
   
   // ============================================
+  // API DE PEÇAS — catálogo + estoque
+  // ============================================
+
+  class PecasAPI {
+    constructor() {
+      this.table = 'pecas';
+      this.client = supabaseClient;
+    }
+
+    async getAll({ ativasApenas = false } = {}) {
+      try {
+        const empresaId = await getEmpresaId();
+        let q = this.client
+          .from(this.table)
+          .select('*')
+          .eq('empresa_id', empresaId)
+          .order('nome', { ascending: true });
+        if (ativasApenas) q = q.eq('ativo', true);
+        const { data, error } = await q;
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[PecasAPI] getAll:', e);
+        return [];
+      }
+    }
+
+    async getById(id) {
+      try {
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('id', id)
+          .single();
+        if (error) throw error;
+        return data;
+      } catch (e) {
+        console.error('[PecasAPI] getById:', e);
+        return null;
+      }
+    }
+
+    async getByCodigo(codigo) {
+      try {
+        const empresaId = await getEmpresaId();
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('empresa_id', empresaId)
+          .eq('codigo', codigo)
+          .maybeSingle();
+        if (error) throw error;
+        return data;
+      } catch (e) {
+        console.error('[PecasAPI] getByCodigo:', e);
+        return null;
+      }
+    }
+
+    async create(peca) {
+      try {
+        const empresaId = await getEmpresaId();
+        const payload = { ...peca, empresa_id: empresaId };
+        if (!Array.isArray(payload.modelos_compativeis)) payload.modelos_compativeis = [];
+        const { data, error } = await this.client
+          .from(this.table)
+          .insert([payload])
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      } catch (e) {
+        console.error('[PecasAPI] create:', e);
+        throw e;
+      }
+    }
+
+    async update(id, patch) {
+      try {
+        const p = { ...patch };
+        if (p.modelos_compativeis && !Array.isArray(p.modelos_compativeis)) {
+          p.modelos_compativeis = [];
+        }
+        const { data, error } = await this.client
+          .from(this.table)
+          .update(p)
+          .eq('id', id)
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      } catch (e) {
+        console.error('[PecasAPI] update:', e);
+        throw e;
+      }
+    }
+
+    async delete(id) {
+      try {
+        const { error } = await this.client
+          .from(this.table)
+          .delete()
+          .eq('id', id);
+        if (error) throw error;
+        return true;
+      } catch (e) {
+        console.error('[PecasAPI] delete:', e);
+        return false;
+      }
+    }
+
+    async getEstatisticas() {
+      try {
+        const empresaId = await getEmpresaId();
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('estoque_atual, estoque_minimo, preco_custo, ativo')
+          .eq('empresa_id', empresaId);
+        if (error) throw error;
+        const stats = {
+          total_pecas: 0,
+          total_unidades: 0,
+          baixo_estoque: 0,
+          sem_estoque: 0,
+          valor_total_custo: 0
+        };
+        (data || []).forEach(p => {
+          if (!p.ativo) return;
+          stats.total_pecas += 1;
+          const qtd = Number(p.estoque_atual) || 0;
+          stats.total_unidades += qtd;
+          stats.valor_total_custo += qtd * (Number(p.preco_custo) || 0);
+          if (qtd <= 0) stats.sem_estoque += 1;
+          else if (qtd <= (Number(p.estoque_minimo) || 0)) stats.baixo_estoque += 1;
+        });
+        return stats;
+      } catch (e) {
+        console.error('[PecasAPI] getEstatisticas:', e);
+        return { total_pecas: 0, total_unidades: 0, baixo_estoque: 0, sem_estoque: 0, valor_total_custo: 0 };
+      }
+    }
+
+    // Aplica um delta atômico no estoque e cria um log em pecas_movimentacoes.
+    // delta positivo soma; negativo subtrai. Retorna { peca, movimentacao }.
+    async aplicarMovimentacao({
+      pecaId,
+      delta,
+      tipo,                         // 'entrada' | 'saida' | 'ajuste' | 'instalacao' | 'remocao'
+      precoUnitario = null,
+      maquinaId = null,
+      maquinaMovimentacaoId = null,
+      motivo = null,
+      observacao = null,
+      dataEvento = null
+    }) {
+      if (!pecaId || !delta || !tipo) throw new Error('aplicarMovimentacao: parâmetros incompletos.');
+
+      const empresaId = await getEmpresaId();
+      const usuario = window.getUsuarioAtual ? window.getUsuarioAtual() : { id: null, nome: 'Sistema' };
+
+      // Lê saldo atual
+      const { data: pecaAtual, error: errGet } = await this.client
+        .from(this.table)
+        .select('id, estoque_atual, preco_custo, preco_unitario')
+        .eq('id', pecaId)
+        .single();
+      if (errGet) throw errGet;
+      if (!pecaAtual) throw new Error('Peça não encontrada.');
+
+      const estoqueAntes = Number(pecaAtual.estoque_atual) || 0;
+      const estoqueDepois = estoqueAntes + Number(delta);
+      if (estoqueDepois < 0) {
+        throw new Error(`Estoque insuficiente: tem ${estoqueAntes}, tentou retirar ${Math.abs(delta)}.`);
+      }
+
+      // Atualiza estoque
+      const { data: pecaNova, error: errUpd } = await this.client
+        .from(this.table)
+        .update({ estoque_atual: estoqueDepois })
+        .eq('id', pecaId)
+        .select()
+        .single();
+      if (errUpd) throw errUpd;
+
+      // Cria log
+      const preco = precoUnitario != null ? Number(precoUnitario) : (Number(pecaAtual.preco_custo) || 0);
+      const movPayload = {
+        empresa_id: empresaId,
+        peca_id: pecaId,
+        tipo,
+        quantidade: Number(delta),
+        estoque_antes: estoqueAntes,
+        estoque_depois: estoqueDepois,
+        preco_unitario_momento: preco,
+        custo_total: +(preco * Math.abs(Number(delta))).toFixed(2),
+        maquina_id: maquinaId,
+        maquina_movimentacao_id: maquinaMovimentacaoId,
+        motivo,
+        observacao,
+        data_evento: dataEvento || new Date().toISOString().slice(0, 10),
+        usuario_id: usuario.id || null,
+        usuario_nome: usuario.nome || 'Sistema'
+      };
+      const { data: mov, error: errMov } = await this.client
+        .from('pecas_movimentacoes')
+        .insert([movPayload])
+        .select()
+        .single();
+      if (errMov) throw errMov;
+
+      return { peca: pecaNova, movimentacao: mov };
+    }
+  }
+
+
+  // ============================================
+  // API DE MOVIMENTAÇÕES DE PEÇAS — histórico de estoque
+  // ============================================
+
+  class PecasMovimentacoesAPI {
+    constructor() {
+      this.table = 'pecas_movimentacoes';
+      this.client = supabaseClient;
+    }
+
+    async getByPeca(pecaId, { limit = 200 } = {}) {
+      try {
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('peca_id', pecaId)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[PecasMovsAPI] getByPeca:', e);
+        return [];
+      }
+    }
+
+    async getByMaquina(maquinaId, { limit = 500 } = {}) {
+      try {
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('maquina_id', maquinaId)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[PecasMovsAPI] getByMaquina:', e);
+        return [];
+      }
+    }
+
+    async getAll(filters = {}) {
+      try {
+        const empresaId = await getEmpresaId();
+        let q = this.client
+          .from(this.table)
+          .select('*')
+          .eq('empresa_id', empresaId);
+        if (filters.tipo) q = q.eq('tipo', filters.tipo);
+        if (filters.pecaId) q = q.eq('peca_id', filters.pecaId);
+        if (filters.maquinaId) q = q.eq('maquina_id', filters.maquinaId);
+        if (filters.dataInicio) q = q.gte('data_evento', filters.dataInicio);
+        if (filters.dataFim) q = q.lte('data_evento', filters.dataFim);
+        const { data, error } = await q.order('created_at', { ascending: false }).limit(filters.limit || 500);
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[PecasMovsAPI] getAll:', e);
+        return [];
+      }
+    }
+  }
+
+
+  // ============================================
+  // API DE PEÇAS EM MÁQUINAS — composição/montagem
+  // ============================================
+
+  class MaquinasPecasAPI {
+    constructor() {
+      this.table = 'maquinas_pecas';
+      this.client = supabaseClient;
+    }
+
+    // Composição ATUAL de uma máquina (peças instaladas, não removidas)
+    async getAtuaisByMaquina(maquinaId) {
+      try {
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('maquina_id', maquinaId)
+          .eq('removida', false)
+          .order('data_instalacao', { ascending: false });
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[MaqPecasAPI] getAtuaisByMaquina:', e);
+        return [];
+      }
+    }
+
+    // Histórico COMPLETO de peças que já passaram pela máquina (incluindo removidas)
+    async getHistoricoByMaquina(maquinaId) {
+      try {
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('maquina_id', maquinaId)
+          .order('data_instalacao', { ascending: false });
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[MaqPecasAPI] getHistoricoByMaquina:', e);
+        return [];
+      }
+    }
+
+    // Todas as máquinas em que esta peça foi/está instalada
+    async getByPeca(pecaId) {
+      try {
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('peca_id', pecaId)
+          .order('data_instalacao', { ascending: false });
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[MaqPecasAPI] getByPeca:', e);
+        return [];
+      }
+    }
+
+    async create(payload) {
+      try {
+        const empresaId = await getEmpresaId();
+        const usuario = window.getUsuarioAtual ? window.getUsuarioAtual() : { id: null, nome: 'Sistema' };
+        const body = {
+          ...payload,
+          empresa_id: empresaId,
+          usuario_id: payload.usuario_id || usuario.id,
+          usuario_nome: payload.usuario_nome || usuario.nome
+        };
+        const { data, error } = await this.client
+          .from(this.table)
+          .insert([body])
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      } catch (e) {
+        console.error('[MaqPecasAPI] create:', e);
+        throw e;
+      }
+    }
+
+    async update(id, patch) {
+      try {
+        const { data, error } = await this.client
+          .from(this.table)
+          .update(patch)
+          .eq('id', id)
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      } catch (e) {
+        console.error('[MaqPecasAPI] update:', e);
+        throw e;
+      }
+    }
+
+    // Marca como removida (soft) e devolve peça ao estoque
+    async removerPecaDaMaquina(maquinasPecasId, { motivo = null, observacao = null, devolverAoEstoque = true } = {}) {
+      try {
+        const { data: linha, error: errGet } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('id', maquinasPecasId)
+          .single();
+        if (errGet) throw errGet;
+        if (!linha) throw new Error('Vínculo peça-máquina não encontrado.');
+        if (linha.removida) throw new Error('Esta peça já foi removida.');
+
+        let movEstoque = null;
+        if (devolverAoEstoque) {
+          const r = await window.SupabaseAPI.pecas.aplicarMovimentacao({
+            pecaId: linha.peca_id,
+            delta: +Math.abs(Number(linha.quantidade) || 1),
+            tipo: 'remocao',
+            maquinaId: linha.maquina_id,
+            motivo,
+            observacao: observacao || `Removida da máquina (assistência)`
+          });
+          movEstoque = r.movimentacao;
+        }
+
+        const usuario = window.getUsuarioAtual ? window.getUsuarioAtual() : { id: null, nome: 'Sistema' };
+        const { data: updated, error: errUpd } = await this.client
+          .from(this.table)
+          .update({
+            removida: true,
+            data_remocao: new Date().toISOString().slice(0, 10),
+            remocao_motivo: motivo,
+            remocao_observacao: observacao,
+            remocao_pecas_mov_id: movEstoque?.id || null,
+            usuario_nome: usuario.nome || linha.usuario_nome
+          })
+          .eq('id', maquinasPecasId)
+          .select()
+          .single();
+        if (errUpd) throw errUpd;
+        return updated;
+      } catch (e) {
+        console.error('[MaqPecasAPI] removerPecaDaMaquina:', e);
+        throw e;
+      }
+    }
+
+    // Instala uma peça em uma máquina + debita estoque
+    async instalarPecaNaMaquina({ maquinaId, pecaId, quantidade = 1, observacao = null, dataInstalacao = null }) {
+      try {
+        const peca = await window.SupabaseAPI.pecas.getById(pecaId);
+        if (!peca) throw new Error('Peça não encontrada.');
+        if ((Number(peca.estoque_atual) || 0) < quantidade) {
+          throw new Error(`Estoque insuficiente da peça "${peca.nome}". Disponível: ${peca.estoque_atual}, necessário: ${quantidade}.`);
+        }
+
+        const r = await window.SupabaseAPI.pecas.aplicarMovimentacao({
+          pecaId,
+          delta: -Math.abs(quantidade),
+          tipo: 'instalacao',
+          maquinaId,
+          motivo: 'Instalação em máquina',
+          observacao
+        });
+
+        const linha = await this.create({
+          maquina_id: maquinaId,
+          peca_id: pecaId,
+          peca_codigo: peca.codigo,
+          peca_nome: peca.nome,
+          quantidade,
+          preco_unitario_momento: Number(peca.preco_unitario) || Number(peca.preco_custo) || 0,
+          data_instalacao: dataInstalacao || new Date().toISOString().slice(0, 10),
+          instalacao_observacao: observacao,
+          instalacao_pecas_mov_id: r.movimentacao?.id || null
+        });
+
+        return { peca: r.peca, vinculo: linha, movimentacao: r.movimentacao };
+      } catch (e) {
+        console.error('[MaqPecasAPI] instalarPecaNaMaquina:', e);
+        throw e;
+      }
+    }
+  }
+
+
+  // ============================================
   // EXPORTAR API
   // ============================================
-  
+
   window.SupabaseAPI = {
     usuarios: new UsuariosAPI(),
     gerentes: new GerentesAPI(),
@@ -1235,16 +1700,19 @@
     prestacoes: new PrestacoesAPI(),
     fichas: new FichasAPI(),
     vendas: new VendasAPI(),
-    maquinas: new MaquinasAPI(),                              // ⬅️ NOVA
-    maquinasMovimentacoes: new MaquinasMovimentacoesAPI(),    // ⬅️ NOVA
-    maquinasChips: new MaquinasChipsAPI(),                    // ⬅️ NOVA
+    maquinas: new MaquinasAPI(),
+    maquinasMovimentacoes: new MaquinasMovimentacoesAPI(),
+    maquinasChips: new MaquinasChipsAPI(),
+    pecas: new PecasAPI(),                                    // ⬅️ NOVA
+    pecasMovimentacoes: new PecasMovimentacoesAPI(),          // ⬅️ NOVA
+    maquinasPecas: new MaquinasPecasAPI(),                    // ⬅️ NOVA
     client: supabaseClient
   };
-  
+
   // Aliases para compatibilidade
   window.SupabaseAPI.users = window.SupabaseAPI.usuarios;
-  
+
   console.log('✅ API Supabase carregada!');
-  console.log('📊 Tabelas: usuarios, gerentes, despesas, prestacoes, fichas, vendas, maquinas, maquinas_movimentacoes, maquinas_chips_historico');
-  
+  console.log('📊 Tabelas: usuarios, gerentes, despesas, prestacoes, fichas, vendas, maquinas, maquinas_movimentacoes, maquinas_chips_historico, pecas, pecas_movimentacoes, maquinas_pecas');
+
 })();

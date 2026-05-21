@@ -163,6 +163,7 @@
           <td>${fmtData(m.data_entrada)}</td>
           <td class="tv-right" style="white-space:nowrap;">
             <button class="btn ghost" data-act="historico" title="Ver histórico">📜</button>
+            <button class="btn ghost" data-act="assistencia" title="Peças / Assistência Técnica">🔧</button>
             ${podeEntregar ? '<button class="btn" data-act="entregar" title="Entregar">📤</button>' : ''}
             ${podeDevolver ? '<button class="btn" data-act="devolver" title="Devolver">📥</button>' : ''}
             ${podeEditar ? '<button class="btn ghost" data-act="editar" title="Editar">✏️</button>' : ''}
@@ -386,6 +387,12 @@
  
     if (acao === 'historico') {
       return abrirHistorico(m);
+    }
+    if (acao === 'assistencia') {
+      if (typeof window.abrirAssistenciaTecnica !== 'function') {
+        return notify('Módulo de peças ainda não carregado.', 'error');
+      }
+      return window.abrirAssistenciaTecnica(m);
     }
     if (acao === 'entregar') {
       if (!podeFazer('maquinas_entregar')) return notify('Sem permissão para entregar.', 'error');
@@ -775,14 +782,50 @@
         return;
       }
  
-      lista.innerHTML = movs.map(mv => {
+      // ====== Peças instaladas / histórico de peças ======
+      let blocoPecas = '';
+      try {
+        if (window.SupabaseAPI?.maquinasPecas) {
+          const pecasMaq = await window.SupabaseAPI.maquinasPecas.getHistoricoByMaquina(m.id);
+          if (pecasMaq && pecasMaq.length) {
+            const atuais = pecasMaq.filter(p => !p.removida);
+            const passadas = pecasMaq.filter(p => p.removida);
+            const fmtItem = (v, atual) => `
+              <div style="border-left:3px solid ${atual ? '#10b981' : '#9ca3af'}; padding:6px 10px; margin-bottom:6px; background:#fafafa; border-radius:0 8px 8px 0;">
+                <div style="display:flex; justify-content:space-between;">
+                  <strong>${atual ? '✅' : '🔁'} ${esc(v.peca_codigo || '')} — ${esc(v.peca_nome || '')}</strong>
+                  <small style="color:#6b7280;">${fmtData(v.data_instalacao)}${v.data_remocao ? ' → ' + fmtData(v.data_remocao) : ''}</small>
+                </div>
+                <div style="font-size:12px; color:#6b7280;">qty ${v.quantidade||1}${v.usuario_nome ? ' • por ' + esc(v.usuario_nome) : ''}</div>
+                ${v.remocao_motivo ? `<div style="font-size:12px; color:#92400e;">Motivo: ${esc(v.remocao_motivo)}</div>` : ''}
+              </div>
+            `;
+            blocoPecas = `
+              <div style="margin:14px 0; padding:12px; background:#f8fafc; border-radius:10px; border:1px solid #e5e7eb;">
+                <strong>🔧 Peças desta máquina</strong>
+                <div style="margin-top:8px;">
+                  <small style="color:#065f46; font-weight:600;">Instaladas agora (${atuais.length})</small>
+                  ${atuais.length ? atuais.map(v => fmtItem(v, true)).join('') : '<div style="color:#6b7280; font-size:12px; margin-top:4px;">Nenhuma peça instalada no momento.</div>'}
+                </div>
+                ${passadas.length ? `
+                  <div style="margin-top:10px;">
+                    <small style="color:#6b7280; font-weight:600;">Já passaram por aqui (${passadas.length})</small>
+                    ${passadas.map(v => fmtItem(v, false)).join('')}
+                  </div>` : ''}
+              </div>
+            `;
+          }
+        }
+      } catch (e) { console.warn('[Maquinas/Hist] peças:', e); }
+
+      const blocoMovs = movs.map(mv => {
         const tipos = {
           'entrada_estoque': { ico: '📥', cor: '#10b981', label: 'Entrada no estoque' },
           'entrega':         { ico: '📤', cor: '#3b82f6', label: 'Entregue ao vendedor' },
           'devolucao':       { ico: '🔄', cor: '#f59e0b', label: 'Devolução' },
           'troca':           { ico: '🔁', cor: '#8b5cf6', label: 'Troca de máquina' },
           'baixa':           { ico: '🗑️', cor: '#dc2626', label: 'Baixa definitiva' },
-          'edicao':          { ico: '✏️', cor: '#6b7280', label: 'Edição de dados' }
+          'edicao':          { ico: '✏️', cor: '#6b7280', label: 'Edição / Assistência' }
         };
         const t = tipos[mv.tipo] || { ico: '•', cor: '#6b7280', label: mv.tipo };
         const detalhes = [];
@@ -802,6 +845,8 @@
           </div>
         `;
       }).join('');
+
+      lista.innerHTML = blocoPecas + '<h4 style="margin:14px 0 6px;">Linha do tempo</h4>' + blocoMovs;
     } catch (e) {
       lista.innerHTML = '<div style="color:#dc2626;">Erro ao carregar histórico.</div>';
     }

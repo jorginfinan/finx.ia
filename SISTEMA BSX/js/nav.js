@@ -12,7 +12,8 @@
     'analise-gerente': 'pageAnaliseGerente',
     'analise': 'pageAnaliseGerente',
     'maquinas-cad':     'pageMaquinasCadastro',
-    'maquinas-estoque': 'pageMaquinasEstoque'
+    'maquinas-estoque': 'pageMaquinasEstoque',
+    'maquinas-pecas':   'pagePecasEstoque'
   };
 
   function pageIdFor(key){
@@ -65,6 +66,10 @@
     // ✅ Inicializa Estoque de Máquinas
     if (key === 'maquinas-estoque' || id === 'pageMaquinasEstoque') {
       try { window.MaquinasEstoque?.init?.(); } catch(_) {}
+    }
+    // ✅ Inicializa Peças de Máquinas
+    if (key === 'maquinas-pecas' || id === 'pagePecasEstoque') {
+      try { window.PecasEstoque?.init?.(); } catch(_) {}
     }
   };
 

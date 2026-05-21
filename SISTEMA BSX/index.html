@@ -209,6 +209,13 @@
     </span>
     <span class="label">Estoque</span>
   </button>
+  <button class="sb-subitem" data-tab="maquinas-pecas" data-perm="maquinas_view" title="Peças">
+    <span class="ico" aria-hidden="true">
+      <!-- engrenagem -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+    </span>
+    <span class="label">Peças</span>
+  </button>
 </nav>
 
 <!-- Despesas -->
@@ -1834,6 +1841,238 @@ function pgDivAddFromForm(){
 </section>
 
 
+<!-- ============================================================================
+     PÁGINA: PEÇAS DE MÁQUINAS (catálogo + estoque + movimentações)
+     ============================================================================ -->
+<section id="pagePecasEstoque" class="container hidden" data-perm="maquinas_view">
+  <h2>⚙️ Controle de Peças de Máquinas</h2>
+
+  <!-- KPIs -->
+  <div class="cards" id="pecasCards" style="margin-bottom:20px;">
+    <div class="card-fin" style="background:linear-gradient(135deg,#0ea5e9,#0369a1); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Peças cadastradas</div>
+      <div class="big" id="kpiPecasTotal">0</div>
+      <div style="font-size:11px; opacity:0.8;">ativas</div>
+    </div>
+    <div class="card-fin" style="background:linear-gradient(135deg,#10b981,#059669); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Unidades em estoque</div>
+      <div class="big" id="kpiPecasUnidades">0</div>
+      <div style="font-size:11px; opacity:0.8;">total</div>
+    </div>
+    <div class="card-fin" style="background:linear-gradient(135deg,#f59e0b,#d97706); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Estoque baixo</div>
+      <div class="big" id="kpiPecasBaixo">0</div>
+      <div style="font-size:11px; opacity:0.8;">peças ≤ mínimo</div>
+    </div>
+    <div class="card-fin" style="background:linear-gradient(135deg,#dc2626,#991b1b); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Sem estoque</div>
+      <div class="big" id="kpiPecasZero">0</div>
+      <div style="font-size:11px; opacity:0.8;">zeradas</div>
+    </div>
+    <div class="card-fin" style="background:linear-gradient(135deg,#6366f1,#4338ca); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Valor em estoque</div>
+      <div class="big" id="kpiPecasValor">R$ 0,00</div>
+      <div style="font-size:11px; opacity:0.8;">por preço de custo</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- ===== FORMULÁRIO DE CADASTRO DE PEÇA ===== -->
+    <div class="card" data-perm="maquinas_cadastrar">
+      <h3 id="pecaFormTitulo">Nova Peça</h3>
+      <form id="formPeca" class="form-grid" autocomplete="off">
+
+        <label>Código <span style="color:#dc2626">*</span>
+          <input name="codigo" required placeholder="ex.: PC-001" />
+        </label>
+
+        <label>Nome <span style="color:#dc2626">*</span>
+          <input name="nome" required placeholder="ex.: Bateria 2000mAh" />
+        </label>
+
+        <label>Fornecedor
+          <input name="fornecedor" placeholder="ex.: Distribuidora XYZ" />
+        </label>
+
+        <label>Preço de custo (R$)
+          <input name="preco_custo" type="number" step="0.01" min="0" placeholder="0,00" />
+        </label>
+
+        <label>Preço unitário (R$)
+          <input name="preco_unitario" type="number" step="0.01" min="0" placeholder="0,00" />
+        </label>
+
+        <label>Estoque inicial
+          <input name="estoque_atual" type="number" step="1" min="0" placeholder="0" />
+        </label>
+
+        <label>Estoque mínimo
+          <input name="estoque_minimo" type="number" step="1" min="0" placeholder="0" />
+        </label>
+
+        <label style="grid-column:1/-1">Modelos compatíveis
+          <input name="modelos_compativeis" placeholder="ex.: Ingenico iWL250, Verifone V200 (separe por vírgula)" />
+        </label>
+
+        <label style="grid-column:1/-1">Descrição
+          <textarea name="descricao" rows="2" placeholder="Detalhes técnicos, especificações, etc."></textarea>
+        </label>
+
+        <label style="grid-column:1/-1">Observação
+          <textarea name="observacao" rows="2" placeholder="Notas internas (opcional)"></textarea>
+        </label>
+
+        <div style="grid-column:1/-1; display:flex; justify-content:flex-end; gap:10px;">
+          <button class="btn ghost" type="button" id="btnLimparPeca">Limpar</button>
+          <button class="btn" type="submit" id="btnSalvarPeca">Salvar Peça</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- ===== TABELA DE PEÇAS ===== -->
+    <div class="card">
+      <h3>Catálogo de Peças</h3>
+
+      <div class="tool-row" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+        <input id="pecasBusca" type="search" placeholder="Buscar por código, nome, fornecedor, modelo..." style="flex:1; min-width:200px;" />
+        <select id="pecasFiltroStatus" style="min-width:160px;">
+          <option value="">Todos os status</option>
+          <option value="ok">Estoque OK</option>
+          <option value="baixo">Estoque baixo</option>
+          <option value="zero">Sem estoque</option>
+          <option value="inativa">Inativas</option>
+        </select>
+      </div>
+
+      <div class="table-wrap" style="overflow:auto; max-height:600px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Nome</th>
+              <th>Fornecedor</th>
+              <th>Estoque</th>
+              <th>Preço (custo)</th>
+              <th>Modelos</th>
+              <th class="tv-right">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyPecas">
+            <tr><td colspan="7" style="text-align:center; color:#6b7280; padding:30px;">Carregando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <button class="btn ghost" id="btnAtualizarPecas">🔄 Atualizar</button>
+      <button class="btn ghost" id="btnExportarPecas" data-perm="maquinas_view">📥 Exportar CSV</button>
+    </div>
+  </div>
+</section>
+
+
+<!-- =========================================================================
+     DIALOG: ENTRADA / SAÍDA / AJUSTE DE ESTOQUE DE PEÇA
+     ========================================================================= -->
+<dialog id="dlgPecaEstoque">
+  <header class="card"><strong id="dlgPecaEstoqueTitulo">Movimentar Estoque</strong></header>
+  <form id="formPecaMov" class="card" style="margin:0; min-width:380px; max-width:520px;">
+    <input type="hidden" name="peca_id" />
+    <input type="hidden" name="tipo" />
+
+    <div style="margin-bottom:10px; padding:10px; background:#f3f4f6; border-radius:8px;">
+      <div style="font-size:12px; color:#6b7280;">Peça</div>
+      <div id="dlgPecaInfo" style="font-weight:600;"></div>
+      <div id="dlgPecaSaldoAtual" style="margin-top:6px; font-size:13px; color:#374151;"></div>
+    </div>
+
+    <div class="form-grid">
+      <label>Quantidade <span style="color:#dc2626">*</span>
+        <input name="quantidade" type="number" step="1" min="1" required placeholder="ex.: 10" />
+      </label>
+      <label>Data
+        <input name="data_evento" type="date" />
+      </label>
+      <label>Preço unitário (R$)
+        <input name="preco_unitario_momento" type="number" step="0.01" min="0" placeholder="opcional" />
+      </label>
+      <label style="grid-column:1/-1">Motivo
+        <input name="motivo" placeholder="ex.: Compra, Ajuste de inventário..." />
+      </label>
+      <label style="grid-column:1/-1">Observação
+        <textarea name="observacao" rows="2" placeholder="Detalhes adicionais"></textarea>
+      </label>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px;">
+      <button class="btn ghost" type="button" data-close-dlg="dlgPecaEstoque">Cancelar</button>
+      <button class="btn" type="submit">Confirmar</button>
+    </div>
+  </form>
+</dialog>
+
+
+<!-- =========================================================================
+     DIALOG: HISTÓRICO DE MOVIMENTAÇÕES DA PEÇA
+     ========================================================================= -->
+<dialog id="dlgPecaHistorico">
+  <header class="card"><strong>Histórico da Peça</strong></header>
+  <div class="card" style="margin:0; min-width:560px; max-width:760px; max-height:75vh; overflow:auto;">
+    <div id="dlgPecaHistoricoInfo" style="margin-bottom:12px; padding:10px; background:#f3f4f6; border-radius:8px;"></div>
+    <div id="dlgPecaHistoricoLista">Carregando...</div>
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px;">
+      <button class="btn" type="button" data-close-dlg="dlgPecaHistorico">Fechar</button>
+    </div>
+  </div>
+</dialog>
+
+
+<!-- =========================================================================
+     DIALOG: ASSISTÊNCIA TÉCNICA — gerenciar peças da máquina
+     ========================================================================= -->
+<dialog id="dlgMaqAssistencia">
+  <header class="card"><strong>Assistência Técnica — Peças da Máquina</strong></header>
+  <div class="card" style="margin:0; min-width:620px; max-width:820px; max-height:80vh; overflow:auto;">
+    <div id="dlgAssistInfo" style="margin-bottom:12px; padding:10px; background:#f3f4f6; border-radius:8px;"></div>
+
+    <h4 style="margin:14px 0 6px;">📦 Peças instaladas atualmente</h4>
+    <div id="dlgAssistAtuais" style="font-size:13px;">Carregando...</div>
+
+    <h4 style="margin:18px 0 6px;">➕ Adicionar peça da máquina</h4>
+    <form id="formAddPecaMaquina" class="form-grid" style="background:#f9fafb; padding:10px; border-radius:8px;">
+      <input type="hidden" name="maquina_id" />
+      <label style="grid-column:1/-1">Peça <span style="color:#dc2626">*</span>
+        <select name="peca_id" required>
+          <option value="">Selecione...</option>
+        </select>
+      </label>
+      <label>Quantidade <span style="color:#dc2626">*</span>
+        <input name="quantidade" type="number" step="1" min="1" value="1" required />
+      </label>
+      <label>Data
+        <input name="data_instalacao" type="date" />
+      </label>
+      <label style="grid-column:1/-1">Observação
+        <textarea name="observacao" rows="2" placeholder="Motivo da troca, defeito, etc."></textarea>
+      </label>
+      <div style="grid-column:1/-1; display:flex; justify-content:flex-end;">
+        <button class="btn" type="submit">Instalar peça (debita do estoque)</button>
+      </div>
+    </form>
+
+    <h4 style="margin:18px 0 6px;">🕓 Histórico completo de peças desta máquina</h4>
+    <div id="dlgAssistHistorico" style="font-size:13px;">Carregando...</div>
+
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+      <button class="btn" type="button" data-close-dlg="dlgMaqAssistencia">Fechar</button>
+    </div>
+  </div>
+</dialog>
+
+
   <!-- DIALOG: Novo lançamento -->
   <dialog id="dlgLanc">
     <header class="card"><strong>Novo lançamento</strong></header>
@@ -2127,6 +2366,7 @@ function pgDivAddFromForm(){
 <script src="js/fichas.js" defer></script>
 <script src="js/maquinas.js" defer></script>
 <script src="js/estoque.js" defer></script>
+<script src="js/pecas.js" defer></script>
 <script src="js/saldo-acumulado.js"></script>
 <script src="js/saldo-acumulado-ui.js"></script>
 <script src="ajuste-saldo-manual.js"></script>

@@ -53,12 +53,29 @@
   // ============================================
   // CARREGAR DADOS
   // ============================================
+  function mostrarErroSetup(msg) {
+    const div = document.getElementById('bobinasErroSetup');
+    const det = document.getElementById('bobinasErroSetupDetalhe');
+    if (div) div.style.display = '';
+    if (det) det.textContent = msg || '';
+  }
+  function esconderErroSetup() {
+    const div = document.getElementById('bobinasErroSetup');
+    if (div) div.style.display = 'none';
+  }
+
   async function carregarBobinaPrincipal() {
     try {
       __bobinaPrincipal = await window.SupabaseAPI.bobinas.getOrCreatePrincipal();
+      if (__bobinaPrincipal) esconderErroSetup();
       return __bobinaPrincipal;
     } catch (e) {
       console.error('[Bobinas] Erro principal:', e);
+      // Detecta erro típico de "tabela não existe" (PostgREST PGRST205 / 42P01)
+      const txt = String(e?.message || e?.code || '');
+      if (/PGRST205|relation .* does not exist|42P01|not found/i.test(txt)) {
+        mostrarErroSetup('Detalhe: ' + txt);
+      }
       return null;
     }
   }
@@ -283,13 +300,17 @@
   // ============================================
   // DIALOG: AÇÃO DE BOBINA
   // ============================================
-  function abrirDialogAcao(tipo) {
+  async function abrirDialogAcao(tipo) {
+    // Se ainda não temos a bobina principal, tenta carregar uma vez antes
     if (!__bobinaPrincipal) {
-      notify('Bobina não inicializada. Recarregue a página.', 'error');
+      await carregarBobinaPrincipal();
+    }
+    if (!__bobinaPrincipal) {
+      alert('⚠️ Não foi possível carregar a bobina.\n\nVerifique se você rodou o arquivo db/bobinas-schema.sql no Supabase SQL Editor.\nDepois recarregue a página com Ctrl+Shift+R.');
       return;
     }
     if (!podeFazer('maquinas_cadastrar')) {
-      notify('Sem permissão para movimentar bobinas.', 'error');
+      alert('❌ Você não tem permissão para movimentar bobinas.');
       return;
     }
 
@@ -405,6 +426,31 @@
   }
 
   // ============================================
+  // DIALOG: CONFIGURAÇÕES
+  // ============================================
+  async function abrirDialogConfig() {
+    if (!__bobinaPrincipal) await carregarBobinaPrincipal();
+    if (!__bobinaPrincipal) {
+      alert('⚠️ Não foi possível carregar a bobina.\n\nRode db/bobinas-schema.sql e recarregue a página.');
+      return;
+    }
+    if (!podeFazer('maquinas_cadastrar')) {
+      alert('❌ Você não tem permissão para alterar configurações.');
+      return;
+    }
+    const dlg = document.getElementById('dlgBobinaConfig');
+    if (!dlg) return;
+    const form = document.getElementById('formBobinaConfig');
+    if (form) {
+      form.nome.value              = __bobinaPrincipal.nome || '';
+      form.estoque_minimo.value    = __bobinaPrincipal.estoque_minimo ?? 0;
+      form.preco_custo.value       = __bobinaPrincipal.preco_custo ?? 0;
+      form.fornecedor_padrao.value = __bobinaPrincipal.fornecedor_padrao || '';
+    }
+    dlg.showModal();
+  }
+
+  // ============================================
   // SALVAR CONFIG
   // ============================================
   async function onSubmitConfig(e) {
@@ -424,10 +470,13 @@
     };
     try {
       __bobinaPrincipal = await window.SupabaseAPI.bobinas.update(__bobinaPrincipal.id, patch);
+      const dlg = document.getElementById('dlgBobinaConfig');
+      if (dlg && dlg.open) dlg.close();
       notify('Configurações salvas!', 'success');
       renderKPIs();
     } catch (err) {
-      notify(err.message || 'Erro ao salvar config', 'error');
+      console.error('[Bobinas] Erro salvar config:', err);
+      alert('Erro ao salvar: ' + (err.message || err));
     }
   }
 
@@ -477,10 +526,23 @@
   // EVENTOS
   // ============================================
   function bindEvents() {
-    document.getElementById('btnBobinaEntrada')?.addEventListener('click', () => abrirDialogAcao('entrada'));
-    document.getElementById('btnBobinaEntrega')?.addEventListener('click', () => abrirDialogAcao('entrega'));
-    document.getElementById('btnBobinaSaida')?.addEventListener('click', () => abrirDialogAcao('saida'));
-    document.getElementById('btnBobinaAjuste')?.addEventListener('click', () => abrirDialogAcao('ajuste'));
+    const wire = (id, handler) => {
+      const el = document.getElementById(id);
+      if (el && !el.__wiredBob) {
+        el.__wiredBob = true;
+        el.addEventListener('click', (e) => {
+          e.preventDefault();
+          handler();
+        });
+      } else if (!el) {
+        console.warn('[Bobinas] Botão não encontrado:', id);
+      }
+    };
+    wire('btnBobinaEntrada', () => abrirDialogAcao('entrada'));
+    wire('btnBobinaEntrega', () => abrirDialogAcao('entrega'));
+    wire('btnBobinaSaida',   () => abrirDialogAcao('saida'));
+    wire('btnBobinaAjuste',  () => abrirDialogAcao('ajuste'));
+    wire('btnBobinaConfig',  () => abrirDialogConfig());
 
     const formAcao = document.getElementById('formBobinaAcao');
     if (formAcao && !formAcao.__wired) {

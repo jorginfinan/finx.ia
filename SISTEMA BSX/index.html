@@ -1949,59 +1949,85 @@ function pgDivAddFromForm(){
     </div>
   </div>
 
-  <div class="grid">
-    <!-- ===== AÇÕES + CONFIG ===== -->
-    <div class="card" data-perm="maquinas_cadastrar">
-      <h3>Ações de Bobina</h3>
+  <!-- AVISO se a tabela bobinas ainda não existe -->
+  <div id="bobinasErroSetup" style="display:none; padding:14px; background:#fef2f2; border:1px solid #fca5a5; border-radius:10px; margin-bottom:16px;">
+    <strong style="color:#991b1b;">⚠️ Tabelas de bobinas não encontradas no banco</strong>
+    <div style="font-size:13px; color:#7f1d1d; margin-top:6px;">
+      Execute o arquivo <code>db/bobinas-schema.sql</code> no Supabase SQL Editor e recarregue esta página.
+    </div>
+    <div id="bobinasErroSetupDetalhe" style="font-size:11px; color:#7f1d1d; margin-top:6px; font-family:monospace;"></div>
+  </div>
 
-      <div id="bobinaPrincipalInfo" style="padding:10px; background:#f3f4f6; border-radius:8px; margin-bottom:12px;">
-        <div style="font-size:13px; color:#374151;"><strong id="bobinaNome">Bobina térmica</strong></div>
-        <div style="font-size:12px; color:#6b7280; margin-top:4px;">
+  <!-- BARRA DE AÇÕES (compacta) -->
+  <div class="card" data-perm="maquinas_cadastrar" style="margin-bottom:16px; padding:14px;">
+    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      <div style="flex:1; min-width:220px;">
+        <strong id="bobinaNome" style="font-size:15px;">Bobina térmica</strong>
+        <div style="font-size:12px; color:#6b7280; margin-top:2px;">
           Saldo: <strong id="bobinaSaldoAtual">0</strong> un. •
           Mínimo: <strong id="bobinaMinimoAtual">0</strong> un.
         </div>
       </div>
+      <button type="button" class="btn" id="btnBobinaEntrada"  data-tip="Registrar compra/recebimento">📥 Entrada</button>
+      <button type="button" class="btn" id="btnBobinaEntrega"  data-tip="Entregar bobinas a um gerente">🧑‍💼 Entregar</button>
+      <button type="button" class="btn ghost" id="btnBobinaSaida"  data-tip="Saída manual (perda, descarte...)">📤 Saída</button>
+      <button type="button" class="btn ghost" id="btnBobinaAjuste" data-tip="Corrigir o saldo (inventário)">⚙️ Ajuste</button>
+      <button type="button" class="btn ghost" id="btnBobinaConfig" data-tip="Editar nome, mínimo, preço de custo">🔧 Configurações</button>
+    </div>
+  </div>
 
-      <div style="display:flex; flex-direction:column; gap:8px;">
-        <button class="btn" id="btnBobinaEntrada" data-tip="Registrar compra/recebimento de bobinas">📥 Entrada de Estoque (compra)</button>
-        <button class="btn" id="btnBobinaEntrega" data-tip="Entregar bobinas a um gerente / vendedor">🧑‍💼 Entregar a Gerente</button>
-        <button class="btn ghost" id="btnBobinaSaida" data-tip="Saída manual (perda, descarte, etc.)">📤 Saída Manual</button>
-        <button class="btn ghost" id="btnBobinaAjuste" data-tip="Ajuste de inventário (corrigir saldo)">⚙️ Ajustar Inventário</button>
+  <div class="grid">
+    <!-- ===== MOVIMENTAÇÕES (linha cheia em coluna principal) ===== -->
+    <div class="card" style="grid-column:1/-1;">
+      <h3>📋 Movimentações</h3>
+      <div class="tool-row" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+        <select id="bobFiltroTipo" style="min-width:160px;">
+          <option value="">Todos os tipos</option>
+          <option value="entrada">📥 Entrada (compra)</option>
+          <option value="entrega">🧑‍💼 Entrega a gerente</option>
+          <option value="saida">📤 Saída manual</option>
+          <option value="ajuste">⚙️ Ajuste</option>
+        </select>
+        <input id="bobBusca" type="search" placeholder="Buscar gerente, fornecedor, obs..." style="flex:1; min-width:200px;" />
+        <input id="bobFiltroDe" type="date" style="min-width:150px;" data-tip="Data inicial" />
+        <input id="bobFiltroAte" type="date" style="min-width:150px;" data-tip="Data final" />
+        <button type="button" class="btn ghost" id="btnBobAtualizar" data-tip="Recarregar do servidor">🔄 Atualizar</button>
+        <button type="button" class="btn ghost" id="btnBobExportar" data-tip="Baixar .csv">📥 Exportar CSV</button>
       </div>
-
-      <hr style="margin:14px 0; border:none; border-top:1px solid #e5e7eb;" />
-
-      <h4 style="margin:0 0 8px;">Configurações</h4>
-      <form id="formBobinaConfig" class="form-grid">
-        <label>Nome
-          <input name="nome" placeholder="ex.: Bobina térmica 57mm" />
-        </label>
-        <label>Estoque mínimo
-          <input name="estoque_minimo" type="number" min="0" step="1" placeholder="0" />
-        </label>
-        <label>Preço de custo (R$)
-          <input name="preco_custo" type="number" min="0" step="0.01" placeholder="0,00" />
-        </label>
-        <label>Fornecedor padrão
-          <input name="fornecedor_padrao" placeholder="opcional" />
-        </label>
-        <div style="grid-column:1/-1; display:flex; justify-content:flex-end;">
-          <button class="btn" type="submit" data-tip="Salvar configurações">Salvar config</button>
-        </div>
-      </form>
+      <div class="table-wrap" style="overflow:auto; max-height:520px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Tipo</th>
+              <th>Qtd</th>
+              <th>Saldo</th>
+              <th>Gerente / Fornecedor</th>
+              <th>Custo (R$)</th>
+              <th>Obs.</th>
+              <th>Usuário</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyBobMovs">
+            <tr><td colspan="8" style="text-align:center; color:#6b7280; padding:30px;">Carregando...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
-    <!-- ===== RESUMO POR GERENTE (entregas) ===== -->
-    <div class="card">
-      <h3>Entregas por Gerente</h3>
-      <div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;">
-        <label style="flex:1; min-width:130px;">De
+    <!-- ===== RESUMO POR GERENTE (linha cheia abaixo) ===== -->
+    <div class="card" style="grid-column:1/-1;">
+      <h3>🧑‍💼 Entregas por Gerente</h3>
+      <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+        <label style="display:flex; flex-direction:column; min-width:140px;">
+          <span style="font-size:12px; color:#6b7280;">De</span>
           <input id="bobResumoDe" type="date" />
         </label>
-        <label style="flex:1; min-width:130px;">Até
+        <label style="display:flex; flex-direction:column; min-width:140px;">
+          <span style="font-size:12px; color:#6b7280;">Até</span>
           <input id="bobResumoAte" type="date" />
         </label>
-        <button class="btn ghost" id="btnBobResumoAplicar" style="align-self:end;" data-tip="Aplicar período">Filtrar</button>
+        <button type="button" class="btn ghost" id="btnBobResumoAplicar" style="align-self:end;" data-tip="Aplicar filtro de período">Filtrar período</button>
       </div>
       <div class="table-wrap" style="overflow:auto; max-height:380px;">
         <table>
@@ -2019,45 +2045,35 @@ function pgDivAddFromForm(){
       </div>
     </div>
   </div>
-
-  <!-- ===== TABELA DE MOVIMENTAÇÕES ===== -->
-  <div class="card" style="margin-top:16px;">
-    <h3>Movimentações</h3>
-    <div class="tool-row" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
-      <select id="bobFiltroTipo" style="min-width:160px;">
-        <option value="">Todos os tipos</option>
-        <option value="entrada">📥 Entrada (compra)</option>
-        <option value="entrega">🧑‍💼 Entrega a gerente</option>
-        <option value="saida">📤 Saída manual</option>
-        <option value="ajuste">⚙️ Ajuste</option>
-      </select>
-      <input id="bobBusca" type="search" placeholder="Buscar gerente, fornecedor, obs..." style="flex:1; min-width:200px;" />
-      <input id="bobFiltroDe" type="date" style="min-width:150px;" />
-      <input id="bobFiltroAte" type="date" style="min-width:150px;" />
-      <button class="btn ghost" id="btnBobAtualizar" data-tip="Recarregar lista">🔄 Atualizar</button>
-      <button class="btn ghost" id="btnBobExportar" data-tip="Baixar .csv">📥 Exportar CSV</button>
-    </div>
-    <div class="table-wrap" style="overflow:auto; max-height:500px;">
-      <table>
-        <thead>
-          <tr>
-            <th>Data</th>
-            <th>Tipo</th>
-            <th>Qtd</th>
-            <th>Saldo</th>
-            <th>Gerente / Fornecedor</th>
-            <th>Custo (R$)</th>
-            <th>Obs.</th>
-            <th>Usuário</th>
-          </tr>
-        </thead>
-        <tbody id="tbodyBobMovs">
-          <tr><td colspan="8" style="text-align:center; color:#6b7280; padding:30px;">Carregando...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
 </section>
+
+
+<!-- =========================================================================
+     DIALOG: CONFIGURAÇÕES DE BOBINA
+     ========================================================================= -->
+<dialog id="dlgBobinaConfig">
+  <header class="card"><strong>🔧 Configurações da Bobina</strong></header>
+  <form id="formBobinaConfig" class="card" style="margin:0; min-width:420px; max-width:560px;">
+    <div class="form-grid">
+      <label style="grid-column:1/-1">Nome
+        <input name="nome" placeholder="ex.: Bobina térmica 57mm" />
+      </label>
+      <label>Estoque mínimo
+        <input name="estoque_minimo" type="number" min="0" step="1" placeholder="0" />
+      </label>
+      <label>Preço de custo (R$)
+        <input name="preco_custo" type="number" min="0" step="0.01" placeholder="0,00" />
+      </label>
+      <label style="grid-column:1/-1">Fornecedor padrão
+        <input name="fornecedor_padrao" placeholder="opcional" />
+      </label>
+    </div>
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px;">
+      <button type="button" class="btn ghost" data-close-dlg="dlgBobinaConfig">Cancelar</button>
+      <button type="submit" class="btn">Salvar configurações</button>
+    </div>
+  </form>
+</dialog>
 
 
 <!-- =========================================================================

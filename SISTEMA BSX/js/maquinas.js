@@ -69,15 +69,111 @@
   // ============================================
   // POPULAR SELECTS DE GERENTE E FICHAS
   // ============================================
+  // Cache local de gerentes vindos de MÚLTIPLAS empresas (BSX + BetPlay)
+  // — só usado nesta página. As outras telas continuam usando window.gerentes
+  // (apenas a empresa ativa).
+  const EMPRESAS_MAQUINAS = ['BSX', 'BetPlay'];
+  let __cacheGerentesMaquinas = [];
+
+  async function loadGerentesMultiEmpresa() {
+    try {
+      if (!window.SupabaseAPI?.client) return [];
+
+      // 1) IDs das empresas (case-insensitive)
+      const { data: todasEmpresas, error: errEmp } = await window.SupabaseAPI.client
+        .from('empresas')
+        .select('id, nome');
+      if (errEmp) throw errEmp;
+
+      const alvoLower = EMPRESAS_MAQUINAS.map(n => n.toLowerCase());
+      const empresasAlvo = (todasEmpresas || [])
+        .filter(e => alvoLower.includes(String(e.nome || '').toLowerCase()));
+      if (!empresasAlvo.length) {
+        console.warn('[Maquinas] Nenhuma das empresas alvo encontrada:', EMPRESAS_MAQUINAS);
+        return [];
+      }
+      const empById = new Map(empresasAlvo.map(e => [e.id, e.nome]));
+
+      // 2) Gerentes ativos dessas empresas
+      const { data: gerentes, error: errGer } = await window.SupabaseAPI.client
+        .from('gerentes')
+        .select('*')
+        .in('empresa_id', empresasAlvo.map(e => e.id))
+        .eq('ativo', true)
+        .order('nome');
+      if (errGer) throw errGer;
+
+      __cacheGerentesMaquinas = (gerentes || []).map(g => ({
+        ...g,
+        empresa_nome: empById.get(g.empresa_id) || ''
+      }));
+
+      console.log('[Maquinas] Gerentes multi-empresa carregados:',
+        __cacheGerentesMaquinas.length,
+        'de', EMPRESAS_MAQUINAS.join(', '));
+      return __cacheGerentesMaquinas;
+    } catch (e) {
+      console.error('[Maquinas] Erro loadGerentesMultiEmpresa:', e);
+      return [];
+    }
+  }
+
+  // Procura gerente por id: olha primeiro o cache local (multi-empresa),
+  // depois o cache global de gerentes da empresa ativa.
+  function findGerentePorId(gerenteId) {
+    const idStr = String(gerenteId);
+    return __cacheGerentesMaquinas.find(g => String(g.id || g.uid) === idStr)
+        || (window.gerentes || []).find(g => String(g.id || g.uid) === idStr)
+        || null;
+  }
+
   function popularGerentesSelect(sel) {
     if (!sel) return;
-    const gerentes = (window.gerentes || []).filter(g => g.ativo !== false);
+
+    // Usa cache multi-empresa se disponível; fallback para window.gerentes
+    const fonte = __cacheGerentesMaquinas.length > 0
+      ? __cacheGerentesMaquinas
+      : (window.gerentes || []);
+    const gerentes = fonte.filter(g => g.ativo !== false);
     const atual = sel.value;
-    sel.innerHTML = '<option value="">Selecione...</option>' +
-      gerentes
-        .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || '')))
-        .map(g => `<option value="${esc(g.id || g.uid)}">${esc(g.nome)}</option>`)
-        .join('');
+
+    // Agrupa por empresa
+    const porEmpresa = new Map();
+    gerentes.forEach(g => {
+      const emp = g.empresa_nome || '';
+      if (!porEmpresa.has(emp)) porEmpresa.set(emp, []);
+      porEmpresa.get(emp).push(g);
+    });
+
+    let html = '<option value="">Selecione...</option>';
+    // Ordena empresas: BSX primeiro, depois BetPlay, depois outras
+    const ordemEmp = ['BSX', 'BetPlay'];
+    const empresasOrdenadas = Array.from(porEmpresa.keys()).sort((a, b) => {
+      const ia = ordemEmp.indexOf(a); const ib = ordemEmp.indexOf(b);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
+    const usaOptgroup = porEmpresa.size > 1;
+    empresasOrdenadas.forEach(emp => {
+      const list = porEmpresa.get(emp)
+        .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || '')));
+      if (usaOptgroup && emp) {
+        html += `<optgroup label="🏢 ${esc(emp)}">`;
+        list.forEach(g => {
+          html += `<option value="${esc(g.id || g.uid)}">${esc(g.nome)}</option>`;
+        });
+        html += '</optgroup>';
+      } else {
+        list.forEach(g => {
+          html += `<option value="${esc(g.id || g.uid)}">${esc(g.nome)}</option>`;
+        });
+      }
+    });
+
+    sel.innerHTML = html;
     if (atual) sel.value = atual;
   }
  
@@ -285,8 +381,8 @@
             throw new Error('Este gerente já tem outra máquina. Observação OBRIGATÓRIA explicando o motivo.');
           }
  
-          const ger = (window.gerentes || []).find(g => String(g.id || g.uid) === gerenteId);
- 
+          const ger = findGerentePorId(gerenteId);
+
           dadosMaquina.status = 'com_vendedor';
           dadosMaquina.gerente_atual_id = ger?.id || null;
           dadosMaquina.gerente_atual_nome = ger?.nome || null;
@@ -442,23 +538,27 @@
   // ============================================
   // DIALOG: ENTREGAR
   // ============================================
-  function abrirDialogEntregar(m) {
+  async function abrirDialogEntregar(m) {
     const dlg = document.getElementById('dlgMaqEntregar');
     if (!dlg) return;
     const form = document.getElementById('formEntregar');
     form.reset();
     form.querySelector('[name="maquina_id"]').value = m.id;
     form.querySelector('[name="data_evento"]').value = hoje();
- 
+
     document.getElementById('dlgEntregarMaquinaInfo').textContent =
       `${m.serial}${m.modelo ? ' — ' + m.modelo : ''}`;
     document.getElementById('dlgEntregarTitulo').textContent = 'Entregar Máquina';
     document.getElementById('dlgEntregarAviso').style.display = 'none';
     document.getElementById('dlgEntregarObsObrigatoria').style.display = 'none';
- 
+
+    // ✅ Garante cache de gerentes multi-empresa atualizado
+    if (__cacheGerentesMaquinas.length === 0) {
+      await loadGerentesMultiEmpresa();
+    }
     popularGerentesSelect(document.getElementById('dlgSelGerente'));
     popularFichasDatalist(document.getElementById('listFichasMaq2'));
- 
+
     dlg.showModal();
   }
  
@@ -484,8 +584,8 @@
         throw new Error('Este gerente já tem máquina(s) ativa(s). Observação OBRIGATÓRIA.');
       }
  
-      const ger = (window.gerentes || []).find(g => String(g.id || g.uid) === gerenteId);
- 
+      const ger = findGerentePorId(gerenteId);
+
       // Cria movimentação de entrega
       const mov = await window.SupabaseAPI.maquinasMovimentacoes.create({
         maquina_id: maquinaId,
@@ -1129,19 +1229,23 @@
  
   async function init() {
     if (__initialized) {
+      // mesmo já inicializado, atualiza cache caso a empresa tenha mudado
+      await loadGerentesMultiEmpresa();
+      popularGerentesSelect(document.getElementById('selMaqGerente'));
       render();
       return;
     }
     __initialized = true;
     console.log('[Maquinas] 🔄 Inicializando página de cadastro...');
- 
+
     bindEvents();
     resetForm();
- 
-    // Popular selects iniciais
+
+    // ✅ Carrega gerentes de BSX + BetPlay e popula selects
+    await loadGerentesMultiEmpresa();
     popularGerentesSelect(document.getElementById('selMaqGerente'));
     popularFichasDatalist(document.getElementById('listFichasMaq'));
- 
+
     await render();
     console.log('[Maquinas] ✅ Página de cadastro pronta');
   }

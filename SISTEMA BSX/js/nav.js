@@ -11,10 +11,13 @@
     audit: 'pageHistorico',
     'analise-gerente': 'pageAnaliseGerente',
     'analise': 'pageAnaliseGerente',
-    'maquinas-cad':     'pageMaquinasCadastro',
-    'maquinas-estoque': 'pageMaquinasEstoque',
-    'maquinas-pecas':   'pagePecasEstoque',
-    'maquinas-bobinas': 'pageBobinas'
+    'maquinas-cad':          'pageMaquinasCadastro',
+    'maquinas-estoque':      'pageMaquinasEstoque',
+    'maquinas-pecas':        'pagePecasEstoque',
+    'maquinas-bobinas-lanc': 'pageBobinasLanc',
+    'maquinas-bobinas-ctrl': 'pageBobinasCtrl',
+    // alias retro-compatível
+    'maquinas-bobinas':      'pageBobinasLanc'
   };
 
   function pageIdFor(key){
@@ -72,9 +75,13 @@
     if (key === 'maquinas-pecas' || id === 'pagePecasEstoque') {
       try { window.PecasEstoque?.init?.(); } catch(_) {}
     }
-    // ✅ Inicializa Bobinas
-    if (key === 'maquinas-bobinas' || id === 'pageBobinas') {
-      try { window.Bobinas?.init?.(); } catch(_) {}
+    // ✅ Inicializa Bobinas — Lançamentos (página com botões)
+    if (key === 'maquinas-bobinas-lanc' || key === 'maquinas-bobinas' || id === 'pageBobinasLanc') {
+      try { window.Bobinas?.initLanc?.(); } catch(_) {}
+    }
+    // ✅ Inicializa Bobinas — Controle (KPIs, movimentações)
+    if (key === 'maquinas-bobinas-ctrl' || id === 'pageBobinasCtrl') {
+      try { window.Bobinas?.initCtrl?.(); } catch(_) {}
     }
   };
 

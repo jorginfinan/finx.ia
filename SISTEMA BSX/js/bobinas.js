@@ -11,7 +11,8 @@
   }
   window.__BOBINAS_LOADED__ = true;
 
-  let __initialized = false;
+  let __initializedLanc = false;
+  let __initializedCtrl = false;
   let __bobinaPrincipal = null;
   let __cacheMovs = [];
   let __cacheGerentes = [];  // gerentes ativos de BSX + BetPlay
@@ -130,8 +131,38 @@
   }
 
   // ============================================
-  // RENDER KPIs E INFO
+  // RENDERS
   // ============================================
+  function setTxt(id, v) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = v;
+  }
+
+  function calcStatus() {
+    if (!__bobinaPrincipal) return { label: 'OK', desc: 'estoque normal', bg: '#d1fae5', fg: '#065f46' };
+    const atual = Number(__bobinaPrincipal.estoque_atual) || 0;
+    const min   = Number(__bobinaPrincipal.estoque_minimo) || 0;
+    if (atual <= 0) return { label: 'SEM ESTOQUE', desc: '⚠️ Repor com urgência', bg: '#fee2e2', fg: '#991b1b' };
+    if (atual <= min) return { label: 'BAIXO', desc: 'abaixo do mínimo',         bg: '#fef3c7', fg: '#92400e' };
+    return { label: 'OK', desc: 'estoque normal', bg: '#d1fae5', fg: '#065f46' };
+  }
+
+  // Cabeçalho usado em ambas as páginas (saldo + nome + status badge)
+  function renderHeaderLanc() {
+    if (!__bobinaPrincipal) return;
+    setTxt('bobinaNome', __bobinaPrincipal.nome || 'Bobina');
+    setTxt('bobinaSaldoAtual', Number(__bobinaPrincipal.estoque_atual) || 0);
+    setTxt('bobinaMinimoAtual', Number(__bobinaPrincipal.estoque_minimo) || 0);
+    const st = calcStatus();
+    const badge = document.getElementById('bobinaStatusBadgeLanc');
+    if (badge) {
+      badge.textContent = st.label === 'OK' ? 'ESTOQUE OK' : st.label;
+      badge.style.background = st.bg;
+      badge.style.color = st.fg;
+    }
+  }
+
+  // KPIs e status da página de Controle
   function renderKPIs() {
     if (!__bobinaPrincipal) return;
     const atual = Number(__bobinaPrincipal.estoque_atual) || 0;
@@ -139,31 +170,13 @@
     const custo = Number(__bobinaPrincipal.preco_custo) || 0;
     const valor = atual * custo;
 
-    const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     setTxt('kpiBobinasEstoque', atual);
     setTxt('kpiBobinasMinimo', min);
     setTxt('kpiBobinasValor', fmtBRL(valor));
 
-    // Status
-    let status = 'OK';
-    let desc = 'estoque normal';
-    if (atual <= 0) { status = 'SEM ESTOQUE'; desc = '⚠️ Repor com urgência'; }
-    else if (atual <= min) { status = 'BAIXO'; desc = 'abaixo do mínimo'; }
-    setTxt('kpiBobinasStatus', status);
-    setTxt('kpiBobinasStatusDesc', desc);
-
-    setTxt('bobinaNome', __bobinaPrincipal.nome || 'Bobina');
-    setTxt('bobinaSaldoAtual', atual);
-    setTxt('bobinaMinimoAtual', min);
-
-    // Preenche o form de config
-    const form = document.getElementById('formBobinaConfig');
-    if (form) {
-      form.nome.value = __bobinaPrincipal.nome || '';
-      form.estoque_minimo.value = __bobinaPrincipal.estoque_minimo ?? 0;
-      form.preco_custo.value = __bobinaPrincipal.preco_custo ?? 0;
-      form.fornecedor_padrao.value = __bobinaPrincipal.fornecedor_padrao || '';
-    }
+    const st = calcStatus();
+    setTxt('kpiBobinasStatus', st.label);
+    setTxt('kpiBobinasStatusDesc', st.desc);
   }
 
   // ============================================
@@ -512,10 +525,28 @@
   }
 
   // ============================================
-  // RENDER PRINCIPAL
+  // RENDERS POR PÁGINA
   // ============================================
+  // Página de Lançamentos: só carrega header e cache de gerentes
+  async function renderLanc() {
+    await carregarBobinaPrincipal();
+    renderHeaderLanc();
+  }
+
+  // Página de Controle: carrega KPIs, movimentações, resumo
+  async function renderCtrl() {
+    await carregarBobinaPrincipal();
+    renderKPIs();
+    await carregarMovs();
+    renderMovs();
+    await renderResumoPorGerente();
+  }
+
+  // Render conjunto (chamado após cada movimentação para atualizar tudo
+  // independente da página atual)
   async function render() {
     await carregarBobinaPrincipal();
+    renderHeaderLanc();
     renderKPIs();
     await carregarMovs();
     renderMovs();
@@ -525,37 +556,55 @@
   // ============================================
   // EVENTOS
   // ============================================
-  function bindEvents() {
-    const wire = (id, handler) => {
-      const el = document.getElementById(id);
-      if (el && !el.__wiredBob) {
-        el.__wiredBob = true;
-        el.addEventListener('click', (e) => {
-          e.preventDefault();
-          handler();
-        });
-      } else if (!el) {
-        console.warn('[Bobinas] Botão não encontrado:', id);
-      }
-    };
-    wire('btnBobinaEntrada', () => abrirDialogAcao('entrada'));
-    wire('btnBobinaEntrega', () => abrirDialogAcao('entrega'));
-    wire('btnBobinaSaida',   () => abrirDialogAcao('saida'));
-    wire('btnBobinaAjuste',  () => abrirDialogAcao('ajuste'));
-    wire('btnBobinaConfig',  () => abrirDialogConfig());
+  function wire(id, handler) {
+    const el = document.getElementById(id);
+    if (el && !el.__wiredBob) {
+      el.__wiredBob = true;
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        handler();
+      });
+    } else if (!el) {
+      console.warn('[Bobinas] Botão não encontrado:', id);
+    }
+  }
 
+  function bindDialogsComuns() {
+    // form de movimentação (entrada/saida/entrega/ajuste)
     const formAcao = document.getElementById('formBobinaAcao');
     if (formAcao && !formAcao.__wired) {
       formAcao.__wired = true;
       formAcao.addEventListener('submit', onSubmitAcao);
     }
 
+    // form de configuração
     const formConfig = document.getElementById('formBobinaConfig');
     if (formConfig && !formConfig.__wired) {
       formConfig.__wired = true;
       formConfig.addEventListener('submit', onSubmitConfig);
     }
 
+    // Fechar dialogs com data-close-dlg
+    document.querySelectorAll('button[data-close-dlg]').forEach(b => {
+      if (b.__wired) return;
+      b.__wired = true;
+      b.addEventListener('click', () => {
+        const dlg = document.getElementById(b.getAttribute('data-close-dlg'));
+        if (dlg && dlg.close) dlg.close();
+      });
+    });
+  }
+
+  function bindEventsLanc() {
+    wire('btnBobinaEntrada', () => abrirDialogAcao('entrada'));
+    wire('btnBobinaEntrega', () => abrirDialogAcao('entrega'));
+    wire('btnBobinaSaida',   () => abrirDialogAcao('saida'));
+    wire('btnBobinaAjuste',  () => abrirDialogAcao('ajuste'));
+    wire('btnBobinaConfig',  () => abrirDialogConfig());
+    bindDialogsComuns();
+  }
+
+  function bindEventsCtrl() {
     const busca = document.getElementById('bobBusca');
     if (busca && !busca.__wired) {
       busca.__wired = true;
@@ -568,41 +617,50 @@
     document.getElementById('bobFiltroAte')?.addEventListener('change', async () => { await carregarMovs(); renderMovs(); });
 
     document.getElementById('btnBobAtualizar')?.addEventListener('click', async () => {
-      await render();
+      await renderCtrl();
       notify('Atualizado!', 'success');
     });
     document.getElementById('btnBobExportar')?.addEventListener('click', exportarCSV);
-
     document.getElementById('btnBobResumoAplicar')?.addEventListener('click', renderResumoPorGerente);
-
-    // Fechar dialogs com data-close-dlg
-    document.querySelectorAll('button[data-close-dlg]').forEach(b => {
-      if (b.__wired) return;
-      b.__wired = true;
-      b.addEventListener('click', () => {
-        const dlg = document.getElementById(b.getAttribute('data-close-dlg'));
-        if (dlg && dlg.close) dlg.close();
-      });
-    });
-
-    document.addEventListener('empresa:change', render);
   }
 
-  async function init() {
-    if (__initialized) {
-      await render();
+  // ============================================
+  // INITS POR PÁGINA
+  // ============================================
+  async function initLanc() {
+    if (__initializedLanc) {
+      await renderLanc();
       return;
     }
-    __initialized = true;
-    console.log('[Bobinas] 🔄 Inicializando...');
-    bindEvents();
+    __initializedLanc = true;
+    console.log('[Bobinas] 🔄 Inicializando página de LANÇAMENTOS...');
+    bindEventsLanc();
     await carregarGerentesMultiEmpresa();
-    await render();
-    console.log('[Bobinas] ✅ Página pronta');
+    await renderLanc();
+    console.log('[Bobinas] ✅ Lançamentos pronto');
   }
 
+  async function initCtrl() {
+    if (__initializedCtrl) {
+      await renderCtrl();
+      return;
+    }
+    __initializedCtrl = true;
+    console.log('[Bobinas] 🔄 Inicializando página de CONTROLE...');
+    bindEventsCtrl();
+    await renderCtrl();
+    console.log('[Bobinas] ✅ Controle pronto');
+  }
+
+  // Re-renderiza ambas quando a empresa muda
+  document.addEventListener('empresa:change', () => {
+    __initializedLanc = false;
+    __initializedCtrl = false;
+    render();
+  });
+
   // EXPOR
-  window.Bobinas = { init, render };
+  window.Bobinas = { initLanc, initCtrl, render };
   window.renderBobinas = render;
 
   console.log('[Bobinas] ✅ Módulo carregado');

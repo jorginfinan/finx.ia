@@ -13,7 +13,8 @@
     'analise': 'pageAnaliseGerente',
     'maquinas-cad':     'pageMaquinasCadastro',
     'maquinas-estoque': 'pageMaquinasEstoque',
-    'maquinas-pecas':   'pagePecasEstoque'
+    'maquinas-pecas':   'pagePecasEstoque',
+    'maquinas-bobinas': 'pageBobinas'
   };
 
   function pageIdFor(key){
@@ -70,6 +71,10 @@
     // ✅ Inicializa Peças de Máquinas
     if (key === 'maquinas-pecas' || id === 'pagePecasEstoque') {
       try { window.PecasEstoque?.init?.(); } catch(_) {}
+    }
+    // ✅ Inicializa Bobinas
+    if (key === 'maquinas-bobinas' || id === 'pageBobinas') {
+      try { window.Bobinas?.init?.(); } catch(_) {}
     }
   };
 

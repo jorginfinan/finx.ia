@@ -1690,6 +1690,268 @@
 
 
   // ============================================
+  // API DE BOBINAS — estoque + movimentações
+  // ============================================
+
+  class BobinasAPI {
+    constructor() {
+      this.table = 'bobinas';
+      this.client = supabaseClient;
+    }
+
+    async getAll() {
+      try {
+        const empresaId = await getEmpresaId();
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('empresa_id', empresaId)
+          .order('nome');
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[BobinasAPI] getAll:', e);
+        return [];
+      }
+    }
+
+    // Retorna a bobina principal da empresa (cria uma se não existir)
+    async getOrCreatePrincipal() {
+      try {
+        const empresaId = await getEmpresaId();
+        if (!empresaId) throw new Error('Empresa não encontrada');
+
+        let { data, error } = await this.client
+          .from(this.table)
+          .select('*')
+          .eq('empresa_id', empresaId)
+          .eq('ativo', true)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
+
+        if (!data) {
+          const { data: nova, error: errIns } = await this.client
+            .from(this.table)
+            .insert([{
+              empresa_id: empresaId,
+              nome: 'Bobina térmica',
+              estoque_atual: 0,
+              estoque_minimo: 10
+            }])
+            .select()
+            .single();
+          if (errIns) throw errIns;
+          data = nova;
+        }
+        return data;
+      } catch (e) {
+        console.error('[BobinasAPI] getOrCreatePrincipal:', e);
+        return null;
+      }
+    }
+
+    async update(id, patch) {
+      try {
+        const { data, error } = await this.client
+          .from(this.table)
+          .update(patch)
+          .eq('id', id)
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      } catch (e) {
+        console.error('[BobinasAPI] update:', e);
+        throw e;
+      }
+    }
+
+    async getEstatisticas() {
+      try {
+        const empresaId = await getEmpresaId();
+        const { data, error } = await this.client
+          .from(this.table)
+          .select('estoque_atual, estoque_minimo, preco_custo, ativo')
+          .eq('empresa_id', empresaId);
+        if (error) throw error;
+
+        const stats = {
+          total_unidades: 0,
+          estoque_minimo_total: 0,
+          baixo_estoque: false,
+          sem_estoque: false,
+          valor_total_custo: 0
+        };
+        (data || []).forEach(b => {
+          if (!b.ativo) return;
+          const qtd = Number(b.estoque_atual) || 0;
+          const min = Number(b.estoque_minimo) || 0;
+          stats.total_unidades += qtd;
+          stats.estoque_minimo_total += min;
+          stats.valor_total_custo += qtd * (Number(b.preco_custo) || 0);
+          if (qtd <= 0) stats.sem_estoque = true;
+          else if (qtd <= min) stats.baixo_estoque = true;
+        });
+        return stats;
+      } catch (e) {
+        console.error('[BobinasAPI] getEstatisticas:', e);
+        return { total_unidades: 0, estoque_minimo_total: 0, baixo_estoque: false, sem_estoque: false, valor_total_custo: 0 };
+      }
+    }
+
+    // Aplica delta no estoque + cria log em bobinas_movimentacoes.
+    // Retorna { bobina, movimentacao }.
+    async aplicarMovimentacao({
+      bobinaId,
+      delta,
+      tipo,                          // 'entrada' | 'saida' | 'entrega' | 'ajuste'
+      precoUnitario = null,
+      gerente = null,                // { id, nome, empresa_nome }
+      fornecedor = null,
+      notaFiscal = null,
+      motivo = null,
+      observacao = null,
+      dataEvento = null
+    }) {
+      if (!bobinaId || !delta || !tipo) {
+        throw new Error('aplicarMovimentacao: parâmetros incompletos.');
+      }
+
+      const empresaId = await getEmpresaId();
+      const usuario = window.getUsuarioAtual ? window.getUsuarioAtual() : { id: null, nome: 'Sistema' };
+
+      // Lê saldo atual
+      const { data: bAtual, error: errGet } = await this.client
+        .from(this.table)
+        .select('id, estoque_atual, preco_custo')
+        .eq('id', bobinaId)
+        .single();
+      if (errGet) throw errGet;
+      if (!bAtual) throw new Error('Bobina não encontrada.');
+
+      const estoqueAntes = Number(bAtual.estoque_atual) || 0;
+      const estoqueDepois = estoqueAntes + Number(delta);
+      if (estoqueDepois < 0) {
+        throw new Error(`Estoque insuficiente: tem ${estoqueAntes}, tentou retirar ${Math.abs(delta)}.`);
+      }
+
+      // Atualiza estoque
+      const { data: bNova, error: errUpd } = await this.client
+        .from(this.table)
+        .update({ estoque_atual: estoqueDepois })
+        .eq('id', bobinaId)
+        .select()
+        .single();
+      if (errUpd) throw errUpd;
+
+      const preco = precoUnitario != null ? Number(precoUnitario) : (Number(bAtual.preco_custo) || 0);
+      const payload = {
+        empresa_id: empresaId,
+        bobina_id: bobinaId,
+        tipo,
+        quantidade: Number(delta),
+        estoque_antes: estoqueAntes,
+        estoque_depois: estoqueDepois,
+        preco_unitario_momento: preco,
+        custo_total: +(preco * Math.abs(Number(delta))).toFixed(2),
+        gerente_id: gerente?.id || null,
+        gerente_nome: gerente?.nome || null,
+        gerente_empresa: gerente?.empresa_nome || null,
+        fornecedor: fornecedor || null,
+        nota_fiscal: notaFiscal || null,
+        motivo,
+        observacao,
+        data_evento: dataEvento || new Date().toISOString().slice(0, 10),
+        usuario_id: usuario.id || null,
+        usuario_nome: usuario.nome || 'Sistema'
+      };
+
+      const { data: mov, error: errMov } = await this.client
+        .from('bobinas_movimentacoes')
+        .insert([payload])
+        .select()
+        .single();
+      if (errMov) throw errMov;
+
+      return { bobina: bNova, movimentacao: mov };
+    }
+  }
+
+
+  // ============================================
+  // API DE MOVIMENTAÇÕES DE BOBINAS
+  // ============================================
+  class BobinasMovimentacoesAPI {
+    constructor() {
+      this.table = 'bobinas_movimentacoes';
+      this.client = supabaseClient;
+    }
+
+    async getAll(filters = {}) {
+      try {
+        const empresaId = await getEmpresaId();
+        let q = this.client
+          .from(this.table)
+          .select('*')
+          .eq('empresa_id', empresaId);
+
+        if (filters.tipo) q = q.eq('tipo', filters.tipo);
+        if (filters.bobinaId) q = q.eq('bobina_id', filters.bobinaId);
+        if (filters.gerenteId) q = q.eq('gerente_id', filters.gerenteId);
+        if (filters.dataInicio) q = q.gte('data_evento', filters.dataInicio);
+        if (filters.dataFim) q = q.lte('data_evento', filters.dataFim);
+
+        const { data, error } = await q
+          .order('created_at', { ascending: false })
+          .limit(filters.limit || 500);
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.error('[BobinasMovsAPI] getAll:', e);
+        return [];
+      }
+    }
+
+    async getResumoPorGerente({ dataInicio = null, dataFim = null } = {}) {
+      try {
+        const empresaId = await getEmpresaId();
+        let q = this.client
+          .from(this.table)
+          .select('gerente_id, gerente_nome, gerente_empresa, quantidade, tipo')
+          .eq('empresa_id', empresaId)
+          .eq('tipo', 'entrega');
+        if (dataInicio) q = q.gte('data_evento', dataInicio);
+        if (dataFim) q = q.lte('data_evento', dataFim);
+
+        const { data, error } = await q;
+        if (error) throw error;
+
+        const mapa = new Map();
+        (data || []).forEach(r => {
+          if (!r.gerente_id) return;
+          const k = r.gerente_id;
+          if (!mapa.has(k)) {
+            mapa.set(k, {
+              gerente_id: r.gerente_id,
+              gerente_nome: r.gerente_nome,
+              gerente_empresa: r.gerente_empresa,
+              total: 0
+            });
+          }
+          mapa.get(k).total += Math.abs(Number(r.quantidade) || 0);
+        });
+        return Array.from(mapa.values()).sort((a, b) => b.total - a.total);
+      } catch (e) {
+        console.error('[BobinasMovsAPI] getResumoPorGerente:', e);
+        return [];
+      }
+    }
+  }
+
+
+  // ============================================
   // EXPORTAR API
   // ============================================
 
@@ -1703,9 +1965,11 @@
     maquinas: new MaquinasAPI(),
     maquinasMovimentacoes: new MaquinasMovimentacoesAPI(),
     maquinasChips: new MaquinasChipsAPI(),
-    pecas: new PecasAPI(),                                    // ⬅️ NOVA
-    pecasMovimentacoes: new PecasMovimentacoesAPI(),          // ⬅️ NOVA
-    maquinasPecas: new MaquinasPecasAPI(),                    // ⬅️ NOVA
+    pecas: new PecasAPI(),
+    pecasMovimentacoes: new PecasMovimentacoesAPI(),
+    maquinasPecas: new MaquinasPecasAPI(),
+    bobinas: new BobinasAPI(),                                 // ⬅️ NOVA
+    bobinasMovimentacoes: new BobinasMovimentacoesAPI(),       // ⬅️ NOVA
     client: supabaseClient
   };
 
@@ -1713,6 +1977,6 @@
   window.SupabaseAPI.users = window.SupabaseAPI.usuarios;
 
   console.log('✅ API Supabase carregada!');
-  console.log('📊 Tabelas: usuarios, gerentes, despesas, prestacoes, fichas, vendas, maquinas, maquinas_movimentacoes, maquinas_chips_historico, pecas, pecas_movimentacoes, maquinas_pecas');
+  console.log('📊 Tabelas: usuarios, gerentes, despesas, prestacoes, fichas, vendas, maquinas, maquinas_movimentacoes, maquinas_chips_historico, pecas, pecas_movimentacoes, maquinas_pecas, bobinas, bobinas_movimentacoes');
 
 })();

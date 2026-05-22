@@ -210,6 +210,13 @@
     </span>
     <span class="label">Estoque</span>
   </button>
+  <button class="sb-subitem" data-tab="maquinas-bobinas" data-perm="maquinas_view" title="Bobinas">
+    <span class="ico" aria-hidden="true">
+      <!-- rolo/bobina -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="6" width="16" height="12" rx="2"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="4" y1="14" x2="20" y2="14"/><line x1="8" y1="6" x2="8" y2="18"/></svg>
+    </span>
+    <span class="label">Bobinas</span>
+  </button>
   <button class="sb-subitem" data-tab="maquinas-pecas" data-perm="maquinas_view" title="Peças">
     <span class="ico" aria-hidden="true">
       <!-- engrenagem -->
@@ -1913,6 +1920,204 @@ function pgDivAddFromForm(){
 
 
 <!-- ============================================================================
+     PÁGINA: BOBINAS — estoque + movimentações + entregas a gerentes
+     ============================================================================ -->
+<section id="pageBobinas" class="container hidden" data-perm="maquinas_view">
+  <h2>🧻 Controle de Bobinas</h2>
+
+  <!-- KPIs -->
+  <div class="cards" id="bobinasCards" style="margin-bottom:20px;">
+    <div class="card-fin" data-tip="Quantidade total de bobinas em estoque" data-tip-pos="below" style="background:linear-gradient(135deg,#10b981,#059669); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Em estoque</div>
+      <div class="big" id="kpiBobinasEstoque">0</div>
+      <div style="font-size:11px; opacity:0.8;">unidades</div>
+    </div>
+    <div class="card-fin" data-tip="Quantidade mínima configurada — abaixo disso o sistema alerta" data-tip-pos="below" style="background:linear-gradient(135deg,#3b82f6,#2563eb); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Estoque mínimo</div>
+      <div class="big" id="kpiBobinasMinimo">0</div>
+      <div style="font-size:11px; opacity:0.8;">configurado</div>
+    </div>
+    <div class="card-fin" data-tip="Valor em estoque pelo preço de custo" data-tip-pos="below" style="background:linear-gradient(135deg,#6366f1,#4338ca); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Valor em estoque</div>
+      <div class="big" id="kpiBobinasValor">R$ 0,00</div>
+      <div style="font-size:11px; opacity:0.8;">por preço de custo</div>
+    </div>
+    <div class="card-fin" data-tip="Status atual do estoque" data-tip-pos="below" style="background:linear-gradient(135deg,#f59e0b,#d97706); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Status</div>
+      <div class="big" id="kpiBobinasStatus" style="font-size:24px;">OK</div>
+      <div style="font-size:11px; opacity:0.8;" id="kpiBobinasStatusDesc">estoque normal</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- ===== AÇÕES + CONFIG ===== -->
+    <div class="card" data-perm="maquinas_cadastrar">
+      <h3>Ações de Bobina</h3>
+
+      <div id="bobinaPrincipalInfo" style="padding:10px; background:#f3f4f6; border-radius:8px; margin-bottom:12px;">
+        <div style="font-size:13px; color:#374151;"><strong id="bobinaNome">Bobina térmica</strong></div>
+        <div style="font-size:12px; color:#6b7280; margin-top:4px;">
+          Saldo: <strong id="bobinaSaldoAtual">0</strong> un. •
+          Mínimo: <strong id="bobinaMinimoAtual">0</strong> un.
+        </div>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <button class="btn" id="btnBobinaEntrada" data-tip="Registrar compra/recebimento de bobinas">📥 Entrada de Estoque (compra)</button>
+        <button class="btn" id="btnBobinaEntrega" data-tip="Entregar bobinas a um gerente / vendedor">🧑‍💼 Entregar a Gerente</button>
+        <button class="btn ghost" id="btnBobinaSaida" data-tip="Saída manual (perda, descarte, etc.)">📤 Saída Manual</button>
+        <button class="btn ghost" id="btnBobinaAjuste" data-tip="Ajuste de inventário (corrigir saldo)">⚙️ Ajustar Inventário</button>
+      </div>
+
+      <hr style="margin:14px 0; border:none; border-top:1px solid #e5e7eb;" />
+
+      <h4 style="margin:0 0 8px;">Configurações</h4>
+      <form id="formBobinaConfig" class="form-grid">
+        <label>Nome
+          <input name="nome" placeholder="ex.: Bobina térmica 57mm" />
+        </label>
+        <label>Estoque mínimo
+          <input name="estoque_minimo" type="number" min="0" step="1" placeholder="0" />
+        </label>
+        <label>Preço de custo (R$)
+          <input name="preco_custo" type="number" min="0" step="0.01" placeholder="0,00" />
+        </label>
+        <label>Fornecedor padrão
+          <input name="fornecedor_padrao" placeholder="opcional" />
+        </label>
+        <div style="grid-column:1/-1; display:flex; justify-content:flex-end;">
+          <button class="btn" type="submit" data-tip="Salvar configurações">Salvar config</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- ===== RESUMO POR GERENTE (entregas) ===== -->
+    <div class="card">
+      <h3>Entregas por Gerente</h3>
+      <div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;">
+        <label style="flex:1; min-width:130px;">De
+          <input id="bobResumoDe" type="date" />
+        </label>
+        <label style="flex:1; min-width:130px;">Até
+          <input id="bobResumoAte" type="date" />
+        </label>
+        <button class="btn ghost" id="btnBobResumoAplicar" style="align-self:end;" data-tip="Aplicar período">Filtrar</button>
+      </div>
+      <div class="table-wrap" style="overflow:auto; max-height:380px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Gerente</th>
+              <th>Empresa</th>
+              <th class="tv-right">Total entregue</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyBobResumoGerente">
+            <tr><td colspan="3" style="text-align:center; color:#6b7280; padding:20px;">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TABELA DE MOVIMENTAÇÕES ===== -->
+  <div class="card" style="margin-top:16px;">
+    <h3>Movimentações</h3>
+    <div class="tool-row" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+      <select id="bobFiltroTipo" style="min-width:160px;">
+        <option value="">Todos os tipos</option>
+        <option value="entrada">📥 Entrada (compra)</option>
+        <option value="entrega">🧑‍💼 Entrega a gerente</option>
+        <option value="saida">📤 Saída manual</option>
+        <option value="ajuste">⚙️ Ajuste</option>
+      </select>
+      <input id="bobBusca" type="search" placeholder="Buscar gerente, fornecedor, obs..." style="flex:1; min-width:200px;" />
+      <input id="bobFiltroDe" type="date" style="min-width:150px;" />
+      <input id="bobFiltroAte" type="date" style="min-width:150px;" />
+      <button class="btn ghost" id="btnBobAtualizar" data-tip="Recarregar lista">🔄 Atualizar</button>
+      <button class="btn ghost" id="btnBobExportar" data-tip="Baixar .csv">📥 Exportar CSV</button>
+    </div>
+    <div class="table-wrap" style="overflow:auto; max-height:500px;">
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Tipo</th>
+            <th>Qtd</th>
+            <th>Saldo</th>
+            <th>Gerente / Fornecedor</th>
+            <th>Custo (R$)</th>
+            <th>Obs.</th>
+            <th>Usuário</th>
+          </tr>
+        </thead>
+        <tbody id="tbodyBobMovs">
+          <tr><td colspan="8" style="text-align:center; color:#6b7280; padding:30px;">Carregando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+
+<!-- =========================================================================
+     DIALOG: AÇÃO DE BOBINA (entrada / saída / entrega / ajuste)
+     ========================================================================= -->
+<dialog id="dlgBobinaAcao">
+  <header class="card"><strong id="dlgBobinaAcaoTitulo">Ação de Bobina</strong></header>
+  <form id="formBobinaAcao" class="card" style="margin:0; min-width:420px; max-width:560px;">
+    <input type="hidden" name="bobina_id" />
+    <input type="hidden" name="tipo" />
+
+    <div style="margin-bottom:10px; padding:10px; background:#f3f4f6; border-radius:8px;">
+      <div style="font-size:12px; color:#6b7280;">Bobina</div>
+      <div id="dlgBobinaInfo" style="font-weight:600;"></div>
+      <div id="dlgBobinaSaldo" style="font-size:13px; color:#374151; margin-top:4px;"></div>
+    </div>
+
+    <div class="form-grid">
+      <label>Quantidade <span style="color:#dc2626">*</span>
+        <input name="quantidade" type="number" min="1" step="1" required placeholder="ex.: 10" />
+      </label>
+      <label>Data
+        <input name="data_evento" type="date" />
+      </label>
+
+      <!-- Bloco específico para ENTRADA -->
+      <label id="dlgBobinaFornecedorLabel" style="display:none;">Fornecedor
+        <input name="fornecedor" placeholder="ex.: Distribuidora XYZ" />
+      </label>
+      <label id="dlgBobinaNotaLabel" style="display:none;">Nota fiscal
+        <input name="nota_fiscal" placeholder="opcional" />
+      </label>
+      <label id="dlgBobinaPrecoLabel" style="display:none;">Preço unitário (R$)
+        <input name="preco_unitario_momento" type="number" min="0" step="0.01" placeholder="0,00" />
+      </label>
+
+      <!-- Bloco específico para ENTREGA -->
+      <label id="dlgBobinaGerenteLabel" style="display:none; grid-column:1/-1;">Gerente <span style="color:#dc2626">*</span>
+        <select name="gerente_id" id="dlgBobinaGerente">
+          <option value="">Selecione...</option>
+        </select>
+      </label>
+
+      <label style="grid-column:1/-1">Motivo
+        <input name="motivo" placeholder="ex.: Compra mensal, perda, ajuste..." />
+      </label>
+      <label style="grid-column:1/-1">Observação
+        <textarea name="observacao" rows="2" placeholder="Detalhes adicionais"></textarea>
+      </label>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px;">
+      <button class="btn ghost" type="button" data-close-dlg="dlgBobinaAcao">Cancelar</button>
+      <button class="btn" type="submit">Confirmar</button>
+    </div>
+  </form>
+</dialog>
+
+
+<!-- ============================================================================
      PÁGINA: PEÇAS DE MÁQUINAS (catálogo + estoque + movimentações)
      ============================================================================ -->
 <section id="pagePecasEstoque" class="container hidden" data-perm="maquinas_view">
@@ -2438,6 +2643,7 @@ function pgDivAddFromForm(){
 <script src="js/maquinas.js" defer></script>
 <script src="js/estoque.js" defer></script>
 <script src="js/pecas.js" defer></script>
+<script src="js/bobinas.js" defer></script>
 <script src="js/tooltips.js" defer></script>
 <script src="js/saldo-acumulado.js"></script>
 <script src="js/saldo-acumulado-ui.js"></script>

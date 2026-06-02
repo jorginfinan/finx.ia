@@ -110,14 +110,14 @@
  
     if (busca) {
       lista = lista.filter(m => {
-        const blob = [m.gerente_atual_nome, m.ficha_atual, m.serial, m.modelo, m.chip_atual]
+        const blob = [m.gerente_atual_nome, m.ficha_atual, m.rota_atual, m.serial, m.modelo, m.chip_atual]
           .map(x => String(x || '').toLowerCase()).join(' ');
         return blob.includes(busca);
       });
     }
  
     if (!lista.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#6b7280; padding:30px;">Nenhuma máquina com vendedor.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#6b7280; padding:30px;">Nenhuma máquina com vendedor.</td></tr>';
       return;
     }
  
@@ -137,10 +137,15 @@
         ? `${esc(m.gerente_atual_nome || '—')} <span style="background:#f59e0b; color:#fff; padding:2px 6px; border-radius:10px; font-size:10px;">${contagem[m.gerente_atual_id]} máquinas</span>`
         : esc(m.gerente_atual_nome || '—');
  
+      const rotaBadge = m.rota_atual
+        ? `<span style="background:#e0e7ff; color:#3730a3; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600;">${esc(m.rota_atual)}</span>`
+        : '—';
+
       return `
         <tr style="${bgStyle}">
           <td>${nomeBadge}</td>
           <td>${esc(m.ficha_atual || '—')}</td>
+          <td>${rotaBadge}</td>
           <td><strong>${esc(m.serial)}</strong></td>
           <td>${esc(m.modelo || '—')}</td>
           <td>${esc(m.chip_atual || '—')}</td>
@@ -156,16 +161,16 @@
   function exportarCSV() {
     try {
       const linhas = [
-        ['Tipo', 'Serial', 'Modelo', 'Status', 'Gerente', 'Ficha', 'Chip', 'Data Entrada']
+        ['Tipo', 'Serial', 'Modelo', 'Status', 'Gerente', 'Ficha', 'Rota', 'Chip', 'Data Entrada']
       ];
- 
+
       __cacheEstoque.forEach(m => {
-        linhas.push(['Estoque', m.serial, m.modelo || '', m.status, '', '', '', m.data_entrada || '']);
+        linhas.push(['Estoque', m.serial, m.modelo || '', m.status, '', '', '', '', m.data_entrada || '']);
       });
       __cacheDistr.forEach(m => {
         linhas.push([
           'Com Vendedor', m.serial, m.modelo || '', m.status,
-          m.gerente_atual_nome || '', m.ficha_atual || '', m.chip_atual || '',
+          m.gerente_atual_nome || '', m.ficha_atual || '', m.rota_atual || '', m.chip_atual || '',
           m.data_entrada || ''
         ]);
       });

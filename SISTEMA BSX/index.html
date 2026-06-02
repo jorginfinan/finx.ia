@@ -1584,6 +1584,11 @@ function pgDivAddFromForm(){
                 <option value="">Selecione...</option>
               </select>
             </label>
+            <label>Rota
+              <select name="rota" id="selMaqRota">
+                <option value="">Todas as rotas</option>
+              </select>
+            </label>
             <label>Ficha (vendedor)
               <input name="ficha" list="listFichasMaq" placeholder="ex.: 0301 (opcional)" />
               <datalist id="listFichasMaq"></datalist>
@@ -1627,13 +1632,14 @@ function pgDivAddFromForm(){
               <th>Modelo</th>
               <th>Status</th>
               <th>Gerente / Ficha</th>
+              <th>Rota</th>
               <th>Chip</th>
               <th>Entrada</th>
               <th class="tv-right">Ações</th>
             </tr>
           </thead>
           <tbody id="tbodyMaquinas">
-            <tr><td colspan="7" style="text-align:center; color:#6b7280; padding:30px;">Carregando...</td></tr>
+            <tr><td colspan="8" style="text-align:center; color:#6b7280; padding:30px;">Carregando...</td></tr>
           </tbody>
         </table>
       </div>
@@ -1658,6 +1664,11 @@ function pgDivAddFromForm(){
       <label>Gerente <span style="color:#dc2626">*</span>
         <select name="gerente_id" id="dlgSelGerente" required>
           <option value="">Selecione...</option>
+        </select>
+      </label>
+      <label>Rota
+        <select name="rota" id="dlgSelRota">
+          <option value="">Todas as rotas</option>
         </select>
       </label>
       <label>Ficha (vendedor)
@@ -1902,6 +1913,7 @@ function pgDivAddFromForm(){
             <tr>
               <th>Gerente</th>
               <th>Ficha</th>
+              <th>Rota</th>
               <th>Serial</th>
               <th>Modelo</th>
               <th>Chip</th>
@@ -1909,7 +1921,7 @@ function pgDivAddFromForm(){
             </tr>
           </thead>
           <tbody id="tbodyDistribuicao">
-            <tr><td colspan="6" style="text-align:center; color:#6b7280; padding:30px;">Carregando...</td></tr>
+            <tr><td colspan="7" style="text-align:center; color:#6b7280; padding:30px;">Carregando...</td></tr>
           </tbody>
         </table>
       </div>

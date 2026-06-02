@@ -177,13 +177,32 @@
     if (atual) sel.value = atual;
   }
  
-  function popularFichasDatalist(dl) {
+  function popularFichasDatalist(dl, rotaSelecionada = null) {
     if (!dl) return;
-    const fichas = window.fichas || [];
+    let fichas = window.fichas || [];
+    // Se uma rota foi selecionada, filtra apenas as fichas dessa rota
+    if (rotaSelecionada) {
+      const r = String(rotaSelecionada).trim().toLowerCase();
+      fichas = fichas.filter(f => String(f.area || '').trim().toLowerCase() === r);
+    }
     dl.innerHTML = fichas
       .sort((a, b) => String(a.ficha).localeCompare(String(b.ficha)))
       .map(f => `<option value="${esc(f.ficha)}">${esc(f.ficha)} — ${esc(f.area || '')}</option>`)
       .join('');
+  }
+
+  // Popula <select> com as rotas únicas (= field "area" das fichas cadastradas)
+  function popularRotasSelect(sel) {
+    if (!sel) return;
+    const rotas = Array.from(new Set(
+      (window.fichas || [])
+        .map(f => String(f.area || '').trim())
+        .filter(Boolean)
+    )).sort((a, b) => a.localeCompare(b));
+    const atual = sel.value;
+    sel.innerHTML = '<option value="">Todas as rotas</option>' +
+      rotas.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('');
+    if (atual) sel.value = atual;
   }
  
   // ============================================
@@ -227,15 +246,15 @@
  
     if (busca) {
       filtradas = filtradas.filter(m => {
-        const blob = [m.serial, m.modelo, m.id_maquina, m.gerente_atual_nome, m.ficha_atual, m.chip_atual]
+        const blob = [m.serial, m.modelo, m.id_maquina, m.gerente_atual_nome, m.ficha_atual, m.rota_atual, m.chip_atual]
           .map(x => String(x || '').toLowerCase())
           .join(' ');
         return blob.includes(busca);
       });
     }
- 
+
     if (!filtradas.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#6b7280; padding:30px;">Nenhuma máquina encontrada.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#6b7280; padding:30px;">Nenhuma máquina encontrada.</td></tr>';
       return;
     }
  
@@ -251,12 +270,17 @@
         ? `${esc(m.gerente_atual_nome)}${m.ficha_atual ? ' / ' + esc(m.ficha_atual) : ''}`
         : '—';
  
+      const rotaBadge = m.rota_atual
+        ? `<span style="background:#e0e7ff; color:#3730a3; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600;">${esc(m.rota_atual)}</span>`
+        : '—';
+
       return `
         <tr data-id="${esc(m.id)}">
           <td><strong>${esc(m.serial || '')}</strong>${m.id_maquina ? '<br><small style="color:#6b7280;">' + esc(m.id_maquina) + '</small>' : ''}</td>
           <td>${esc(m.modelo || '—')}</td>
           <td>${statusLabel(m.status)}</td>
           <td>${gerenteFicha}</td>
+          <td>${rotaBadge}</td>
           <td>${esc(m.chip_atual || '—')}</td>
           <td>${fmtData(m.data_entrada)}</td>
           <td class="tv-right" style="white-space:nowrap;">
@@ -374,22 +398,29 @@
           const ficha = String(fd.get('ficha') || '').trim() || null;
           const chip = String(fd.get('chip_numero') || '').trim() || null;
           const obs = String(fd.get('entrega_obs') || '').trim();
- 
+          // Rota: prioridade pra selecionada; se vazio, deriva pela ficha
+          let rota = String(fd.get('rota') || '').trim() || null;
+          if (!rota && ficha) {
+            const fObj = (window.fichas || []).find(f => String(f.ficha) === String(ficha));
+            if (fObj && fObj.area) rota = String(fObj.area).trim();
+          }
+
           // Verifica regra: gerente com mais de uma máquina exige observação
           const jaTem = await gerenteJaTemMaquina(gerenteId);
           if (jaTem && !obs) {
             throw new Error('Este gerente já tem outra máquina. Observação OBRIGATÓRIA explicando o motivo.');
           }
- 
+
           const ger = findGerentePorId(gerenteId);
 
           dadosMaquina.status = 'com_vendedor';
           dadosMaquina.gerente_atual_id = ger?.id || null;
           dadosMaquina.gerente_atual_nome = ger?.nome || null;
           dadosMaquina.ficha_atual = ficha;
+          dadosMaquina.rota_atual = rota;
           dadosMaquina.chip_atual = chip;
- 
-          entregaData = { gerenteId: ger?.id || null, ger, ficha, chip, obs };
+
+          entregaData = { gerenteId: ger?.id || null, ger, ficha, rota, chip, obs };
         }
  
         const created = await window.SupabaseAPI.maquinas.create(dadosMaquina);
@@ -418,6 +449,7 @@
             gerente_id: entregaData.ger?.id || null,
             gerente_nome: entregaData.ger?.nome || null,
             ficha: entregaData.ficha,
+            rota: entregaData.rota || null,
             data_evento: dadosMaquina.data_entrada,
             chip_numero: entregaData.chip,
             observacao: entregaData.obs || null,
@@ -557,7 +589,17 @@
       await loadGerentesMultiEmpresa();
     }
     popularGerentesSelect(document.getElementById('dlgSelGerente'));
+    popularRotasSelect(document.getElementById('dlgSelRota'));
     popularFichasDatalist(document.getElementById('listFichasMaq2'));
+
+    // Wire-up do filtro de rota → ficha (uma vez só)
+    const dlgRota = document.getElementById('dlgSelRota');
+    if (dlgRota && !dlgRota.__wiredRota) {
+      dlgRota.__wiredRota = true;
+      dlgRota.addEventListener('change', () => {
+        popularFichasDatalist(document.getElementById('listFichasMaq2'), dlgRota.value);
+      });
+    }
 
     dlg.showModal();
   }
@@ -576,14 +618,20 @@
       const dataEvento = String(fd.get('data_evento') || hoje());
       const chip = String(fd.get('chip_numero') || '').trim() || null;
       const obs = String(fd.get('observacao') || '').trim();
- 
+      // Rota: prioridade pra selecionada; senão deriva pela ficha
+      let rota = String(fd.get('rota') || '').trim() || null;
+      if (!rota && ficha) {
+        const fObj = (window.fichas || []).find(f => String(f.ficha) === String(ficha));
+        if (fObj && fObj.area) rota = String(fObj.area).trim();
+      }
+
       if (!gerenteId) throw new Error('Selecione o gerente.');
- 
+
       const jaTem = await gerenteJaTemMaquina(gerenteId);
       if (jaTem && !obs) {
         throw new Error('Este gerente já tem máquina(s) ativa(s). Observação OBRIGATÓRIA.');
       }
- 
+
       const ger = findGerentePorId(gerenteId);
 
       // Cria movimentação de entrega
@@ -593,17 +641,19 @@
         gerente_id: ger?.id || null,
         gerente_nome: ger?.nome || null,
         ficha,
+        rota,
         data_evento: dataEvento,
         chip_numero: chip,
         observacao: obs || null
       });
- 
+
       // Atualiza estado atual da máquina
       await window.SupabaseAPI.maquinas.update(maquinaId, {
         status: 'com_vendedor',
         gerente_atual_id: ger?.id || null,
         gerente_atual_nome: ger?.nome || null,
         ficha_atual: ficha,
+        rota_atual: rota,
         chip_atual: chip
       });
  
@@ -785,6 +835,7 @@
         gerente_atual_id: null,
         gerente_atual_nome: null,
         ficha_atual: null,
+        rota_atual: null,
         chip_atual: chipDevolvido ? null : m.chip_atual  // mantém chip se não foi devolvido
       });
 
@@ -971,6 +1022,7 @@
           gerente_atual_id: null,
           gerente_atual_nome: null,
           ficha_atual: null,
+          rota_atual: null,
           chip_atual: null
         });
 
@@ -1119,6 +1171,7 @@
         const detalhes = [];
         if (mv.gerente_nome) detalhes.push(`Gerente: <strong>${esc(mv.gerente_nome)}</strong>`);
         if (mv.ficha) detalhes.push(`Ficha: <strong>${esc(mv.ficha)}</strong>`);
+        if (mv.rota) detalhes.push(`Rota: <strong>${esc(mv.rota)}</strong>`);
         if (mv.chip_numero) detalhes.push(`Chip: <strong>${esc(mv.chip_numero)}</strong>${mv.chip_devolvido ? ' (devolvido)' : ''}`);
         if (mv.motivo) detalhes.push(`Motivo: ${esc(mv.motivo)}`);
         if (mv.observacao) detalhes.push(`Obs: ${esc(mv.observacao)}`);
@@ -1244,7 +1297,17 @@
     // ✅ Carrega gerentes de BSX + BetPlay e popula selects
     await loadGerentesMultiEmpresa();
     popularGerentesSelect(document.getElementById('selMaqGerente'));
+    popularRotasSelect(document.getElementById('selMaqRota'));
     popularFichasDatalist(document.getElementById('listFichasMaq'));
+
+    // Quando a rota for trocada no form de cadastro, refiltra as fichas
+    const selRotaCad = document.getElementById('selMaqRota');
+    if (selRotaCad && !selRotaCad.__wiredRota) {
+      selRotaCad.__wiredRota = true;
+      selRotaCad.addEventListener('change', () => {
+        popularFichasDatalist(document.getElementById('listFichasMaq'), selRotaCad.value);
+      });
+    }
 
     await render();
     console.log('[Maquinas] ✅ Página de cadastro pronta');

@@ -1776,6 +1776,53 @@ function pgDivAddFromForm(){
 
 
 <!-- =========================================================================
+     DIALOG: ENVIAR MÁQUINA DO ESTOQUE PARA MANUTENÇÃO
+     (sem ter passado por vendedor — defeito detectado na entrada/teste)
+     ========================================================================= -->
+<dialog id="dlgMaqEnviarManutencao">
+  <header class="card"><strong>⚠️ Enviar para Manutenção</strong></header>
+  <form id="formEnviarManutencao" class="card" style="margin:0; min-width:420px; max-width:540px;">
+    <input type="hidden" name="maquina_id" />
+
+    <div style="margin-bottom:10px; padding:10px; background:#fef3c7; border:1px solid #fbbf24; border-radius:8px;">
+      <div style="font-size:12px; color:#92400e;">Máquina no estoque</div>
+      <div id="dlgEnviarManutInfo" style="font-weight:600; color:#78350f;"></div>
+      <div style="font-size:12px; color:#92400e; margin-top:6px;">
+        Use esta opção quando, ao testar, for detectado defeito antes da entrega a um vendedor.
+      </div>
+    </div>
+
+    <div class="form-grid">
+      <label>Motivo / Defeito <span style="color:#dc2626">*</span>
+        <select name="motivo" required>
+          <option value="">Selecione...</option>
+          <option>Defeito ao testar / Não liga</option>
+          <option>Tela com defeito</option>
+          <option>Bateria não carrega / fraca</option>
+          <option>Problema na impressora</option>
+          <option>Problema no leitor de cartão</option>
+          <option>Conexão / WiFi com problema</option>
+          <option>Detectado defeito na conferência</option>
+          <option>Problema técnico (outro)</option>
+        </select>
+      </label>
+      <label>Data
+        <input name="data_evento" type="date" />
+      </label>
+      <label style="grid-column:1/-1">Observação
+        <textarea name="observacao" rows="3" placeholder="Detalhes do problema, número de OS interna, etc."></textarea>
+      </label>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px;">
+      <button type="button" class="btn ghost" data-close-dlg="dlgMaqEnviarManutencao">Cancelar</button>
+      <button type="submit" class="btn">Enviar para Manutenção</button>
+    </div>
+  </form>
+</dialog>
+
+
+<!-- =========================================================================
      DIALOG: ENCERRAR MANUTENÇÃO — volta ao estoque OU baixa sem conserto
      ========================================================================= -->
 <dialog id="dlgMaqEncerrarManutencao">

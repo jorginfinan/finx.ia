@@ -265,6 +265,9 @@
       const podeBaixar = podeFazer('maquinas_excluir');
       const emManutencao = m.status === 'manutencao';
       const podeEncerrarManut = emManutencao && podeFazer('maquinas_cadastrar');
+      // ✅ Nova opção: máquina em estoque pode ir direto para manutenção
+      // (defeito detectado antes de qualquer entrega a vendedor)
+      const podeEnviarManut = m.status === 'estoque' && podeFazer('maquinas_cadastrar');
  
       const gerenteFicha = m.gerente_atual_nome
         ? `${esc(m.gerente_atual_nome)}${m.ficha_atual ? ' / ' + esc(m.ficha_atual) : ''}`
@@ -287,6 +290,7 @@
             <button class="btn ghost" data-act="historico" data-tip="Ver histórico completo">📜</button>
             <button class="btn ghost" data-act="assistencia" data-tip="Peças / Assistência Técnica">🔧</button>
             ${podeEncerrarManut ? '<button class="btn" data-act="encerrar-manut" data-tip="Encerrar manutenção (consertada ou sem conserto)">✅</button>' : ''}
+            ${podeEnviarManut  ? '<button class="btn" data-act="enviar-manut"  data-tip="Enviar para manutenção (defeito no estoque)" style="background:#f59e0b; border-color:#f59e0b;">⚠️</button>' : ''}
             ${podeEntregar ? '<button class="btn" data-act="entregar" data-tip="Entregar a um vendedor">📤</button>' : ''}
             ${podeDevolver ? '<button class="btn" data-act="devolver" data-tip="Devolver máquina (do vendedor)">📥</button>' : ''}
             ${podeEditar ? '<button class="btn ghost" data-act="editar" data-tip="Editar dados da máquina">✏️</button>' : ''}
@@ -529,6 +533,11 @@
       if (m.status !== 'manutencao') return notify('Esta máquina não está em manutenção.', 'error');
       if (!podeFazer('maquinas_cadastrar')) return notify('Sem permissão.', 'error');
       return abrirDialogEncerrarManutencao(m);
+    }
+    if (acao === 'enviar-manut') {
+      if (m.status !== 'estoque') return notify('Use esta opção apenas em máquinas que estão no estoque.', 'error');
+      if (!podeFazer('maquinas_cadastrar')) return notify('Sem permissão.', 'error');
+      return abrirDialogEnviarManutencao(m);
     }
     if (acao === 'entregar') {
       if (!podeFazer('maquinas_entregar')) return notify('Sem permissão para entregar.', 'error');
@@ -935,6 +944,77 @@
   // ============================================
   // ENCERRAR MANUTENÇÃO — volta ao estoque OU baixa por irrecuperável
   // ============================================
+  // ============================================
+  // ENVIAR ESTOQUE → MANUTENÇÃO
+  // Defeito detectado na entrada/teste antes de qualquer entrega
+  // ============================================
+  function abrirDialogEnviarManutencao(m) {
+    const dlg = document.getElementById('dlgMaqEnviarManutencao');
+    if (!dlg) return;
+    const form = document.getElementById('formEnviarManutencao');
+    form.reset();
+    form.querySelector('[name="maquina_id"]').value = m.id;
+    form.querySelector('[name="data_evento"]').value = hoje();
+    document.getElementById('dlgEnviarManutInfo').textContent =
+      `${m.serial}${m.modelo ? ' — ' + m.modelo : ''}`;
+    dlg.showModal();
+  }
+
+  async function onSubmitEnviarManutencao(e) {
+    e.preventDefault();
+    if (__saving) return;
+    __saving = true;
+    try {
+      const form = e.currentTarget;
+      const fd = new FormData(form);
+      const maquinaId = fd.get('maquina_id');
+      const motivo = String(fd.get('motivo') || '');
+      const dataEvento = String(fd.get('data_evento') || hoje());
+      const obs = String(fd.get('observacao') || '').trim() || null;
+
+      if (!motivo) throw new Error('Informe o motivo do defeito.');
+
+      const m = __cacheMaquinas.find(x => x.id === maquinaId);
+      if (!m) throw new Error('Máquina não encontrada.');
+      if (m.status !== 'estoque') throw new Error('Esta máquina não está no estoque.');
+
+      // Confirmação simples
+      if (!confirm(`Enviar a máquina ${m.serial} para manutenção?\n\nMotivo: ${motivo}\n\nEla ficará com status "MANUTENÇÃO" e não estará disponível para entrega até ser encerrada.`)) {
+        __saving = false;
+        return;
+      }
+
+      // 1) Grava evento na linha do tempo (tipo aceito pela constraint + prefixo)
+      await window.SupabaseAPI.maquinasMovimentacoes.create({
+        maquina_id: maquinaId,
+        tipo: 'edicao',
+        data_evento: dataEvento,
+        motivo,
+        observacao: `[MANUTENÇÃO] Enviada do estoque para manutenção (defeito detectado antes da entrega). ${obs || ''}`.trim()
+      });
+
+      // 2) Atualiza status da máquina
+      await window.SupabaseAPI.maquinas.update(maquinaId, {
+        status: 'manutencao'
+      });
+
+      if (window.AuditLog) {
+        window.AuditLog.log('maquina_estoque_para_manutencao', {
+          id: maquinaId, serial: m.serial, motivo, observacao: obs
+        });
+      }
+
+      document.getElementById('dlgMaqEnviarManutencao').close();
+      notify('Máquina enviada para manutenção.', 'success');
+      await render();
+    } catch (err) {
+      console.error('[Maquinas] Erro enviar manutenção:', err);
+      notify(err.message || 'Erro ao enviar para manutenção', 'error');
+    } finally {
+      __saving = false;
+    }
+  }
+
   function abrirDialogEncerrarManutencao(m) {
     const dlg = document.getElementById('dlgMaqEncerrarManutencao');
     if (!dlg) return;
@@ -1255,6 +1335,12 @@
     if (formEncerrarManut && !formEncerrarManut.__wired) {
       formEncerrarManut.__wired = true;
       formEncerrarManut.addEventListener('submit', onSubmitEncerrarManutencao);
+    }
+
+    const formEnviarManut = document.getElementById('formEnviarManutencao');
+    if (formEnviarManut && !formEnviarManut.__wired) {
+      formEnviarManut.__wired = true;
+      formEnviarManut.addEventListener('submit', onSubmitEnviarManutencao);
     }
  
     const chkTroca = document.getElementById('chkFazerTroca');

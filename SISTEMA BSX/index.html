@@ -2125,13 +2125,14 @@ function pgDivAddFromForm(){
               <th>Qtd</th>
               <th>Saldo</th>
               <th>Gerente / Fornecedor</th>
+              <th>Rota</th>
               <th>Custo (R$)</th>
               <th>Obs.</th>
               <th>Usuário</th>
             </tr>
           </thead>
           <tbody id="tbodyBobMovs">
-            <tr><td colspan="8" style="text-align:center; color:#6b7280; padding:30px;">Carregando...</td></tr>
+            <tr><td colspan="9" style="text-align:center; color:#6b7280; padding:30px;">Carregando...</td></tr>
           </tbody>
         </table>
       </div>
@@ -2237,6 +2238,15 @@ function pgDivAddFromForm(){
         <select name="gerente_id" id="dlgBobinaGerente">
           <option value="">Selecione...</option>
         </select>
+      </label>
+      <label id="dlgBobinaRotaLabel" style="display:none;">Rota
+        <select name="rota" id="dlgBobinaRota">
+          <option value="">Todas as rotas</option>
+        </select>
+      </label>
+      <label id="dlgBobinaFichaLabel" style="display:none;">Ficha (opcional)
+        <input name="ficha" id="dlgBobinaFicha" list="dlgBobinaFichasList" placeholder="ex.: 0301" />
+        <datalist id="dlgBobinaFichasList"></datalist>
       </label>
 
       <label style="grid-column:1/-1">Motivo

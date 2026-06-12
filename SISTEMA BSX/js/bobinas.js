@@ -191,14 +191,14 @@
 
     if (busca) {
       lista = lista.filter(mv => {
-        const blob = [mv.gerente_nome, mv.gerente_empresa, mv.fornecedor, mv.motivo, mv.observacao, mv.usuario_nome, mv.nota_fiscal]
+        const blob = [mv.gerente_nome, mv.gerente_empresa, mv.fornecedor, mv.rota, mv.motivo, mv.observacao, mv.usuario_nome, mv.nota_fiscal]
           .map(x => String(x || '').toLowerCase()).join(' ');
         return blob.includes(busca);
       });
     }
 
     if (!lista.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#6b7280; padding:30px;">Nenhuma movimentação.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:#6b7280; padding:30px;">Nenhuma movimentação.</td></tr>';
       return;
     }
 
@@ -225,6 +225,9 @@
       }
 
       const custoTxt = mv.custo_total ? fmtBRL(mv.custo_total) : '—';
+      const rotaCol = mv.rota
+        ? `<span style="background:#e0e7ff; color:#3730a3; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600;">${esc(mv.rota)}</span>`
+        : '—';
 
       return `
         <tr>
@@ -237,6 +240,7 @@
           <td style="font-family:monospace; color:${corQ}; font-weight:600;">${sinal}${q}</td>
           <td style="font-size:12px; color:#6b7280;">${mv.estoque_antes} → <strong>${mv.estoque_depois}</strong></td>
           <td>${alvo}</td>
+          <td>${rotaCol}</td>
           <td style="white-space:nowrap;">${custoTxt}</td>
           <td style="font-size:12px;">${esc(mv.observacao || '')}</td>
           <td style="font-size:12px; color:#6b7280;">${esc(mv.usuario_nome || '—')}</td>
@@ -272,6 +276,37 @@
     } catch (e) {
       tb.innerHTML = '<tr><td colspan="3" style="color:#dc2626; text-align:center;">Erro ao carregar.</td></tr>';
     }
+  }
+
+  // ============================================
+  // ROTAS E FICHAS (igual lógica de máquinas)
+  // ============================================
+  // Popula <select> com as rotas únicas = áreas distintas em fichas
+  function popularSelectRotas(sel) {
+    if (!sel) return;
+    const rotas = Array.from(new Set(
+      (window.fichas || [])
+        .map(f => String(f.area || '').trim())
+        .filter(Boolean)
+    )).sort((a, b) => a.localeCompare(b));
+    const atual = sel.value;
+    sel.innerHTML = '<option value="">Todas as rotas</option>' +
+      rotas.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('');
+    if (atual) sel.value = atual;
+  }
+
+  // Popula <datalist> com fichas (opcionalmente filtradas por rota)
+  function popularDatalistFichas(dl, rotaSelecionada = null) {
+    if (!dl) return;
+    let fichas = window.fichas || [];
+    if (rotaSelecionada) {
+      const r = String(rotaSelecionada).trim().toLowerCase();
+      fichas = fichas.filter(f => String(f.area || '').trim().toLowerCase() === r);
+    }
+    dl.innerHTML = fichas
+      .sort((a, b) => String(a.ficha).localeCompare(String(b.ficha)))
+      .map(f => `<option value="${esc(f.ficha)}">${esc(f.ficha)} — ${esc(f.area || '')}</option>`)
+      .join('');
   }
 
   // ============================================
@@ -351,11 +386,14 @@
     const showFornecedor = (tipo === 'entrada');
     const showGerente    = (tipo === 'entrega');
     const showPreco      = (tipo === 'entrada');
+    const showRotaFicha  = (tipo === 'entrega');
 
     document.getElementById('dlgBobinaFornecedorLabel').style.display = showFornecedor ? '' : 'none';
     document.getElementById('dlgBobinaNotaLabel').style.display       = showFornecedor ? '' : 'none';
     document.getElementById('dlgBobinaPrecoLabel').style.display      = showPreco ? '' : 'none';
     document.getElementById('dlgBobinaGerenteLabel').style.display    = showGerente ? '' : 'none';
+    document.getElementById('dlgBobinaRotaLabel').style.display       = showRotaFicha ? '' : 'none';
+    document.getElementById('dlgBobinaFichaLabel').style.display      = showRotaFicha ? '' : 'none';
 
     // Defaults
     if (showFornecedor) {
@@ -369,6 +407,19 @@
     } else {
       const selG = document.getElementById('dlgBobinaGerente');
       if (selG) selG.required = false;
+    }
+    if (showRotaFicha) {
+      const selR = document.getElementById('dlgBobinaRota');
+      popularSelectRotas(selR);
+      popularDatalistFichas(document.getElementById('dlgBobinaFichasList'));
+
+      // Listener: ao mudar rota, refiltra fichas
+      if (selR && !selR.__wiredRota) {
+        selR.__wiredRota = true;
+        selR.addEventListener('change', () => {
+          popularDatalistFichas(document.getElementById('dlgBobinaFichasList'), selR.value);
+        });
+      }
     }
 
     form.quantidade.placeholder = (tipo === 'ajuste') ? 'novo saldo (ex.: 50)' : 'quantidade (ex.: 10)';
@@ -410,6 +461,20 @@
         const g = __cacheGerentes.find(x => x.id === gerenteId);
         if (!g) { notify('Gerente inválido.', 'error'); return; }
         extras.gerente = { id: g.id, nome: g.nome, empresa_nome: g.empresa_nome };
+
+        // Rota: prioridade pra selecionada; senão deriva pela ficha
+        const fichaInformada = String(fd.get('ficha') || '').trim() || null;
+        let rotaInformada = String(fd.get('rota') || '').trim() || null;
+        if (!rotaInformada && fichaInformada) {
+          const fObj = (window.fichas || []).find(f => String(f.ficha) === String(fichaInformada));
+          if (fObj && fObj.area) rotaInformada = String(fObj.area).trim();
+        }
+        if (rotaInformada) extras.rota = rotaInformada;
+
+        // Se a ficha foi preenchida, anexa à observação (não há coluna dedicada)
+        if (fichaInformada) {
+          extras.observacao = `Ficha: ${fichaInformada}` + (obs ? ` — ${obs}` : '');
+        }
       } else if (tipo === 'ajuste') {
         delta = qtd - atual;
         if (delta === 0) { notify('O novo saldo é igual ao atual.', 'warning'); return; }
@@ -498,12 +563,13 @@
   // ============================================
   function exportarCSV() {
     try {
-      const linhas = [['Data', 'Tipo', 'Quantidade', 'Saldo antes', 'Saldo depois', 'Gerente', 'Empresa', 'Fornecedor', 'NF', 'Custo', 'Motivo', 'Observação', 'Usuário']];
+      const linhas = [['Data', 'Tipo', 'Quantidade', 'Saldo antes', 'Saldo depois', 'Gerente', 'Empresa', 'Rota', 'Fornecedor', 'NF', 'Custo', 'Motivo', 'Observação', 'Usuário']];
       __cacheMovs.forEach(mv => {
         linhas.push([
           mv.data_evento || '', mv.tipo,
           mv.quantidade, mv.estoque_antes, mv.estoque_depois,
           mv.gerente_nome || '', mv.gerente_empresa || '',
+          mv.rota || '',
           mv.fornecedor || '', mv.nota_fiscal || '',
           mv.custo_total || 0,
           mv.motivo || '', mv.observacao || '',

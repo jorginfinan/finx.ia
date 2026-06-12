@@ -1811,6 +1811,7 @@
       gerente = null,                // { id, nome, empresa_nome }
       fornecedor = null,
       notaFiscal = null,
+      rota = null,                   // rota da entrega (vem das fichas)
       motivo = null,
       observacao = null,
       dataEvento = null
@@ -1861,6 +1862,8 @@
         gerente_empresa: gerente?.empresa_nome || null,
         fornecedor: fornecedor || null,
         nota_fiscal: notaFiscal || null,
+        rota: rota || null,
+        // ficha vai dentro da observação (não há coluna dedicada para ficha)
         motivo,
         observacao,
         data_evento: dataEvento || new Date().toISOString().slice(0, 10),

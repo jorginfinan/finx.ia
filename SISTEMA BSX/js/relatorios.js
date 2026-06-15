@@ -808,6 +808,30 @@ async function fecharSemanaById(prestId, {forcar=false}={}){
     }
   }
 
+  // ✅ APLICA O SALDO ACUMULADO NO BANCO (mesma ideia dos vales)
+  // Enquanto aberta, o saldo era apenas provisório (em atual.saldoInfo).
+  // Ao fechar, gravamos no Supabase via SaldoAcumulado.setSaldo.
+  try {
+    const deveAtualizarSaldo = window.SaldoAcumulado && (
+      atual.saldoInfo?.usandoSaldoAcumulado ||
+      atual.saldoInfo?.regraEspecial === 'SEGUNDA_COMISSAO' ||
+      atual.saldoInfo?.regraEspecial === 'GERENTE_50_SALDO'
+    );
+    if (deveAtualizarSaldo) {
+      const empresaId = atual.empresaId || (window.getCompany ? window.getCompany() : 'BSX');
+      const saldoNovo = atual.saldoInfo?.saldoCarregarNovo || 0;
+      console.log('💾 [fecharSemanaById] Aplicando saldo acumulado:', {
+        gerenteId: atual.gerenteId, empresaId, saldoNovo,
+        regra: atual.saldoInfo?.regraEspecial,
+        usandoSaldo: atual.saldoInfo?.usandoSaldoAcumulado
+      });
+      await window.SaldoAcumulado.setSaldo(atual.gerenteId, empresaId, saldoNovo);
+      console.log('✅ [fecharSemanaById] Saldo acumulado salvo:', saldoNovo);
+    }
+  } catch(e) {
+    console.error('❌ [fecharSemanaById] Erro ao aplicar saldo acumulado:', e);
+  }
+
   // ✅ MARCA A ATUAL COMO FECHADA
   atual.fechado   = true;
   atual.fechadoEm = new Date().toISOString();
@@ -1072,6 +1096,34 @@ async function fecharSemanaById(prestId, {forcar=false}={}){
       } catch(e) {
         console.error('❌ [reopenWeek] Erro ao estornar vales:', e);
       }
+    }
+
+    // ✅ ESTORNA O EFEITO NO SALDO ACUMULADO
+    // Quando esta prestação fechou, ela aplicou saldoCarregarNovo no banco.
+    // Ao reabrir, devolve o saldo ao estado anterior subtraindo o delta
+    // (saldoCarregarNovo - saldoCarregarAnterior) do saldo atual no Supabase.
+    try {
+      const deveEstornarSaldo = window.SaldoAcumulado && (
+        prest.saldoInfo?.usandoSaldoAcumulado ||
+        prest.saldoInfo?.regraEspecial === 'SEGUNDA_COMISSAO' ||
+        prest.saldoInfo?.regraEspecial === 'GERENTE_50_SALDO'
+      );
+      if (deveEstornarSaldo) {
+        const empresaId = prest.empresaId || (window.getCompany ? window.getCompany() : 'BSX');
+        const saldoAtual = await window.SaldoAcumulado.getSaldo(prest.gerenteId, empresaId);
+        const novoAnterior = Number(prest.saldoInfo?.saldoCarregarAnterior) || 0;
+        const novoFinal = Number(prest.saldoInfo?.saldoCarregarNovo) || 0;
+        const delta = novoFinal - novoAnterior;
+        const saldoEstornado = Math.max(0, Number(saldoAtual) - delta);
+        console.log('🔄 [reopenWeek] Estornando saldo acumulado:', {
+          gerenteId: prest.gerenteId, empresaId,
+          saldoAtual, novoAnterior, novoFinal, delta, saldoEstornado
+        });
+        await window.SaldoAcumulado.setSaldo(prest.gerenteId, empresaId, saldoEstornado);
+        console.log('✅ [reopenWeek] Saldo estornado:', saldoEstornado);
+      }
+    } catch(e) {
+      console.error('❌ [reopenWeek] Erro ao estornar saldo acumulado:', e);
     }
 
     // marca como aberta novamente

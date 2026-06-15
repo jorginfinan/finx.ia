@@ -2252,33 +2252,21 @@ const valePg = valesAplicados.reduce((sum, v) => {
     // para recalcular como se ela ainda não existisse.
     // ✅ CORREÇÃO: Para gerentes com 2ª comissão E gerentes 50%, usa saldo do Supabase diretamente
     // O saldo no Supabase representa o saldo ANTES dessa prestação
+    // ✅ Saldo no Supabase agora representa SEMPRE o estado "antes desta
+    // prestação" enquanto ela está aberta — porque save NÃO grava mais saldo
+    // no banco (só fecharSemanaById faz isso). Logo não precisa estornar.
+    //
+    // Se a prestação estiver FECHADA e for reaberta para edição, o
+    // reopenWeek estorna o efeito antes de marcar como aberta — portanto
+    // ao chegar aqui, o saldo no Supabase já está sem o efeito desta
+    // prestação. Em todos os casos: saldoParaCalcular = saldoDoSupabase.
+    saldoParaCalcular = saldoDoSupabase;
     if (temSegundaComissao || isGerente50ComSaldo) {
-      saldoParaCalcular = saldoDoSupabase;
       console.log('🔄 [Saldo Especial] Usando saldo do Supabase direto:', {
         tipo: isGerente50ComSaldo ? 'Gerente 50%' : '2ª Comissão',
         saldoDoSupabase,
         saldoParaCalcular,
         coletas
-      });
-    } else if (window.__prestBeingEdited?.id && window.__prestBeingEdited?.saldoInfo) {
-      // Gerentes SEM 2ª comissão: mantém lógica de estorno
-      const saldoInfoAntigo = window.__prestBeingEdited.saldoInfo;
-      const saldoAnteriorPrestacao = Number(saldoInfoAntigo.saldoCarregarAnterior) || 0;
-      const saldoNovoPrestacao    = Number(saldoInfoAntigo.saldoCarregarNovo)      || 0;
-    
-      // Quanto essa prestação alterou o saldo na versão anterior
-      const deltaPrestacao = saldoNovoPrestacao - saldoAnteriorPrestacao;
-    
-      // Remove o efeito da prestação antiga do saldo atual
-      saldoParaCalcular = saldoDoSupabase - deltaPrestacao;
-      if (saldoParaCalcular < 0) saldoParaCalcular = 0;
-    
-      console.log('🔄 Editando - estornando contribuição da prestação antiga para cálculo do saldo:', {
-        saldoDoSupabase,
-        saldoAnteriorPrestacao,
-        saldoNovoPrestacao,
-        deltaPrestacao,
-        saldoParaCalcular
       });
     }
     
@@ -3678,62 +3666,12 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
         prestacaoAtualCompleta: prestacaoAtual
       });
       
-      const deveAtualizarSaldo = window.SaldoAcumulado && (
-        prestacaoAtual.saldoInfo?.usandoSaldoAcumulado || 
-        prestacaoAtual.saldoInfo?.regraEspecial === 'SEGUNDA_COMISSAO' ||
-        prestacaoAtual.saldoInfo?.regraEspecial === 'GERENTE_50_SALDO'
-      );
-      
-      if (deveAtualizarSaldo) {
-        const empresaId = recPrest.empresaId || (window.getCompany ? window.getCompany() : 'BSX');
-        const saldoNovo = prestacaoAtual.saldoInfo?.saldoCarregarNovo || 0;
-        
-        // ✅ REGRA PARA 2ª COMISSÃO E GERENTE 50%:
-        // O cálculo em pcCalcular() já considera o saldo anterior corretamente,
-        // então basta salvar o novo saldo calculado diretamente.
-        if (prestacaoAtual.saldoInfo?.regraEspecial === 'SEGUNDA_COMISSAO' ||
-            prestacaoAtual.saldoInfo?.regraEspecial === 'GERENTE_50_SALDO') {
-          console.log('💾 [Saldo Especial] Salvando saldo direto:', {
-            gerenteId: recPrest.gerenteId,
-            empresaId,
-            saldoNovo,
-            regraEspecial: prestacaoAtual.saldoInfo?.regraEspecial,
-            saldoInfo: prestacaoAtual.saldoInfo
-          });
-          
-          await window.SaldoAcumulado.setSaldo(recPrest.gerenteId, empresaId, saldoNovo);
-          console.log('✅ [Saldo Especial] Saldo salvo:', saldoNovo);
-          
-        } else if (idx > -1 && prevRec && prevRec.saldoInfo) {
-          // ✅ FIX BUG #3: Edição de prestação com saldo acumulado normal
-          // O pcCalcular() JÁ faz o estorno do efeito da prestação anterior antes de calcular.
-          // Portanto, saldoNovo já é o valor correto final. Salvar diretamente.
-          // O código antigo fazia um SEGUNDO estorno aqui, causando dupla contagem.
-          
-          console.log('🔄 Editando prestação - Salvando saldo diretamente (estorno já feito em pcCalcular):', {
-            saldoNovo,
-            saldoInfoAnterior: {
-              anterior: prevRec.saldoInfo.saldoCarregarAnterior,
-              novo: prevRec.saldoInfo.saldoCarregarNovo
-            },
-            saldoInfoAtual: prestacaoAtual.saldoInfo
-          });
-          
-          await window.SaldoAcumulado.setSaldo(recPrest.gerenteId, empresaId, saldoNovo);
-        } else {
-          // Nova prestação ou edição sem saldoInfo anterior
-          console.log('💾 Salvando saldo para prestação:', {
-            gerenteId: recPrest.gerenteId,
-            empresaId,
-            saldoNovo,
-            saldoInfo: prestacaoAtual.saldoInfo,
-            isEdit: idx > -1
-          });
-          
-          await window.SaldoAcumulado.setSaldo(recPrest.gerenteId, empresaId, saldoNovo);
-          console.log('✅ Saldo salvo:', saldoNovo);
-        }
-      }
+      // ⛔ DESATIVADO: NÃO atualizar saldo_acumulado ao salvar prestação aberta.
+      // Mesma lógica aplicada aos VALES: enquanto a prestação está aberta o
+      // efeito no saldo é apenas PROVISÓRIO (mostrado em prestacaoAtual.saldoInfo).
+      // O saldo no banco SÓ é alterado ao FECHAR a semana (fecharSemanaById).
+      // Ao REABRIR, o efeito é estornado (reopenWeek).
+      // Isso elimina o bug do "saldo dobrando" ao editar uma prestação aberta.
 
       arr.push(recPrest);
 
@@ -5807,6 +5745,28 @@ window.addEventListener('vales:updated', ()=>{
         await window.__estornarValesDePrestacao?.(fechadas[idx]);
       } catch(e) {
         console.warn('reabrirPrestacao: falha ao estornar vales:', e);
+      }
+
+      // ✅ Estorna o efeito no saldo acumulado (devolve para estado anterior)
+      try {
+        const prest = fechadas[idx];
+        const deveEstornarSaldo = window.SaldoAcumulado && (
+          prest.saldoInfo?.usandoSaldoAcumulado ||
+          prest.saldoInfo?.regraEspecial === 'SEGUNDA_COMISSAO' ||
+          prest.saldoInfo?.regraEspecial === 'GERENTE_50_SALDO'
+        );
+        if (deveEstornarSaldo) {
+          const empresaId = prest.empresaId || (window.getCompany ? window.getCompany() : 'BSX');
+          const saldoAtual = await window.SaldoAcumulado.getSaldo(prest.gerenteId, empresaId);
+          const novoAnt = Number(prest.saldoInfo?.saldoCarregarAnterior) || 0;
+          const novoFinal = Number(prest.saldoInfo?.saldoCarregarNovo) || 0;
+          const delta = novoFinal - novoAnt;
+          const estornado = Math.max(0, Number(saldoAtual) - delta);
+          await window.SaldoAcumulado.setSaldo(prest.gerenteId, empresaId, estornado);
+          console.log('[reabrirPrestacao] Saldo estornado:', estornado);
+        }
+      } catch(e) {
+        console.warn('reabrirPrestacao: falha ao estornar saldo:', e);
       }
 
       const rec = fechadas[idx];

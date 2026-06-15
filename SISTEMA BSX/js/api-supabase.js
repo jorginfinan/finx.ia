@@ -1871,11 +1871,31 @@
         usuario_nome: usuario.nome || 'Sistema'
       };
 
-      const { data: mov, error: errMov } = await this.client
+      let { data: mov, error: errMov } = await this.client
         .from('bobinas_movimentacoes')
         .insert([payload])
         .select()
         .single();
+
+      // ✅ Fallback: se a coluna `rota` ainda não existe no banco
+      // (migração db/bobinas-add-rota.sql não foi aplicada), remove o
+      // campo, anexa a rota na observação e tenta de novo. Assim a
+      // operação não trava e o usuário consegue continuar trabalhando.
+      if (errMov && /'?rota'? column/i.test(errMov.message || '')) {
+        console.warn('[BobinasAPI] Coluna `rota` ausente — usando fallback (rota anexada à observação). Rode db/bobinas-add-rota.sql para corrigir.');
+        const fb = { ...payload };
+        const rotaInfo = fb.rota ? `Rota: ${fb.rota}. ` : '';
+        delete fb.rota;
+        fb.observacao = (rotaInfo + (fb.observacao || '')).trim();
+        const retry = await this.client
+          .from('bobinas_movimentacoes')
+          .insert([fb])
+          .select()
+          .single();
+        mov = retry.data;
+        errMov = retry.error;
+      }
+
       if (errMov) throw errMov;
 
       return { bobina: bNova, movimentacao: mov };

@@ -163,12 +163,60 @@ function gerenteNome(uid){
   return window.gerentes ? '(excluído)' : '(carregando...)';
 }
 
+// ✅ Helper: aba ativa da página inicial
+function __dashAbaAtiva() {
+  const btn = document.querySelector('#tabsDashPeriodicidade .tab-btn.active');
+  return btn?.getAttribute('data-dash-tab') || 'semanal';
+}
+
+// ✅ Reusa a lógica de __isGerenteMensal se disponível (definida em relatorios.js).
+// Fallback local se por algum motivo a função ainda não foi carregada.
+function __dashIsMensal(gerenteId) {
+  if (typeof window.__isGerenteMensal === 'function') {
+    return window.__isGerenteMensal(gerenteId);
+  }
+  if (!gerenteId) return false;
+  const idStr = String(gerenteId);
+  const matches = (x) => String(x.id || x.uid) === idStr || String(x.uid || '') === idStr;
+  const g = (window.gerentes || []).find(matches);
+  if (g && !!g.mensal) return true;
+  try {
+    const loaderCache = window.GerentesLoader?.getCache?.() || [];
+    const g2 = loaderCache.find(matches);
+    return !!(g2 && g2.mensal);
+  } catch(_) { return false; }
+}
+
 /* -------------------- 2) Resultado – prestações Abertas -------------------- */
 /* ========= Resultado – prestações ABERTAS (detalhado, 1 linha por gerente) ========= */
 async function renderDashboardResultado(){
   const q = (document.getElementById('dashResBusca')?.value || '').toLowerCase();
-  const arr = (await getPrestacoes()).filter(p => !p.fechado);
+  const aba = __dashAbaAtiva();
 
+  const todasAbertas = (await getPrestacoes()).filter(p => !p.fechado);
+
+  // Atualiza contadores das abas ANTES de filtrar por aba
+  try {
+    let semanal = 0, mensal = 0;
+    todasAbertas.forEach(p => {
+      if (__dashIsMensal(p.gerenteId)) mensal++;
+      else semanal++;
+    });
+    document.querySelectorAll('#tabsDashPeriodicidade .tab-btn').forEach(b => {
+      const t = b.getAttribute('data-dash-tab');
+      const emoji = t === 'mensal' ? '🗓️' : '📅';
+      const nome  = t === 'mensal' ? 'Mensal' : 'Semanal';
+      const count = t === 'mensal' ? mensal : semanal;
+      b.textContent = `${emoji} ${nome} (${count})`;
+    });
+  } catch(_) {}
+
+  const arr = todasAbertas.filter(p => {
+    const isM = __dashIsMensal(p.gerenteId);
+    if (aba === 'mensal'  && !isM) return false;
+    if (aba === 'semanal' &&  isM) return false;
+    return true;
+  });
 
   const rows = arr.map(p=>{
     const nome = (p.gerenteNome && p.gerenteNome.trim()) || gerenteNome(p.gerenteId);
@@ -323,6 +371,17 @@ function init(){
   $('dashResAtualizar')?.addEventListener('click', renderDashboardResultado);
   $('dashResBusca')?.addEventListener('input', renderDashboardResultado);
   $('dashResImprimir')?.addEventListener('click', ()=> window.print());
+
+  // ✅ Cliques nas abas Semanal/Mensal (delegation p/ funcionar mesmo se
+  // o dashboard for renderizado depois)
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('#tabsDashPeriodicidade .tab-btn');
+    if (!btn) return;
+    document.querySelectorAll('#tabsDashPeriodicidade .tab-btn')
+      .forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    try { renderDashboardResultado(); } catch(_) {}
+  });
 
   refresh();
 }

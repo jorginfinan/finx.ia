@@ -422,7 +422,19 @@
         <!-- TABELA: Resultado de Prestações (abertas) -->
         <section class="card card-tabela" style="grid-area: tabela;">
           <div class="card-title">📋 Resultado de Prestações</div>
-      
+
+          <!-- ✅ ABAS: Semanal / Mensal -->
+          <div id="tabsDashPeriodicidade" style="display:flex; gap:4px; border-bottom:2px solid #e5e7eb; margin-bottom:12px;">
+            <button type="button" class="tab-btn active" data-dash-tab="semanal"
+                    style="padding:8px 16px; border:none; background:transparent; cursor:pointer; font-weight:600; border-bottom:3px solid transparent; margin-bottom:-2px; color:#374151;">
+              📅 Semanal
+            </button>
+            <button type="button" class="tab-btn" data-dash-tab="mensal"
+                    style="padding:8px 16px; border:none; background:transparent; cursor:pointer; font-weight:600; border-bottom:3px solid transparent; margin-bottom:-2px; color:#374151;">
+              🗓️ Mensal
+            </button>
+          </div>
+
           <div class="tool-row">
             <input id="dashResBusca" placeholder="🔍 Buscar gerente...">
             <button id="dashResAtualizar" class="btn">Atualizar</button>

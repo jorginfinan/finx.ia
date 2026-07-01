@@ -87,7 +87,9 @@
       
       // ✅ NOVO: Saldo acumulado para gerentes 50%
       const temSaldoAcumulado = !!fd.get('temSaldoAcumulado');
-      
+      // ✅ NOVO: Periodicidade da prestação (padrão semanal)
+      const mensal = !!fd.get('mensal');
+
       const g = {
         nome,
         comissao: Number(fd.get('comissao')||0) || 0,
@@ -102,6 +104,7 @@
         tem_segunda_comissao: temSegundaComissao,
         comissao2: temSegundaComissao ? comissao2Value : 0,
         tem_saldo_acumulado: temSaldoAcumulado,
+        mensal: mensal,
         ativo: true
       };
       
@@ -328,6 +331,10 @@
       // ✅ NOVO: Carregar checkbox de saldo acumulado
       const temSaldoEl = f.querySelector('[name="temSaldoAcumulado"]');
       if (temSaldoEl) temSaldoEl.checked = !!g.tem_saldo_acumulado;
+
+      // ✅ NOVO: Carregar checkbox de prestação mensal
+      const mensalEl = f.querySelector('[name="mensal"]');
+      if (mensalEl) mensalEl.checked = !!g.mensal;
 
       f.scrollIntoView({ behavior:'smooth', block:'center' });
       

@@ -12,17 +12,66 @@ async function carregarPrestacoes() {
 }
 
 // === PRESTAÇÕES SALVAS (com filtro De/Até) ===
+// ✅ Helper: verifica se um gerente é mensal (por id/uid)
+function __isGerenteMensal(gerenteId) {
+  if (!gerenteId) return false;
+  const idStr = String(gerenteId);
+  const g = (window.gerentes || []).find(x =>
+    String(x.id || x.uid) === idStr || String(x.uid) === idStr
+  );
+  return !!(g && g.mensal);
+}
+
+// ✅ Retorna aba ativa da página de Prestações Abertas ('semanal' | 'mensal')
+function __relAbaAtiva() {
+  const btn = document.querySelector('#tabsRelPeriodicidade .tab-btn.active');
+  return btn?.getAttribute('data-rel-tab') || 'semanal';
+}
+
+// ✅ Retorna aba ativa da página de Prestações Fechadas
+function __fechAbaAtiva() {
+  const btn = document.querySelector('#tabsFechPeriodicidade .tab-btn.active');
+  return btn?.getAttribute('data-fech-tab') || 'semanal';
+}
+
+// ✅ Atualiza o rótulo das abas com contadores (ex: "📅 Semanal (5)")
+function __atualizarContadoresAbas(prefixSelector, tabAttr, todasPrestacoes) {
+  const btns = document.querySelectorAll(`${prefixSelector} .tab-btn`);
+  if (!btns.length) return;
+  let semanal = 0, mensal = 0;
+  (todasPrestacoes || []).forEach(p => {
+    if (__isGerenteMensal(p.gerenteId)) mensal++;
+    else semanal++;
+  });
+  btns.forEach(b => {
+    const aba = b.getAttribute(tabAttr);
+    const emoji = aba === 'mensal' ? '🗓️' : '📅';
+    const nome  = aba === 'mensal' ? 'Mensal' : 'Semanal';
+    const count = aba === 'mensal' ? mensal : semanal;
+    b.textContent = `${emoji} ${nome} (${count})`;
+  });
+}
+
 async function renderRelPrestacoes(){
   const de  = document.getElementById('relDe')?.value || '';
   const ate = document.getElementById('relAte')?.value || '';
+  const aba = __relAbaAtiva();
 
-  const arr = (await carregarPrestacoes())
+  const todasNoPeriodo = (await carregarPrestacoes())
     .filter(p=>{
-      // REMOVIDO: filtro por empresa
       if (p.fechado) return false;
       const d = p.ini || p.periodoIni || '';
       if (de && d < de) return false;
       if (ate && d > ate) return false;
+      return true;
+    });
+  __atualizarContadoresAbas('#tabsRelPeriodicidade', 'data-rel-tab', todasNoPeriodo);
+
+  const arr = todasNoPeriodo
+    .filter(p=>{
+      const isMensal = __isGerenteMensal(p.gerenteId);
+      if (aba === 'mensal'  && !isMensal) return false;
+      if (aba === 'semanal' &&  isMensal) return false;
       return true;
     })
     .sort((a,b)=> String(b.fim||b.periodoFim||'').localeCompare(String(a.fim||a.periodoFim||'')));
@@ -82,14 +131,23 @@ if (typeof window.canDeletePrest !== 'function') {
 async function renderPrestFechadas(){
   const de  = document.getElementById('fechDe')?.value || '';
   const ate = document.getElementById('fechAte')?.value || '';
+  const aba = __fechAbaAtiva();
 
-  const arr = (await carregarPrestacoes())
+  const todasNoPeriodo = (await carregarPrestacoes())
     .filter(p=>{
-      // REMOVIDO: filtro por empresa
       if (!p.fechado) return false;
       const d = p.ini || p.periodoIni || '';
       if (de && d < de) return false;
       if (ate && d > ate) return false;
+      return true;
+    });
+  __atualizarContadoresAbas('#tabsFechPeriodicidade', 'data-fech-tab', todasNoPeriodo);
+
+  const arr = todasNoPeriodo
+    .filter(p=>{
+      const isMensal = __isGerenteMensal(p.gerenteId);
+      if (aba === 'mensal'  && !isMensal) return false;
+      if (aba === 'semanal' &&  isMensal) return false;
       return true;
     })
     .sort((a,b)=> String(b.fechadoEm||'').localeCompare(String(a.fechadoEm||'')));
@@ -217,6 +275,29 @@ if (toggle){
 document.getElementById('btnFechAplicar')?.addEventListener('click', renderPrestFechadas);
 ['fechDe','fechAte'].forEach(id=>{
   document.getElementById(id)?.addEventListener('change', renderPrestFechadas);
+});
+
+// ✅ Wire-up das ABAS Semanal/Mensal (delegation, funciona mesmo se o DOM só
+// existir depois — para telas que carregam sob demanda)
+document.addEventListener('click', (e) => {
+  // Abas da página "Relatórios de Prestações" (abertas)
+  const btnRel = e.target.closest('#tabsRelPeriodicidade .tab-btn');
+  if (btnRel) {
+    document.querySelectorAll('#tabsRelPeriodicidade .tab-btn')
+      .forEach(b => b.classList.remove('active'));
+    btnRel.classList.add('active');
+    try { renderRelPrestacoes?.(); } catch(_) {}
+    return;
+  }
+  // Abas da página "Prestações Finalizadas"
+  const btnFech = e.target.closest('#tabsFechPeriodicidade .tab-btn');
+  if (btnFech) {
+    document.querySelectorAll('#tabsFechPeriodicidade .tab-btn')
+      .forEach(b => b.classList.remove('active'));
+    btnFech.classList.add('active');
+    try { renderPrestFechadas?.(); } catch(_) {}
+    return;
+  }
 });
 
   // EDITAR: carrega TUDO na tela de prestações (ordem segura)
@@ -658,6 +739,23 @@ function __nextWeekRange(iniRaw, fimRaw){
   return { nextSeg, nextDom };
 }
 
+// *** NOVO: devolve o MÊS SEGUINTE (dia 1 → último dia) a partir de um ini/fim
+// Usado para gerentes com prestação MENSAL
+function __nextMonthRange(iniRaw, fimRaw){
+  // Base: pega o fim se existir, senão o ini, senão hoje
+  const baseISO = fimRaw || iniRaw || __toISO(new Date());
+  const [y, m] = String(baseISO).split('T')[0].split('-').map(Number);
+  // Próximo mês (JS: mês 12+1 vira janeiro do ano seguinte automaticamente)
+  const nextY = m === 12 ? y + 1 : y;
+  const nextM = m === 12 ? 1 : m + 1;
+  // Primeiro dia do próximo mês
+  const nextIni = `${nextY}-${String(nextM).padStart(2,'0')}-01`;
+  // Último dia do próximo mês (dia 0 do mês seguinte = último dia do anterior)
+  const finalDay = new Date(nextY, nextM, 0).getDate();
+  const nextFim = `${nextY}-${String(nextM).padStart(2,'0')}-${String(finalDay).padStart(2,'0')}`;
+  return { nextIni, nextFim };
+}
+
 const DB_PREST_CARRY = 'DB_PREST_CARRY';
 
 function __getCarry(){
@@ -730,12 +828,30 @@ async function fecharSemanaById(prestId, {forcar=false}={}){
   const fimRaw = atual.fim || atual.periodoFim || atual.dataFim || '';
   const { seg:curIni, dom:curFim } = __normalizeSegDom(iniRaw, fimRaw);
 
-  // só depois da próxima segunda (a menos que force)
-  const hoje    = __toISO(new Date());
-  const proxSeg = __addDays(curFim, 1);
-  if (!forcar && hoje < proxSeg){
-    const ok = confirm('Ainda não chegou a próxima segunda-feira.\nDeseja fechar esta semana mesmo assim?');
-    if (!ok) return;
+  // ✅ Detecta se o gerente é MENSAL — se for, a próxima janela é o mês seguinte
+  // (não a próxima semana).
+  const gerenteMensal = (typeof __isGerenteMensal === 'function')
+    ? __isGerenteMensal(atual.gerenteId)
+    : false;
+
+  // Validação: só depois de encerrado o período atual (a menos que force)
+  const hoje = __toISO(new Date());
+  if (gerenteMensal) {
+    // Para mensal: só depois do último dia do mês atual da prestação
+    // Usamos o próprio fimRaw (não o normalizeSegDom que força seg→dom)
+    const fimMes = fimRaw || __toISO(new Date());
+    const proxDia = __addDays(fimMes, 1);
+    if (!forcar && hoje < proxDia){
+      const ok = confirm('Ainda não chegou o fim deste período MENSAL.\nDeseja fechar mesmo assim?');
+      if (!ok) return;
+    }
+  } else {
+    // Semanal: só depois da próxima segunda
+    const proxSeg = __addDays(curFim, 1);
+    if (!forcar && hoje < proxSeg){
+      const ok = confirm('Ainda não chegou a próxima segunda-feira.\nDeseja fechar esta semana mesmo assim?');
+      if (!ok) return;
+    }
   }
 
   // ---- DERIVAÇÃO ROBUSTA: restam e adiantamento ----
@@ -778,10 +894,18 @@ async function fecharSemanaById(prestId, {forcar=false}={}){
   // 4) Valores finais a carregar
   const adiantamento = totalAdiantamento;
 
-  // período da PRÓXIMA semana (seg→dom)
-  const { nextSeg, nextDom } = __nextWeekRange(iniRaw, fimRaw);
-  const nextIni = nextSeg;
-  const nextFim = nextDom;
+  // ✅ Período do PRÓXIMO ciclo — SEMANA ou MÊS, conforme periodicidade do gerente
+  let nextIni, nextFim;
+  if (gerenteMensal) {
+    const nx = __nextMonthRange(iniRaw, fimRaw);
+    nextIni = nx.nextIni;
+    nextFim = nx.nextFim;
+    console.log('🗓️ [fecharSemanaById] Gerente MENSAL — próximo ciclo:', { nextIni, nextFim });
+  } else {
+    const nx = __nextWeekRange(iniRaw, fimRaw);
+    nextIni = nx.nextSeg;
+    nextFim = nx.nextDom;
+  }
 
   // guarda carry (não cria prestação nova)
   __putCarry({
@@ -906,9 +1030,15 @@ async function fecharSemanaById(prestId, {forcar=false}={}){
     console.log('🔄 [fecharSemanaById] ========== CONCLUÍDO ==========');
     
     // ✅ ALERTA SÓ NO FINAL
+    const tituloAlerta = gerenteMensal
+      ? '✅ Mês fechado com sucesso!'
+      : '✅ Semana fechada com sucesso!';
+    const rotuloProximo = gerenteMensal
+      ? `Próximo mês: ${nextIni} a ${nextFim}`
+      : `Próxima semana (seg→dom): ${nextIni} a ${nextFim}`;
     alert(
-      '✅ Semana fechada com sucesso!\n\n' +
-      `Próxima semana (seg→dom): ${nextIni} a ${nextFim}\n` +
+      tituloAlerta + '\n\n' +
+      rotuloProximo + '\n' +
       `• Deve anterior a carregar: ${fmtBRL(restam)}\n` +
       `• Adiantamento a carregar: ${fmtBRL(adiantamento)}\n\n` +
       'Informações salvas para próxima prestação de contas.'

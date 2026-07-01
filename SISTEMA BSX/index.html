@@ -18,6 +18,15 @@
   <link rel="stylesheet" href="css/dashboard-redesign.css">
   <link rel="stylesheet" href="css/analise-gerente-redesign.css">
   <link rel="stylesheet" href="css/tooltips.css">
+  <style>
+    /* Abas de periodicidade Semanal/Mensal */
+    .tab-btn { transition: all 0.15s ease; }
+    .tab-btn:hover { color: #111827 !important; background: #f9fafb !important; }
+    .tab-btn.active {
+      color: #2563eb !important;
+      border-bottom-color: #2563eb !important;
+    }
+  </style>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -640,6 +649,15 @@
               <small style="display:block; color:#6b7280; margin-bottom:10px; font-size:11px; padding-left:24px;">
                 Acumula prejuízo no saldo; abate quando há resultado positivo antes de pagar comissão. Funciona com qualquer % de comissão.
               </small>
+
+              <!-- Periodicidade da prestação (semanal / mensal) -->
+              <label style="display:flex; align-items:center; gap:8px; margin-bottom:5px; margin-top:10px;">
+                <input type="checkbox" name="mensal" id="gerMensal">
+                <span>🗓️ Prestação de contas MENSAL</span>
+              </label>
+              <small style="display:block; color:#6b7280; margin-bottom:10px; font-size:11px; padding-left:24px;">
+                Se marcado, este gerente aparece na aba "Mensal" dos relatórios. Padrão = semanal.
+              </small>
             </div>
             
             <label style="grid-column:1/-1">Observações
@@ -1090,7 +1108,19 @@ function pgDivAddFromForm(){
             <!-- ====== SUBPÁGINA: RELATÓRIOS DE PRESTAÇÕES ====== -->
             <section id="pagePrestRel" class="container hidden" data-perm="prest_rel_view">
               <h2>Relatórios de Prestações de Contas</h2>
-            
+
+              <!-- ✅ ABAS: Semanal / Mensal -->
+              <div id="tabsRelPeriodicidade" style="display:flex; gap:4px; border-bottom:2px solid #e5e7eb; margin-bottom:14px;">
+                <button type="button" class="tab-btn active" data-rel-tab="semanal"
+                        style="padding:10px 18px; border:none; background:transparent; cursor:pointer; font-weight:600; border-bottom:3px solid transparent; margin-bottom:-2px; color:#374151;">
+                  📅 Semanal
+                </button>
+                <button type="button" class="tab-btn" data-rel-tab="mensal"
+                        style="padding:10px 18px; border:none; background:transparent; cursor:pointer; font-weight:600; border-bottom:3px solid transparent; margin-bottom:-2px; color:#374151;">
+                  🗓️ Mensal
+                </button>
+              </div>
+
               <div class="filters" id="relFiltroPeriodo" style="margin-bottom:10px">
                 <div class="field">
                   <label>De</label>
@@ -1128,7 +1158,19 @@ function pgDivAddFromForm(){
             <!-- ====== SUBPÁGINA: PRESTAÇÕES FINALIZADAS ====== -->
             <section id="pagePrestFech" class="container hidden" data-perm="prest_fech_view">
               <h2>Prestações Finalizadas</h2>
-            
+
+              <!-- ✅ ABAS: Semanal / Mensal -->
+              <div id="tabsFechPeriodicidade" style="display:flex; gap:4px; border-bottom:2px solid #e5e7eb; margin-bottom:14px;">
+                <button type="button" class="tab-btn active" data-fech-tab="semanal"
+                        style="padding:10px 18px; border:none; background:transparent; cursor:pointer; font-weight:600; border-bottom:3px solid transparent; margin-bottom:-2px; color:#374151;">
+                  📅 Semanal
+                </button>
+                <button type="button" class="tab-btn" data-fech-tab="mensal"
+                        style="padding:10px 18px; border:none; background:transparent; cursor:pointer; font-weight:600; border-bottom:3px solid transparent; margin-bottom:-2px; color:#374151;">
+                  🗓️ Mensal
+                </button>
+              </div>
+
               <div class="filters" style="margin-bottom:10px">
                 <div class="field">
                   <label>De</label>

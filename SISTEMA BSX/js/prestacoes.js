@@ -200,6 +200,7 @@ async function loadGerentes(){
         comissaoPorRotaPositiva: !!g.comissao_por_rota_positiva || !!g.comissaoPorRotaPositiva,
         temSegundaComissao: !!g.tem_segunda_comissao || !!g.temSegundaComissao,
         temSaldoAcumulado: !!g.tem_saldo_acumulado || !!g.temSaldoAcumulado,
+        mensal:   !!g.mensal,
         numero:   g.numero ?? g.rota ?? '',
         endereco: g.endereco ?? '',
         telefone: g.telefone ?? '',

@@ -12,14 +12,38 @@ async function carregarPrestacoes() {
 }
 
 // === PRESTAÇÕES SALVAS (com filtro De/Até) ===
-// ✅ Helper: verifica se um gerente é mensal (por id/uid)
+// ✅ Helper: verifica se um gerente é mensal.
+// Consulta MÚLTIPLAS fontes (defesa em profundidade) porque `window.gerentes`
+// pode ser sobrescrito por diferentes módulos ao longo da sessão:
+//   1) window.gerentes            (cache do prestacoes.js + supabase-init.js)
+//   2) GerentesLoader.getCache()  (cache do gerente-loader.js)
+// Se qualquer fonte marcar o gerente como mensal, ele é mensal.
 function __isGerenteMensal(gerenteId) {
   if (!gerenteId) return false;
   const idStr = String(gerenteId);
-  const g = (window.gerentes || []).find(x =>
-    String(x.id || x.uid) === idStr || String(x.uid) === idStr
-  );
-  return !!(g && g.mensal);
+
+  const matches = (x) => {
+    return String(x.id || x.uid) === idStr
+        || String(x.uid || '') === idStr
+        || String(x.id  || '') === idStr;
+  };
+
+  // Aceita camelCase (mensal) e snake_case (por segurança se algum lugar
+  // repassar o dado bruto do banco)
+  const isMensalFlag = (x) => !!(x && (x.mensal === true || x.mensal === 'true'));
+
+  // 1) cache principal
+  const g1 = (window.gerentes || []).find(matches);
+  if (g1 && isMensalFlag(g1)) return true;
+
+  // 2) cache do GerentesLoader
+  try {
+    const loaderCache = window.GerentesLoader?.getCache?.() || [];
+    const g2 = loaderCache.find(matches);
+    if (g2 && isMensalFlag(g2)) return true;
+  } catch(_) {}
+
+  return false;
 }
 
 // ✅ Retorna aba ativa da página de Prestações Abertas ('semanal' | 'mensal')

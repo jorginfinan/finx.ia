@@ -119,6 +119,7 @@
           comissaoPorRotaPositiva: g.comissao_por_rota_positiva || false,
           temSegundaComissao: g.tem_segunda_comissao || false,
           temSaldoAcumulado: g.tem_saldo_acumulado || false,
+          mensal: !!g.mensal,
           baseCalculo: g.base_calculo || g.baseCalculo || 'COLETAS_MENOS_DESPESAS',
           ativo: g.ativo !== false
         }));

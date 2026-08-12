@@ -1,0 +1,6595 @@
+// prestacoes.js
+// Aqui só garantimos as chaves na window:
+window.DB_GERENTES = window.DB_GERENTES || 'bsx_gerentes_v2';
+window.DB_PREST    = window.DB_PREST    || 'bsx_prestacoes_v1';
+
+console.log('[Prestações] Carregado. DB_GERENTES:', window.DB_GERENTES, 'DB_PREST:', window.DB_PREST);
+
+// ===== SISTEMA DE SALDO ACUMULADO =====
+// Carrega automaticamente se os scripts estiverem no HTML
+console.log('[Prestações] Aguardando Sistema de Saldo Acumulado...');
+
+// Aguarda o sistema de saldo estar disponível
+(function waitForSaldoAcumulado() {
+  const checkInterval = setInterval(() => {
+    if (window.SaldoAcumulado && window.SaldoAcumuladoUI) {
+      clearInterval(checkInterval);
+      console.log('✅ Sistema de Saldo Acumulado disponível!');
+    }
+  }, 100);
+  
+  // Timeout após 5 segundos
+  setTimeout(() => {
+    clearInterval(checkInterval);
+    if (!window.SaldoAcumulado) {
+      console.warn('⚠️ Sistema de Saldo Acumulado não carregado');
+    }
+  }, 5000);
+})();
+
+// ===== FUNÇÕES AUXILIARES GLOBAIS (UMA VEZ SÓ) =====
+if (typeof window.fmtBRL !== 'function') {
+  window.fmtBRL = function(n) {
+    return (Number(n)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+  };
+}
+// const fmtBRL = window.fmtBRL; // REMOVIDO
+
+if (typeof window.fmtData !== 'function') {
+  window.fmtData = function(iso) {
+    if (!iso) return '';
+    let str = String(iso);
+    // ✅ Se tem 'T', pega só a parte da data
+    if (str.includes('T')) {
+      str = str.split('T')[0];
+    }
+    const [a, m, d] = str.split('-');
+    return d && m && a ? `${d.substring(0,2)}/${m}/${a}` : iso;
+  };
+}
+// const fmtData = window.fmtData; // REMOVIDO
+
+if (typeof window.fmtHora !== 'function') {
+  window.fmtHora = function(d) {
+    if (!d) return '';
+    const x = (d instanceof Date) ? d : new Date(d);
+    if (!isFinite(+x)) return '';
+    try {
+      return x.toLocaleTimeString('pt-BR', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        timeZone: 'America/Sao_Paulo'
+      });
+    } catch {
+      const hh = String(x.getHours()).padStart(2,'0');
+      const mm = String(x.getMinutes()).padStart(2,'0');
+      return `${hh}:${mm}`;
+    }
+  };
+}
+// const fmtHora = window.fmtHora; // REMOVIDO
+
+console.log('✅ [Prestações] Helpers globais carregados');
+
+async function carregarPrestacoesIniciais() {
+  console.log('🔄 Carregando prestações...');
+  
+  if (typeof window.carregarPrestacoesGlobal === 'function') {
+    try {
+      const prestacoes = await window.carregarPrestacoesGlobal();
+      console.log('✅ Prestações carregadas do Supabase:', prestacoes.length);
+      window.dispatchEvent(new Event('prestacoes:loaded'));
+      return prestacoes;
+    } catch(e) {
+      console.error('❌ Erro ao carregar do Supabase, usando localStorage:', e);
+      return JSON.parse(localStorage.getItem(window.DB_PREST) || '[]');
+    }
+  } else {
+    console.warn('⚠️ Funções Supabase não disponíveis, usando localStorage');
+    return JSON.parse(localStorage.getItem(window.DB_PREST) || '[]');
+  }
+}
+
+window.carregarPrestacoesIniciais = carregarPrestacoesIniciais;
+console.log('✅ [Prestações] Função de carregamento Supabase disponível');
+
+// ===== SISTEMA DE PROTEÇÃO DE EVENT LISTENERS =====
+const __pcListeners = new WeakMap();
+
+function addPcListener(element, event, handler, options) {
+  if (!element) return;
+  
+  // Verifica se já existe listener
+  let listeners = __pcListeners.get(element);
+  if (!listeners) {
+    listeners = new Map();
+    __pcListeners.set(element, listeners);
+  }
+  
+  const key = `${event}_${handler.name || 'anonymous'}`;
+  if (listeners.has(key)) {
+    return; // Já existe, não adiciona
+  }
+  
+  element.addEventListener(event, handler, options);
+  listeners.set(key, { event, handler, options });
+}
+
+function removePcListener(element, event, handler) {
+  if (!element) return;
+  
+  const listeners = __pcListeners.get(element);
+  if (!listeners) return;
+  
+  const key = `${event}_${handler.name || 'anonymous'}`;
+  if (listeners.has(key)) {
+    element.removeEventListener(event, handler);
+    listeners.delete(key);
+  }
+}
+
+function clearPcListeners(element) {
+  if (!element) return;
+  
+  const listeners = __pcListeners.get(element);
+  if (!listeners) return;
+  
+  listeners.forEach(({ event, handler, options }) => {
+    element.removeEventListener(event, handler, options);
+  });
+  
+  __pcListeners.delete(element);
+} 
+
+// ==== CORE SCHEDULER (aceita objeto OU número) ====
+let __pcTick = null;
+function pcSchedule(opts = { render:false, delay:80 }){
+  // ✅ tolera chamadas pcSchedule(120)
+  if (typeof opts === 'number') opts = { render:false, delay: opts };
+  clearTimeout(__pcTick);
+  __pcTick = setTimeout(()=>{
+    pcCalcular();      // sempre recalcula totais
+    pgRender();        // atualiza tabelas de pagamentos (direita)
+    if (opts.render) { // só redesenha listas quando explicitamente pedido
+      pcRender();
+    }
+  }, opts.delay ?? 80);
+}
+window.esc = window.esc || (s => String(s ?? ''));
+// Fallback seguro para getAreaByFicha (evita ReferenceError se não estiver carregada)
+window.getAreaByFicha = window.getAreaByFicha || (() => '');
+
+
+
+// Helper num(id) seguro (vírgula decimal e vazio -> 0)
+function pcNum(id){
+  const el = document.getElementById(id);
+  let v = String(el?.value || '').trim();
+  if (v.includes(',')) v = v.replace(/\./g,'').replace(',','.');
+  const n = parseFloat(v||'0');
+  return Number.isFinite(n) ? n : 0;
+}
+function lsKeyEndsWith(e, suffix){
+  const k = e?.key || '';
+  return k === suffix || k.endsWith(`__${suffix}`);
+}
+
+
+async function loadGerentes(){
+  try{
+    console.log('[Prestações] Carregando gerentes do Supabase...');
+    
+    // Busca do Supabase
+    if (window.SupabaseAPI && window.SupabaseAPI.gerentes) {
+      const arr = await window.SupabaseAPI.gerentes.getAll();
+      
+      if (!Array.isArray(arr)) {
+        console.warn('[prestacoes] SupabaseAPI não retornou array:', arr);
+        window.gerentes = [];
+        return;
+      }
+      
+      // normaliza
+      window.gerentes = arr.map(g => ({
+        id:       g.id,  // ← ADICIONE ESTA LINHA
+        uid:      g.uid ?? g.id ?? uid(),
+        nome:     g.nome ?? g.name ?? g.apelido ?? '—',
+        comissao: Number(g.comissao ?? g.percent ?? 0),
+        comissao2: Number(g.comissao2) || 0,
+        comissaoModo: (g.comissaoModo || (g.comissaoSequencial ? 'sequencial' : 'simples')),     
+        comissaoPorRotaPositiva: !!g.comissao_por_rota_positiva || !!g.comissaoPorRotaPositiva,
+        temSegundaComissao: !!g.tem_segunda_comissao || !!g.temSegundaComissao,
+        temSaldoAcumulado: !!g.tem_saldo_acumulado || !!g.temSaldoAcumulado,
+        mensal:   !!g.mensal,
+        numero:   g.numero ?? g.rota ?? '',
+        endereco: g.endereco ?? '',
+        telefone: g.telefone ?? '',
+        email:    g.email ?? '',
+        obs:      g.obs ?? g.observacoes ?? '',
+        baseCalculo: g.base_calculo ?? g.baseCalculo ?? 'COLETAS_MENOS_DESPESAS'
+      }));
+      
+      fillPcGerentes();
+
+      console.log('[Prestações] ✅ Gerentes carregados:', window.gerentes.length);
+      
+    } else {
+      console.warn('[prestacoes] SupabaseAPI não disponível ainda, aguardando...');
+      window.gerentes = [];
+      
+      // Tenta novamente após 1 segundo
+      setTimeout(() => loadGerentes(), 1000);
+    }
+    
+  } catch (e){
+    console.warn('[prestacoes] falha ao carregar gerentes:', e);
+    window.gerentes = [];
+  }
+}
+  // === Atualiza gerentes quando a empresa mudar (emitido pelo empresa-shim)
+  document.addEventListener('empresa:change', async ()=>{
+    try {
+      await loadGerentes();
+      fillPcGerentes?.();
+      renderValesPrestacao?.();
+    } catch(e){
+      console.warn('[prestacoes] empresa:change handler:', e);
+    }
+  });
+
+  window.addEventListener('gerentes:updated', () => loadGerentes());
+
+
+
+  document.addEventListener('DOMContentLoaded', async ()=>{
+    await loadGerentes();
+    fillPcGerentes?.();
+  });
+
+  window.addEventListener('storage', async (e)=>{
+    try{
+      if (lsKeyEndsWith(e, 'bsx_gerentes_v2')) {
+        await loadGerentes();
+        fillPcGerentes?.();
+      }
+    }catch(err){
+      console.warn('[prestacoes] storage handler:', err);
+    }
+  });
+
+// ===== Helper de hora SEGURO (use em telas e logs) =====
+window.fmtHora = window.fmtHora || function fmtHora(d){
+  if (!d) return '';
+  const x = (d instanceof Date) ? d : new Date(d);
+  if (!isFinite(+x)) return '';
+  try {
+    return x.toLocaleTimeString('pt-BR', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      timeZone: 'America/Sao_Paulo'
+    });
+  } catch {
+    const hh = String(x.getHours()).padStart(2,'0');
+    const mm = String(x.getMinutes()).padStart(2,'0');
+    return `${hh}:${mm}`;
+  }
+};
+
+
+// ==== PRESTAÇÃO DE CONTAS ====
+function fillPcGerentes(){
+  const sel = document.getElementById('pcGerente'); if (!sel) return;
+  const list = Array.isArray(window.gerentes) ? window.gerentes.slice() : [];
+  sel.innerHTML = '<option value="">Selecione</option>' +
+    list.map(g => `<option value="${esc(g.uid||g.id)}">${esc(g.nome||'(sem nome)')}</option>`).join('');
+}
+
+  
+/* ===========================================================
+   COLETAS — ÚNICO BLOCO (padrão do gerente + extras da prestação)
+   Elementos usados no HTML:
+   - #colNome, #colValor, #btnColAdd
+   - #pcColetasBody (tbody) e #pcColetasTotal (rodapé)
+   - #btnPcSalvarColetores (salvar padrão no gerente)
+   - #pcGerente (select do gerente)
+   =========================================================== */
+
+// Renderiza a tabela de coletas (editável inline) e o total — sem re-render a cada tecla
+function pcRenderColetas(){
+  const tb = document.getElementById('pcColetasBody');
+  if(!tb) return;
+  
+  // Limpa listeners antigos
+  clearPcListeners(tb);
+  
+  const rows = prestacaoAtual.coletas || [];
+
+  tb.innerHTML = rows.map(function(c) {
+    return '<tr>' +
+      '<td>' +
+        '<input data-ctype="nome" data-id="' + c.id + '" value="' + (c.nome||'') + '" placeholder="ex.: 005 WEWERTON">' +
+      '</td>' +
+      '<td>' +
+        '<input data-ctype="valor" data-id="' + c.id + '" type="number" step="0.01" value="' + (Number(c.valor || 0)) + '">' +
+      '</td>' +
+      '<td><button class="btn danger" data-del-coleta="' + c.id + '">Excluir</button></td>' +
+    '</tr>';
+  }).join('') || '<tr><td colspan="3">Nenhum coletor. Adicione acima.</td></tr>';
+
+  const $tot = document.getElementById('pcColetasTotal');
+  const recalcTot = function() {
+    const tot = (prestacaoAtual.coletas||[]).reduce(function(a,b) { 
+      return a + (Number(b.valor)||0); 
+    }, 0);
+    if ($tot) $tot.textContent = fmtBRL(tot);
+  };
+
+  // Atualiza o modelo conforme digita
+  tb.querySelectorAll('input[data-ctype]').forEach(function(inp) {
+    const id  = inp.dataset.id;
+    const typ = inp.dataset.ctype;
+
+    // Enquanto DIGITA: só atualiza o objeto e o total
+    addPcListener(inp, 'input', function inputHandler() {
+      const it = (prestacaoAtual.coletas||[]).find(function(x) { return x.id === id; });
+      if(!it) return;
+      if(typ === 'valor'){
+        it.valor = Number(inp.value) || 0;
+        recalcTot();
+      } else {
+        it.nome = inp.value;
+      }
+    });
+
+    // Quando TERMINA (sai do campo ou muda): agenda recálculo
+    const finish = function finishHandler() { pcSchedule(120); };
+    addPcListener(inp, 'change', finish);
+    addPcListener(inp, 'blur', finish);
+
+    // Enter também confirma
+    addPcListener(inp, 'keydown', function keydownHandler(e) {
+      if (e.key === 'Enter') { 
+        e.preventDefault(); 
+        finish(); 
+      }
+    });
+  });
+
+  // Excluir linha
+  tb.querySelectorAll('[data-del-coleta]').forEach(function(b) {
+    addPcListener(b, 'click', function deleteHandler() {
+      const id = b.getAttribute('data-del-coleta');
+      prestacaoAtual.coletas = (prestacaoAtual.coletas||[]).filter(function(x) { 
+        return x.id !== id; 
+      });
+      pcRenderColetas();
+      pcSchedule(120);
+    });
+  });
+
+  // Total inicial
+  recalcTot();
+}
+
+/* Adicionar coletor (temporário/extra ou padrão ainda não salvo)
+   – Lê #colNome e #colValor e já soma no total da prestação. */
+   (function() {
+    const btn = document.getElementById('btnColAdd');
+    if (!btn || btn.__pcWired) return;
+    btn.__pcWired = true;
+    
+    addPcListener(btn, 'click', async function() {
+  const nome  = (document.getElementById('colNome')?.value || '').trim();
+  let   valor = String(document.getElementById('colValor')?.value || '').trim();
+  if(valor.includes(',')) valor = valor.replace(/\./g,'').replace(',','.');
+  const vNum = parseFloat(valor||'0')||0;
+
+  if (!nome || Number.isNaN(vNum) || vNum === 0) {
+    alert('Preencha o USUÁRIO e um VALOR maior que zero.');
+    return;
+  }
+
+  (prestacaoAtual.coletas ||= []).push({ id: uid(), nome, valor: vNum });
+
+  // limpa os campos do formulário
+  if(document.getElementById('colNome'))  document.getElementById('colNome').value  = '';
+  if(document.getElementById('colValor')) document.getElementById('colValor').value = '';
+
+  pcRenderColetas();
+  pcSchedule();
+});
+})();
+
+/* Salvar como padrão do gerente (apenas os NOMES dos coletores).
+   — Ao trocar o gerente, os nomes padrão reaparecem com valor 0. */
+   (function() {
+    const btn = document.getElementById('btnPcSalvarColetores');
+    if (!btn || btn.__pcWired) return;
+    btn.__pcWired = true;
+    
+    addPcListener(btn, 'click', async function() {
+  const gid = document.getElementById('pcGerente')?.value;
+  if(!gid){ alert('Selecione um gerente.'); return; }
+
+  // zera os padrões atuais desse gerente e grava os novos nomes
+  coletoresPadrao = (coletoresPadrao||[]).filter(c=>c.gerenteId!==gid);
+  (prestacaoAtual.coletas||[]).forEach(c=>{
+    const nome = (c.nome||'').trim();
+    if(nome) coletoresPadrao.push({ id: uid(), gerenteId: gid, nome });
+  });
+  saveColetores();
+  alert('Coletores padrão salvos para este gerente.');
+});
+
+
+/* Ao trocar o gerente:
+   – Carrega apenas os COLETORES PADRÃO (nomes) com valor 0
+   – Mantém o controle de parcelas de vale separado */
+   (function() {
+    const sel = document.getElementById('pcGerente');
+    if (!sel || sel.__pcWiredChange) return;
+    sel.__pcWiredChange = true;
+    
+    addPcListener(sel, 'change', function() {
+  const gid = document.getElementById('pcGerente').value;
+  const lista = (coletoresPadrao||[]).filter(c=>c.gerenteId===gid);
+  prestacaoAtual.coletas = lista.map(c=>({ id: uid(), nome: c.nome, valor: 0 }));
+  prestacaoAtual.valeParcAplicado = []; // evita herdar aplicação de outros períodos
+  pcRenderColetas();
+  pcSchedule();
+});
+})();
+
+  // Limpa a prestação em edição e re-renderiza a tela
+window.pcResetPrestacao = function(){
+  prestacaoAtual = {
+    despesas: [],
+    pagamentos: [],
+    coletas: [],
+    vales: [],
+    valeSelec: [],
+    resumo: {},
+    valeParcAplicado: [],
+    saldoInfo: null
+  };
+
+  // limpa campos comuns (ajuste os IDs que você tiver na tela)
+  ['pcColetorNome','pcColetorValor','pcPgData','pcPgValor','pcObs']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+
+  // re-render de tudo que depende do estado
+  (window.pcRenderColetas||window.pcRender||function(){})();
+  window.pcRenderPagamentos?.();
+  window.pcRenderResumo?.();
+  window.renderValesPrestacao?.();
+
+};
+})();
+
+/* ========= pcRender enxuta (sem chamar pgRender/pcCalcular) ========= */
+function pcRender(){
+  const tbody = document.getElementById('pcDespesasBody');
+  if(!tbody) return;
+
+  const rows = (prestacaoAtual.despesas||[]);
+  tbody.innerHTML = rows.map(d => {
+    const isFixa = d._despesaFixaId ? '📌' : '';
+    return `
+      <tr>
+        <td>
+          <input data-id="${d.id}" data-field="ficha" value="${d.ficha||''}" inputmode="numeric" maxlength="5" style="width:80px">
+        </td>
+        <td><input data-id="${d.id}" data-field="info"  value="${d.info||''}"></td>
+        <td><input data-id="${d.id}" data-field="valor" type="number" step="0.01" value="${Number(d.valor||0)}"></td>
+        <td style="white-space:nowrap">
+          <button class="btn danger" data-del-id="${d.id}" title="Excluir">✕</button>
+          <button class="btn" data-fixar-id="${d.id}" title="Fixar como despesa semanal">${isFixa || '📌'}</button>
+        </td>
+      </tr>
+    `;
+  }).join('') || '<tr><td colspan="4">Nenhuma despesa.</td></tr>';
+
+  pcUpdateTotals(false);
+}
+
+
+
+// ===== VALES DO GERENTE (BANCO GERAL) =====
+function renderValesPrestacao(){
+  const gid = document.getElementById('pcGerente').value || '';
+  const tb  = document.getElementById('pcValesBody');
+  if(!tb) return;
+
+  const rows = (__valesReload()||[]).filter(v=>v.gerenteId===gid && !v.quitado);
+
+  tb.innerHTML = rows.map(v=>`
+    <tr>
+      <td>${esc(v.cod||'-')}</td>
+    <td>${fmtBRL(v.saldo || v.valor || 0)}</td>
+      <td style="text-align:left">
+        ${esc(v.obs||'')}
+        ${v.periodo?` <small style="color:#6b7280">(${esc(v.periodo)})</small>`:''}
+      </td>
+      <td style="white-space:nowrap; text-align:right">
+        <input
+          type="number" step="0.01" min="0"
+          placeholder="0,00"
+          style="width:110px; margin-right:8px"
+          data-vale-valor="${v.id}">
+        <button class="btn" data-vale-aplicar="${v.id}">Aplicar</button>
+      </td>
+      <td>
+        <button class="btn ghost" data-vale-quitar="${v.id}">Quitar</button>
+        <button class="btn danger" data-vale-del="${v.id}">Excluir</button>
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="5">Nenhum vale aberto para este gerente.</td></tr>';
+
+  // Aplicar desconto digitado
+  tb.querySelectorAll('[data-vale-aplicar]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const id = b.getAttribute('data-vale-aplicar');
+      const inp = tb.querySelector(`[data-vale-valor="${id}"]`);
+      let val = String(inp?.value||'').trim();
+      if(val.includes(',')) val = val.replace(/\./g,'').replace(',','.');
+      descontarValeAgoraPorId(id, parseFloat(val||'0')||0);
+      if(inp) inp.value = '';
+    });
+  });
+
+
+  // Enter no input aplica também
+  tb.querySelectorAll('[data-vale-valor]').forEach(inp=>{
+    inp.addEventListener('keydown', (e)=>{
+      if(e.key==='Enter'){
+        const id = inp.getAttribute('data-vale-valor');
+        let val = String(inp.value||'').trim();
+        if(val.includes(',')) val = val.replace(/\./g,'').replace(',','.');
+        descontarValeAgoraPorId(id, parseFloat(val||'0')||0);
+        inp.value='';
+      }
+    });
+  });
+
+// Quitar (zera o saldo, marca quitado e registra log)
+tb.querySelectorAll('[data-vale-quitar]').forEach(b=>{
+  b.addEventListener('click', async ()=>{
+    const id = b.getAttribute('data-vale-quitar');
+    const v = (vales||[]).find(x=>x.id===id); 
+    if(!v) return;
+
+    const saldoAntes = Number(v.saldo ?? v.valor) || 0;  // ✅ Usa saldo atual
+    if (!confirm(`Quitar este vale? Isso zera o saldo de ${fmtBRL(saldoAntes)} e marca como quitado.`)) return;
+
+    v.valor   = 0;
+    v.saldo   = 0;
+    v.quitado = true;
+    
+    // Atualiza no Supabase
+    if (window.SupabaseAPI?.vales) {
+      await window.SupabaseAPI.vales.update(id, { saldo: 0, quitado: true });
+    }
+
+    // log amigável
+    window.valesLog?.add({
+      id: (typeof uid==='function'? uid(): 'vl_'+Math.random().toString(36).slice(2,9)),
+      valeId: v.id, cod: v.cod||'', gerenteId: v.gerenteId,
+      delta: saldoAntes,
+      saldoAntes, saldoDepois: 0,
+      prestacaoId: window.__prestBeingEdited?.id || null,
+      periodoIni: document.getElementById('pcIni')?.value || null,
+      periodoFim: document.getElementById('pcFim')?.value || null,
+      createdAt: new Date().toISOString()
+    });
+
+    renderValesPrestacao();
+    pcSchedule();
+    try { window.dispatchEvent(new Event('vales:updated')); } catch {}
+  });
+});
+
+
+// Excluir
+tb.querySelectorAll('[data-vale-del]').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    const id = b.getAttribute('data-vale-del');
+    window.deleteValeById?.(id);
+  });
+});
+
+
+  // Rodapé “total em aberto”
+  const totAberto = rows.reduce((a,b)=>a+(Number(b.valor)||0),0);
+  const el = document.getElementById('pcValesTotalDesc');
+  if(el) el.textContent = fmtBRL(totAberto);
+}
+/* ===== VALES - SUPABASE API ===== */
+(function VALES_SUPABASE_API(){
+  const EMP = () => localStorage.getItem('empresa_ativa') || window.getCompany?.() || 'BSX';
+  const getUser = () => window.Auth?.user?.()?.email || window.SupabaseAPI?.user?.email || '';
+
+  // Inicializa array vazio
+  window.vales = window.vales || [];
+
+  // API de Vales no Supabase
+  const ValesAPI = {
+    async getAll(empresa) {
+      const emp = empresa || EMP();
+      try {
+        const { data, error } = await window.SupabaseAPI.client
+          .from('vales')
+          .select('*')
+          .eq('company', emp)
+          .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        return (data || []).map(v => ({
+          id: v.uid,
+          gerenteId: v.gerente_id,
+          cod: v.cod || '',
+          valor: Number(v.valor) || 0,
+          saldo: Number(v.saldo) || 0,
+          obs: v.obs || '',
+          periodo: v.periodo || '',
+          quitado: v.quitado || false,
+          criadoEm: v.created_at
+        }));
+      } catch (e) {
+        console.error('[Vales] Erro getAll:', e);
+        return [];
+      }
+    },
+
+    async create(item) {
+      const emp = EMP();
+      try {
+        const { error } = await window.SupabaseAPI.client
+          .from('vales')
+          .insert({
+            uid: item.id,
+            gerente_id: item.gerenteId,
+            cod: item.cod || '',
+            valor: Number(item.valor) || 0,
+            saldo: Number(item.saldo ?? item.valor) || 0,
+            obs: item.obs || '',
+            periodo: item.periodo || '',
+            quitado: item.quitado || false,
+            company: emp,
+            created_by: getUser()
+          });
+        
+        if (error) throw error;
+        console.log('[Vales] ✅ Criado:', item.id);
+        return true;
+      } catch (e) {
+        console.error('[Vales] Erro create:', e);
+        return false;
+      }
+    },
+
+    async update(uid, dados) {
+      try {
+        const upd = {};
+        if (dados.saldo !== undefined) upd.saldo = Number(dados.saldo);
+        if (dados.quitado !== undefined) upd.quitado = dados.quitado;
+        if (dados.cod !== undefined) upd.cod = dados.cod;
+        if (dados.obs !== undefined) upd.obs = dados.obs;
+        if (dados.valor !== undefined) upd.valor = Number(dados.valor);
+
+        const { error } = await window.SupabaseAPI.client
+          .from('vales')
+          .update(upd)
+          .eq('uid', uid);
+        
+        if (error) throw error;
+        console.log('[Vales] ✅ Atualizado:', uid);
+        return true;
+      } catch (e) {
+        console.error('[Vales] Erro update:', e);
+        return false;
+      }
+    },
+
+    async delete(uid) {
+      try {
+        const { error } = await window.SupabaseAPI.client
+          .from('vales')
+          .delete()
+          .eq('uid', uid);
+        
+        if (error) throw error;
+        
+        // Remove logs também
+        await window.SupabaseAPI.client
+          .from('vales_log')
+          .delete()
+          .eq('vale_id', uid);
+        
+        console.log('[Vales] ✅ Deletado:', uid);
+        return true;
+      } catch (e) {
+        console.error('[Vales] Erro delete:', e);
+        return false;
+      }
+    },
+
+    async migrate() {
+      const emp = EMP();
+      const KEY = `${emp}__bsx_vales_v1`;
+      const KEY_LEG = 'bsx_vales_v1';
+      
+      let local = [];
+      try { local = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch {}
+      if (!local.length) {
+        try { local = JSON.parse(localStorage.getItem(KEY_LEG) || '[]'); } catch {}
+      }
+      
+      if (!local.length) {
+        console.log('[Vales] Nada para migrar');
+        return { migrated: 0 };
+      }
+
+      console.log(`[Vales] 🔄 Migrando ${local.length} vales...`);
+      
+      const { data: existing } = await window.SupabaseAPI.client
+        .from('vales')
+        .select('uid')
+        .eq('company', emp);
+      
+      const existingSet = new Set((existing || []).map(v => v.uid));
+      
+      let migrated = 0;
+      for (const v of local) {
+        if (existingSet.has(v.id)) continue;
+        const ok = await this.create(v);
+        if (ok) migrated++;
+      }
+
+      console.log(`[Vales] ✅ Migrados: ${migrated}`);
+      return { migrated };
+    }
+  };
+
+  // Registra API global
+  window.SupabaseAPI = window.SupabaseAPI || {};
+  window.SupabaseAPI.vales = ValesAPI;
+
+  // Função para carregar vales do Supabase (síncrona - retorna cache)
+  window.__valesReload = function() {
+    return window.vales || [];
+  };
+
+  // Função assíncrona para carregar do Supabase
+  window.__valesReloadAsync = async function() {
+    if (!window.SupabaseAPI?.client) return window.vales || [];
+    try {
+      const data = await ValesAPI.getAll();
+      window.vales = data;
+      console.log('[Vales] ✅ Carregados do Supabase:', data.length);
+      return data;
+    } catch (e) {
+      console.warn('[Vales] Erro ao carregar:', e);
+      return window.vales || [];
+    }
+  };
+
+  // saveVales - salva cada vale no Supabase
+  window.saveVales = async function() {
+    if (!window.SupabaseAPI?.client) return;
+    const arr = window.vales || [];
+    
+    for (const v of arr) {
+      try {
+        const { data } = await window.SupabaseAPI.client
+          .from('vales')
+          .select('uid')
+          .eq('uid', v.id)
+          .maybeSingle();
+        
+        if (data) {
+          await ValesAPI.update(v.id, {
+            saldo: v.saldo ?? v.valor,
+            quitado: v.quitado,
+            obs: v.obs,
+            cod: v.cod
+          });
+        } else {
+          await ValesAPI.create(v);
+        }
+      } catch (e) {
+        console.warn('[Vales] Erro sync:', v.id, e);
+      }
+    }
+    
+    if (typeof window.SyncManager !== 'undefined') {
+      window.SyncManager.notify('vales', { count: arr.length });
+    }
+  };
+
+  // Ao trocar de empresa, recarrega do Supabase
+  document.addEventListener('empresa:change', async () => {
+    await window.__valesReloadAsync();
+    try { renderValesPrestacao?.(); } catch {}
+  });
+
+  // Função de migração global
+  window.migrarValesParaSupabase = async function() {
+    const r1 = await ValesAPI.migrate();
+    const r2 = await window.SupabaseAPI?.valesLog?.migrate?.() || { migrated: 0 };
+    console.log(`[Vales] ✅ Migração completa - Vales: ${r1.migrated}, Logs: ${r2.migrated}`);
+    return { vales: r1.migrated, logs: r2.migrated };
+  };
+
+  // Carrega vales do Supabase na inicialização
+  function initVales() {
+    if (window.SupabaseAPI?.client) {
+      window.__valesReloadAsync().then(() => {
+        try { renderValesPrestacao?.(); } catch {}
+      });
+    } else {
+      setTimeout(initVales, 500);
+    }
+  }
+  setTimeout(initVales, 1000);
+
+  console.log('[Vales] ✅ API Supabase inicializada');
+})();
+
+
+function atualizarTotalVales(){
+  const tot = (prestacaoAtual.valeSelec||[]).reduce((a,b)=>a+(Number(b.valor)||0),0);
+  const el = document.getElementById('pcValesTotalDesc');
+  if(el) el.textContent = fmtBRL(tot);
+}
+// Formatação usada na tabela de Vales
+function vlsFmt(n){ return window.fmtBRL ? fmtBRL(Number(n)||0) : (Number(n)||0).toFixed(2); }
+
+
+// também reagir quando trocar gerente (para atualizar vales da lista)
+document.getElementById('pcGerente')?.addEventListener('change', renderValesPrestacao);
+
+// Totais de despesas (prestação)
+function pcUpdateTotals(triggerRecalc = true){
+  const tot = (prestacaoAtual.despesas||[]).reduce((a,b)=> a + (Number(b.valor)||0), 0);
+  document.getElementById('pcTotalDespesas').textContent = fmtBRL(tot);
+  if (triggerRecalc) pcSchedule();
+}
+
+(function() {
+  const tbody = document.getElementById('pcDespesasBody');
+  if (!tbody || tbody.__pcWiredClick) return;
+  tbody.__pcWiredClick = true;
+  
+  addPcListener(tbody, 'click', function(e) {
+  const btn = e.target.closest('[data-del-id]'); if(!btn) return;
+  const id = btn.getAttribute('data-del-id');
+  prestacaoAtual.despesas = prestacaoAtual.despesas.filter(d=>d.id!==id);
+  pcRender();
+  pcSchedule({ render:true });
+});
+})();
+
+(function() {
+  const tbody = document.getElementById('pcDespesasBody');
+  if (!tbody || tbody.__pcWiredInput) return;
+  tbody.__pcWiredInput = true;
+  
+  addPcListener(tbody, 'input', function(e) {
+  const el = e.target;
+  if (el.tagName !== 'INPUT') return;
+
+  const id = el.dataset.id, field = el.dataset.field;
+  const it = prestacaoAtual.despesas.find(x=>x.id===id);
+  if (!it) return;
+
+  if (field === 'valor'){
+    it.valor = Number(el.value) || 0;
+  } else {
+    it[field] = el.value;
+  }
+
+
+  pcUpdateTotals(false);
+  pcSchedule();               // seu scheduler já recalcula sem re-render (mantém foco)
+});
+})();
+
+/* ========= ADICIONAR / LIMPAR DESPESAS (Prestação) ========= */
+
+// Garante que existe prestacaoAtual
+window.prestacaoAtual = window.prestacaoAtual || { despesas: [], pagamentos: [], coletas: [], resumo: {} };
+
+// uid() de fallback (caso não exista no seu core)
+function __uidFallback(){
+  return 'd_' + Math.random().toString(36).slice(2, 10);
+}
+
+// Adiciona uma nova linha de despesa vazia (editável)
+async function pcAddDespesa(preset = {}){
+  const id = (typeof uid === 'function' ? uid() : __uidFallback());
+  
+  const novaDespesa = {
+    id,
+    ficha:  String(preset.ficha || '').trim(),
+    info:   String(preset.info  || '').trim(),
+    valor:  Number(preset.valor || 0)
+  };
+  
+  (prestacaoAtual.despesas ||= []).push(novaDespesa);
+  
+
+  
+  pcRender();  // ou a função que renderiza as despesas na tela
+  
+  renderDespesas();
+  pcSchedule();
+  
+  setTimeout(()=>{
+    const inp = document.querySelector('#pcDespesasBody tr:last-child input[name="ficha"]');
+    if(inp) inp.focus();
+  }, 50);
+}
+
+// ✅ FUNÇÃO async para salvar despesa no Supabase
+async function salvarDespesaNoSupabase(despesa) {
+  const gerenteId = document.getElementById('pcGerente')?.value;
+  const ini = document.getElementById('pcIni')?.value;
+  const fim = document.getElementById('pcFim')?.value;
+  const gerente = window.gerentes?.find(g => g.uid === gerenteId);
+  const empresa = window.getCompany ? window.getCompany() : 'BSX';
+  
+  await window.SupabaseAPI.despesas.create({
+    uid: despesa.id,
+    empresa_id: empresa,
+    gerente_nome: gerente?.nome || '',
+    ficha: despesa.ficha || '',
+    rota: '',
+    descricao: despesa.info || '',
+    valor: Number(despesa.valor) || 0,
+    categoria: '',
+    data: fim || new Date().toISOString().split('T')[0],
+    periodo_ini: ini,
+    periodo_fim: fim,
+    oculta: false,
+    editada: false
+  });
+  
+  console.log('✅ Despesa salva no Supabase');
+}
+
+// Botão "Adicionar Despesa" (id existente no seu HTML)
+(function() {
+  const btn = document.getElementById('btnPcAddDespesa');
+  if (!btn || btn.__pcWired) return;
+  btn.__pcWired = true;
+  
+  addPcListener(btn, 'click', function(e) {
+  e.preventDefault();
+  pcAddDespesa(); // insere linha vazia para você digitar
+});
+})();
+
+// Botão "Limpar Despesas"
+(function() {
+  const btn = document.getElementById('btnPcLimpar');
+  if (!btn || btn.__pcWired) return;
+  btn.__pcWired = true;
+  
+  addPcListener(btn, 'click', function(e) {
+  e.preventDefault();
+  if (!confirm('Deseja limpar TODAS as despesas desta prestação?')) return;
+  prestacaoAtual.despesas = [];
+  pcRender();
+  pcSchedule({ render:true });
+});
+})();
+
+// ===== IMPORTAR DESPESAS DO EXCEL =====
+(function() {
+  // Input file oculto — criado uma vez no body
+  function getOrCreateInput() {
+    let inp = document.getElementById('inputImportDespesas');
+    if (!inp) {
+      inp = document.createElement('input');
+      inp.type = 'file';
+      inp.id = 'inputImportDespesas';
+      inp.accept = '.xlsx,.xls,.csv';
+      inp.style.display = 'none';
+      document.body.appendChild(inp);
+
+      inp.addEventListener('change', async function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+          const despesasImportadas = await processarExcelDespesas(file);
+          if (despesasImportadas.length === 0) {
+            window.showNotification('Nenhuma despesa encontrada no arquivo', 'error');
+            return;
+          }
+          const confirma = confirm(
+            `Foram encontradas ${despesasImportadas.length} despesas.\n\n` +
+            `Deseja importar?\n\n` +
+            `Primeiras 3:\n` +
+            despesasImportadas.slice(0, 3).map(d =>
+              `• ${d.ficha || '-'} | ${d.info || '-'} | R$ ${Number(d.valor || 0).toFixed(2)}`
+            ).join('\n')
+          );
+          if (!confirma) { inp.value = ''; return; }
+          for (const desp of despesasImportadas) {
+            await pcAddDespesa({
+              ficha: String(desp.ficha || '').trim(),
+              info:  String(desp.info  || '').trim(),
+              valor: Number(desp.valor) || 0
+            });
+          }
+          pcRender();
+          pcSchedule({ render: true });
+          window.showNotification(`✅ ${despesasImportadas.length} despesas importadas!`, 'success');
+        } catch (error) {
+          console.error('[ImportDespesas] Erro:', error);
+          window.showNotification('Erro ao importar: ' + error.message, 'error');
+        }
+        inp.value = '';
+      });
+    }
+    return inp;
+  }
+
+  // Delegação no document — funciona independente de quando o botão é criado/recriado
+  document.addEventListener('click', function(e) {
+    const btn = e.target.closest('#btnPcImportDespesa'); if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const inp = getOrCreateInput();
+    // ✅ FIX: inp.click() funciona em todos os browsers (dispatchEvent era bloqueado)
+    inp.click();
+  }, true); // capture=true garante que rodamos antes de qualquer stopPropagation
+
+})();
+
+// Função para processar o arquivo Excel/CSV
+async function processarExcelDespesas(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        // Pega a primeira planilha
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        
+        // Converte para JSON
+        const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+        
+        if (rows.length < 2) {
+          reject(new Error('Arquivo vazio ou sem dados'));
+          return;
+        }
+        
+        // Detecta os índices das colunas baseado no header
+        const header = rows[0].map(h => String(h || '').toLowerCase().trim());
+        
+        // Mapeia possíveis nomes de colunas
+        const fichaIdx = header.findIndex(h => 
+          h.includes('ficha') || h === 'cod' || h === 'código' || h === 'codigo'
+        );
+        const infoIdx = header.findIndex(h => 
+          h.includes('info') || h.includes('desc') || h.includes('obs') || 
+          h === 'informação' || h === 'informacao' || h === 'descrição' || h === 'descricao'
+        );
+        const valorIdx = header.findIndex(h => 
+          h.includes('valor') || h.includes('total') || h === 'r$' || h === 'preço' || h === 'preco'
+        );
+        
+        console.log('[ImportDespesas] Colunas detectadas:', { 
+          header, 
+          fichaIdx, 
+          infoIdx, 
+          valorIdx 
+        });
+        
+        // Se não encontrou colunas pelo header, assume ordem padrão: Ficha, Info, Valor
+        const useFichaIdx = fichaIdx >= 0 ? fichaIdx : 0;
+        const useInfoIdx = infoIdx >= 0 ? infoIdx : 1;
+        const useValorIdx = valorIdx >= 0 ? valorIdx : 2;
+        
+        // Processa as linhas de dados (ignora header)
+        const despesas = [];
+        
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row || row.length === 0) continue;
+          
+          // Extrai os valores
+          let ficha = row[useFichaIdx];
+          let info = row[useInfoIdx];
+          let valor = row[useValorIdx];
+          
+          // Limpa e converte os valores
+          ficha = String(ficha || '').trim();
+          info = String(info || '').trim();
+          
+          // Converte valor para número
+          if (typeof valor === 'string') {
+            // Remove R$, pontos de milhar e converte vírgula para ponto
+            valor = valor.replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.');
+          }
+          valor = parseFloat(valor) || 0;
+          
+          // Só adiciona se tiver pelo menos info ou valor
+          if (info || valor > 0) {
+            despesas.push({ ficha, info, valor });
+          }
+        }
+        
+        console.log('[ImportDespesas] Despesas processadas:', despesas.length);
+        resolve(despesas);
+        
+      } catch (error) {
+        console.error('[ImportDespesas] Erro ao processar:', error);
+        reject(error);
+      }
+    };
+    
+    reader.onerror = function() {
+      reject(new Error('Erro ao ler o arquivo'));
+    };
+    
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// Expõe função globalmente — cria o input se não existir
+window.__importDespesasExcel = window.importarDespesasExcel = function() {
+  let inp = document.getElementById('inputImportDespesas');
+  if (!inp) {
+    inp = document.createElement('input');
+    inp.type = 'file';
+    inp.id = 'inputImportDespesas';
+    inp.accept = '.xlsx,.xls,.csv';
+    inp.style.display = 'none';
+    document.body.appendChild(inp);
+
+    inp.addEventListener('change', async function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        if (typeof processarExcelDespesas !== 'function') {
+          alert('Função de processamento não carregada. Recarregue a página.');
+          return;
+        }
+        const despesasImportadas = await processarExcelDespesas(file);
+        if (despesasImportadas.length === 0) {
+          window.showNotification?.('Nenhuma despesa encontrada no arquivo', 'error') || alert('Nenhuma despesa encontrada.');
+          return;
+        }
+        const confirma = confirm(
+          'Encontradas ' + despesasImportadas.length + ' despesas.\n\n' +
+          'Deseja importar?\n\n' +
+          'Primeiras 3:\n' +
+          despesasImportadas.slice(0, 3).map(function(d) {
+            return '• ' + (d.ficha || '-') + ' | ' + (d.info || '-') + ' | R$ ' + Number(d.valor || 0).toFixed(2);
+          }).join('\n')
+        );
+        if (!confirma) { inp.value = ''; return; }
+        for (const desp of despesasImportadas) {
+          await pcAddDespesa({
+            ficha: String(desp.ficha || '').trim(),
+            info:  String(desp.info  || '').trim(),
+            valor: Number(desp.valor) || 0
+          });
+        }
+        pcRender();
+        pcSchedule({ render: true });
+        window.showNotification?.('✅ ' + despesasImportadas.length + ' despesas importadas!', 'success') || alert(despesasImportadas.length + ' despesas importadas!');
+      } catch (error) {
+        console.error('[ImportDespesas] Erro:', error);
+        window.showNotification?.('Erro ao importar: ' + error.message, 'error') || alert('Erro: ' + error.message);
+      }
+      inp.value = '';
+    });
+  }
+  console.log('[ImportDespesas] ✅ Abrindo seletor de arquivo...');
+  inp.click();
+};
+
+// ===== DESPESAS FIXAS (Recorrentes Semanais) =====
+const DB_DESPESAS_FIXAS = 'despesas_fixas';
+
+// Obtém despesas fixas do localStorage
+function getDespesasFixas() {
+  return JSON.parse(localStorage.getItem(DB_DESPESAS_FIXAS) || '[]');
+}
+
+// Salva despesas fixas no localStorage
+function setDespesasFixas(arr) {
+  localStorage.setItem(DB_DESPESAS_FIXAS, JSON.stringify(arr));
+}
+
+// Adiciona uma despesa como fixa para um gerente
+function adicionarDespesaFixa(gerenteId, despesa) {
+  const fixas = getDespesasFixas();
+  const empresa = window.getCompany ? window.getCompany() : 'BSX';
+  
+  // Verifica se já existe uma despesa fixa igual
+  const existe = fixas.some(f => 
+    f.gerenteId === gerenteId && 
+    f.empresa === empresa &&
+    f.ficha === despesa.ficha && 
+    f.info === despesa.info
+  );
+  
+  if (existe) {
+    alert('Esta despesa já está fixada para este gerente.');
+    return false;
+  }
+  
+  fixas.push({
+    id: 'df_' + Math.random().toString(36).slice(2, 10),
+    gerenteId,
+    empresa,
+    ficha: despesa.ficha || '',
+    info: despesa.info || '',
+    valor: Number(despesa.valor) || 0,
+    createdAt: new Date().toISOString()
+  });
+  
+  setDespesasFixas(fixas);
+  alert('✅ Despesa fixada! Ela aparecerá automaticamente nas próximas prestações deste gerente.');
+  return true;
+}
+
+// Remove uma despesa fixa
+function removerDespesaFixa(id) {
+  const fixas = getDespesasFixas();
+  const novas = fixas.filter(f => f.id !== id);
+  setDespesasFixas(novas);
+}
+
+// Carrega despesas fixas do gerente para a prestação atual
+function carregarDespesasFixas(gerenteId) {
+  const fixas = getDespesasFixas();
+  const empresa = window.getCompany ? window.getCompany() : 'BSX';
+  
+  const doGerente = fixas.filter(f => 
+    f.gerenteId === gerenteId && 
+    f.empresa === empresa
+  );
+  
+  if (!doGerente.length) return;
+  
+  // Adiciona cada despesa fixa que ainda não existe na prestação
+  doGerente.forEach(df => {
+    // Verifica se já existe uma despesa com mesma ficha e info
+    const existe = (prestacaoAtual.despesas || []).some(d =>
+      d.ficha === df.ficha && d.info === df.info
+    );
+    
+    if (!existe) {
+      const id = (typeof uid === 'function' ? uid() : __uidFallback());
+      prestacaoAtual.despesas = prestacaoAtual.despesas || [];
+      prestacaoAtual.despesas.push({
+        id,
+        ficha: df.ficha,
+        info: df.info,
+        valor: df.valor,
+        _despesaFixaId: df.id // Marca como vindo de despesa fixa
+      });
+    }
+  });
+  
+  pcRender();
+  pcSchedule({ render: true });
+}
+
+// ✅ Carregar despesas fixas quando mudar o gerente
+document.getElementById('pcGerente')?.addEventListener('change', function() {
+  const gid = this.value;
+  if (gid) {
+    // Só carrega se a prestação estiver "limpa" (nova)
+    const despesasAtuais = (prestacaoAtual.despesas || []).length;
+    if (despesasAtuais === 0) {
+      carregarDespesasFixas(gid);
+    }
+  }
+});
+
+// Evento para fixar despesa (delegação de eventos)
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-fixar-id]');
+  if (!btn) return;
+  
+  const despId = btn.getAttribute('data-fixar-id');
+  const gerenteId = document.getElementById('pcGerente')?.value;
+  
+  if (!gerenteId) {
+    alert('Selecione um gerente primeiro.');
+    return;
+  }
+  
+  const despesa = (prestacaoAtual.despesas || []).find(d => d.id === despId);
+  if (!despesa) {
+    alert('Despesa não encontrada.');
+    return;
+  }
+  
+  if (!despesa.ficha && !despesa.info) {
+    alert('Preencha pelo menos a ficha ou a informação da despesa antes de fixar.');
+    return;
+  }
+  
+  adicionarDespesaFixa(gerenteId, despesa);
+});
+
+// Menu para gerenciar despesas fixas
+function abrirGerenciadorDespesasFixas() {
+  const fixas = getDespesasFixas();
+  const empresa = window.getCompany ? window.getCompany() : 'BSX';
+  const empresaFixas = fixas.filter(f => f.empresa === empresa);
+  
+  if (!empresaFixas.length) {
+    alert('Nenhuma despesa fixa cadastrada para ' + empresa + '.\n\nPara fixar uma despesa, adicione-a em uma prestação e clique no botão 📌.');
+    return;
+  }
+  
+  // Agrupa por gerente
+  const porGerente = {};
+  empresaFixas.forEach(f => {
+    const g = (window.gerentes || []).find(x => x.uid === f.gerenteId);
+    const nome = g ? g.nome : 'Gerente desconhecido';
+    if (!porGerente[f.gerenteId]) {
+      porGerente[f.gerenteId] = { nome, despesas: [] };
+    }
+    porGerente[f.gerenteId].despesas.push(f);
+  });
+  
+  let msg = '📌 DESPESAS FIXAS CADASTRADAS (' + empresa + ')\n\n';
+  
+  Object.values(porGerente).forEach(grupo => {
+    msg += '👤 ' + grupo.nome + ':\n';
+    grupo.despesas.forEach((d, i) => {
+      msg += `   ${i+1}. ${d.ficha || '---'} - ${d.info || '(sem descrição)'} - R$ ${(d.valor || 0).toFixed(2)}\n`;
+    });
+    msg += '\n';
+  });
+  
+  msg += 'Para remover uma despesa fixa, use o console:\nremoverDespesaFixa("ID_DA_DESPESA")';
+  
+  alert(msg);
+}
+
+// Expõe funções globalmente
+window.getDespesasFixas = getDespesasFixas;
+window.adicionarDespesaFixa = adicionarDespesaFixa;
+window.removerDespesaFixa = removerDespesaFixa;
+window.carregarDespesasFixas = carregarDespesasFixas;
+window.abrirGerenciadorDespesasFixas = abrirGerenciadorDespesasFixas;
+
+// Campos que recalculam (debounce)
+let __pcDebouncedTimer = null;
+const __pcDebounced = function() {
+  clearTimeout(__pcDebouncedTimer);
+  __pcDebouncedTimer = setTimeout(function() {
+    pcSchedule({ render: false, delay: 0 });
+  }, 200);
+};
+['pcGerente','pcValorExtra','pcAdiant','pcDeveAnterior','pcDivida','pcCredito','pcIni','pcFim','pcPerc2','pcSeq','pcPorRota']
+  .forEach(id=>{ const el = document.getElementById(id);
+    if (!el || el.__pcWiredCalc) return;
+    el.__pcWiredCalc = true;
+    el.addEventListener('input', __pcDebounced);
+    el.addEventListener('change', __pcDebounced);
+  });
+
+  function __recalcValeParcFromPagamentos(){
+    try{
+      const gid = document.getElementById('pcGerente')?.value || '';
+      const map = new Map();
+      (prestacaoAtual.pagamentos || []).forEach(p=>{
+        if (String(p.forma||'').toUpperCase() === 'VALE'){
+          let valeId = null;
+          let valeCod = '';
+          
+          // ✅ CORREÇÃO: Usa valeId diretamente se disponível
+          if (p.valeId) {
+            const v = (vales||[]).find(x => x.id === p.valeId);
+            if (v) {
+              valeId = v.id;
+              valeCod = v.cod || '';
+            }
+          }
+          
+          // Fallback: busca pelo código se não encontrou por valeId
+          if (!valeId) {
+            const ref = String(p.obs||'').trim();
+            const v = (vales||[]).find(x =>
+              x.gerenteId === gid && !x.quitado && String(x.cod||'').trim() === ref
+            );
+            if (v){
+              valeId = v.id;
+              valeCod = v.cod || '';
+            }
+          }
+          
+          if (valeId) {
+            map.set(valeId, (map.get(valeId)||0) + (Number(p.valor)||0));
+          }
+        }
+      });
+      prestacaoAtual.valeParcAplicado = Array.from(map, ([id, aplicado])=>{
+        const v = (vales||[]).find(x => x.id === id);
+        return { id, cod: v?.cod || '', aplicado: Number(aplicado)||0 };
+      });
+    } catch(e){
+      console.warn('recalc valeParcAplicado:', e);
+    }
+  }
+  
+
+// ===== PAGAMENTOS (Prestação) =====
+function pgRender(){
+  const todos = (prestacaoAtual.pagamentos||[]);
+  const listaVales = todos.filter(p => (p.forma||'').toString().toUpperCase()==='VALE');
+  const listaNorm  = todos.filter(p => (p.forma||'').toString().toUpperCase()!=='VALE');
+
+  // --- tabela VALES ---
+  const tbV = document.getElementById('pgVBody');
+  if (tbV){
+    tbV.innerHTML = listaVales.map(p => `
+      <tr>
+        <td>${fmtData(p.data||'')}</td>
+        <td>${fmtBRL(p.valor||0)}</td>
+        <td>${esc(p.obs||'')}</td>
+        <td>${esc(p.obs2||'')}</td>
+        <td><button class="btn danger" data-del-pg="${p.id}">Excluir</button></td>
+      </tr>
+    `).join('') || '<tr><td colspan="5">Nenhum pagamento de VALE.</td></tr>';
+  }
+  const totV = listaVales.reduce((a,b)=> a + (Number(b.valor)||0), 0);
+  const elTotV = document.getElementById('pgVTotal'); if (elTotV) elTotV.textContent = fmtBRL(totV);
+
+// --- tabela NORMAIS ---
+const tbN = document.getElementById('pgNBody');
+if (tbN){
+  tbN.innerHTML = listaNorm.map(p => {
+    // ✅ Se for DIVIDA_PAGA, mostra negativo
+    const isDivida = (p.forma||'').toString().toUpperCase() === 'DIVIDA_PAGA';
+    const valorExibir = isDivida ? -(Number(p.valor)||0) : (Number(p.valor)||0);
+    const corValor = isDivida ? 'color: #b91c1c; font-weight: bold;' : '';
+    
+    return `
+      <tr>
+        <td>${fmtData(p.data||'')}</td>
+        <td style="${corValor}">${fmtBRL(valorExibir)}</td>
+        <td>${isDivida ? 'PIX (Empresa → Gerente)' : (p.forma||'').toString().toUpperCase()}</td>
+        <td>${esc(p.obs||'')}</td>
+        <td><button class="btn danger" data-del-pg="${p.id}">Excluir</button></td>
+      </tr>
+    `;
+  }).join('') || '<tr><td colspan="5">Nenhum pagamento lançado.</td></tr>';
+}
+// ✅ Calcula o total considerando valores negativos (DIVIDA_PAGA)
+const totN = listaNorm.reduce((a,b)=> {
+  const isDivida = (b.forma||'').toString().toUpperCase() === 'DIVIDA_PAGA';
+  const valor = isDivida ? -(Number(b.valor)||0) : (Number(b.valor)||0);
+  return a + valor;
+}, 0);
+const elTotN = document.getElementById('pgNTotal'); 
+if (elTotN) elTotN.textContent = fmtBRL(totN);
+
+  // deletar (vale para ambas as tabelas)
+// deletar (vale para ambas as tabelas)
+document.querySelectorAll('[data-del-pg]').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    const id = b.getAttribute('data-del-pg');
+    const pay = (prestacaoAtual.pagamentos||[]).find(x=>x.id===id);
+    prestacaoAtual.pagamentos = (prestacaoAtual.pagamentos||[]).filter(x=>x.id!==id);
+
+    __recalcValeParcFromPagamentos();
+    pcSchedule();
+
+  });
+});
+}
+
+// === Pagamento NORMAL (PIX/DINHEIRO/CARTÃO/ADIANTAMENTO) ===
+function pgNAddFromForm(){
+  const data  = document.getElementById('pgNData').value || new Date().toISOString().slice(0,10);
+  let valor = Number(document.getElementById('pgNValor').value || 0);
+  const forma = (document.getElementById('pgNForma').value || 'PIX').toUpperCase();
+  const obs   = (document.getElementById('pgNObs').value || '').trim();
+
+  // ✅ PERMITE ZERO PARA VALORES NEGATIVOS
+  if (valor === 0 || isNaN(valor)){ 
+    alert('Informe um valor válido (diferente de zero).'); 
+    return; 
+  }
+
+  // ✅ Se o valor for negativo E o À PAGAR também for negativo
+  // Isso significa que a empresa está pagando ao gerente
+  const aPagar = Number(prestacaoAtual.resumo?.aPagar || 0);
+  if (valor < 0 && aPagar < 0) {
+    // Inverte o sinal para ficar positivo (é um pagamento de dívida)
+    valor = Math.abs(valor);
+    
+    // Adiciona como DIVIDA_PAGA
+    (prestacaoAtual.pagamentos ||= []).push({ 
+      id: uid(), 
+      data, 
+      valor, 
+      forma: 'DIVIDA_PAGA',  // ✅ Marca como dívida
+      obs: obs || forma      // Mantém a forma original na obs
+    });
+  } else {
+    // Pagamento normal (positivo ou negativo quando À PAGAR é positivo)
+    (prestacaoAtual.pagamentos ||= []).push({ 
+      id: uid(), 
+      data, 
+      valor: Math.abs(valor),  // ✅ Sempre positivo no banco
+      forma, 
+      obs 
+    });
+  }
+
+  document.getElementById('pgNValor').value = '';
+  document.getElementById('pgNObs').value   = '';
+
+  __recalcValeParcFromPagamentos(); 
+  pcSchedule();
+  pgRender();  // ✅ Atualiza as duas tabelas
+}
+
+// === Pagamento de VALE ===
+function pgVAddFromForm(){
+  const data  = document.getElementById('pgVData').value || new Date().toISOString().slice(0,10);
+  const valor = Number(document.getElementById('pgVValor').value || 0);
+  const ref   = (document.getElementById('pgVRef').value || '').trim();
+  const obs2  = (document.getElementById('pgVObs').value || '').trim();
+
+  if (!valor || valor<=0){ alert('Informe um valor válido (>0).'); return; }
+  if (!ref){ alert('Informe o CÓDIGO do vale.'); return; }
+
+  // vincula no controle de parcelas aplicadas
+  const res = aplicarPagamentoEmVale({ valor, obs: ref });
+  if (!res){ alert('Não achei um vale aberto com esse código.'); return; }
+
+
+
+  // adiciona o pagamento como forma VALE
+  (prestacaoAtual.pagamentos ||= []).push({ id: uid(), data, valor, forma:'VALE', obs: ref, obs2 });
+
+  // limpar campos
+  document.getElementById('pgVValor').value = '';
+  // mantemos o ref preenchido para repetir rapidamente, se quiser
+
+  __recalcValeParcFromPagamentos();
+  pcSchedule();
+}
+
+// Botões VALE
+(function() {
+  const btn = document.getElementById('btnPgVAdd');
+  if (!btn || btn.__pcWired) return;
+  btn.__pcWired = true;
+  
+  addPcListener(btn, 'click', function(e) {
+    e.preventDefault();
+    pgVAddFromForm();
+  });
+})();
+
+(function() {
+  const btn = document.getElementById('btnPgVLimpar');
+  if (!btn || btn.__pcWired) return;
+  btn.__pcWired = true;
+  
+  addPcListener(btn, 'click', async function() {
+  if(!confirm('Limpar os pagamentos de VALE desta prestação?')) return;
+
+  prestacaoAtual.pagamentos = (prestacaoAtual.pagamentos||[]).filter(p => (p.forma||'').toUpperCase()!=='VALE');
+  prestacaoAtual.valeParcAplicado = []; 
+  __recalcValeParcFromPagamentos();
+pcSchedule();
+});
+})();
+
+
+
+// Botões NORMAIS
+(function() {
+  const btn = document.getElementById('btnPgNAdd');
+  if (!btn || btn.__pcWired) return;
+  btn.__pcWired = true;
+  
+  addPcListener(btn, 'click', function(e) {
+    e.preventDefault();
+    pgNAddFromForm();
+  });
+})();
+
+(function() {
+  const btn = document.getElementById('btnPgNLimpar');
+  if (!btn || btn.__pcWired) return;
+  btn.__pcWired = true;
+  
+  addPcListener(btn, 'click', async function() {
+  if(!confirm('Limpar os pagamentos NORMAIS desta prestação?')) return;
+  prestacaoAtual.pagamentos = (prestacaoAtual.pagamentos||[]).filter(p => (p.forma||'').toUpperCase()==='VALE');
+  pcSchedule();
+});
+})();
+
+// VALE SÓ SUBTRAI DO BANCO DE DADOS QUANDO SALVO A PRESTAÇÃO
+function aplicarPagamentoEmVale({ valor, obs }) {
+  const ref = String(obs || '').trim();
+  if (!ref) return null;
+
+  const gid = document.getElementById('pcGerente').value || '';
+  const v = (vales || []).find(x =>
+    x.gerenteId === gid &&
+    !x.quitado &&
+    String(x.cod||'').trim() === ref
+  );
+  if (!v) return null;
+
+  // só registra no controle provisório desta prestação
+  (prestacaoAtual.valeParcAplicado ||= []);
+  const reg = prestacaoAtual.valeParcAplicado.find(x => x.id === v.id);
+  if (reg) reg.aplicado += Number(valor)||0;
+  else prestacaoAtual.valeParcAplicado.push({ id: v.id, cod: v.cod, aplicado: Number(valor)||0 });
+
+  // NÃO altera v.valor aqui. NÃO salva banco.
+  return { id: v.id, cod: v.cod, pago: Number(valor)||0 };
+}
+
+// Botão "Aplicar" na lista de vales (provisório)
+function descontarValeAgoraPorId(id, valor){
+  const v = (vales||[]).find(x=>x.id===id && !x.quitado);
+  if(!v) return alert('Vale não encontrado ou já quitado.');
+
+  // normaliza
+  const pago = Math.max(0, Number(valor)||0);
+  if(pago<=0) return alert('Informe um valor válido (> 0).');
+
+  // evita repetir a MESMA parcela (mesma referência e valor) já inserida nesta sessão
+  const ref = String(v.cod||'');
+  const jaExiste = (prestacaoAtual.pagamentos||[]).some(p =>
+    String((p.forma||'').toUpperCase())==='VALE' &&
+    String(p.obs||'')===ref &&
+    (Number(p.valor)||0)===pago &&
+    (p.data||'')===new Date().toISOString().slice(0,10)
+  );
+  if (jaExiste){
+    alert('Esta parcela de VALE (mesma data/valor/código) já foi aplicada.');
+    return;
+  }
+
+// Lança pagamento provisório na prestação
+(prestacaoAtual.pagamentos ||= []).push({
+  id: uid(),
+  valeId: id,      // ✅ CORREÇÃO: Salva o ID do vale para identificação correta
+  data: new Date().toISOString().slice(0,10),
+  valor: pago,
+  forma: 'VALE',
+  obs: ref
+});
+  __recalcValeParcFromPagamentos();
+
+  pcSchedule();
+}
+
+function pgAddFromForm(){
+  const data  = document.getElementById('pgData').value || new Date().toISOString().slice(0,10);
+  const valor = Number(document.getElementById('pgValor').value || 0);
+  const forma = (document.getElementById('pgForma').value || 'PIX').toUpperCase();
+  const obs   = (document.getElementById('pgObs').value || '').trim();
+
+  if(!valor || valor <= 0){ alert('Informe um valor válido.'); return; }
+
+  // evita duplicar
+  const jaExiste = (prestacaoAtual.pagamentos||[]).some(p =>
+    (p.data||'')===data &&
+    String((p.forma||'').toUpperCase())===forma &&
+    (Number(p.valor)||0)===valor &&
+    String(p.obs||'')===obs
+  );
+  if (jaExiste){
+    alert('Este pagamento já foi lançado (mesma data/valor/forma/obs).');
+    return;
+  }
+
+  if (forma === 'VALE') {
+    if (!obs){ alert('Para forma VALE, preencha o campo Obs com o CÓDIGO do vale (ex.: 8401).'); return; }
+    const res = aplicarPagamentoEmVale({ valor, obs });
+    if (!res){ alert('Não achei um vale aberto com esse código (Obs).'); return; }
+  }
+
+  (prestacaoAtual.pagamentos ||= []).push({ id: uid(), data, valor, forma, obs });
+
+  document.getElementById('pgValor').value = '';
+  document.getElementById('pgObs').value   = '';
+
+  __recalcValeParcFromPagamentos();
+
+  pcSchedule();
+}
+
+// ===== COLETAS (Prestação – lançamento) =====
+function colRender(){
+  const tb = document.getElementById('colBody');
+  const rows = (prestacaoAtual.coletas || []);
+  tb.innerHTML = rows.map(c => `
+    <tr>
+      <td>${c.nome || ''}</td>
+      <td>${fmtBRL(c.valor || 0)}</td>
+      <td style="text-align:left">${c.obs || ''}</td>
+      <td><button class="btn danger" data-del-col="${c.id}">Excluir</button></td>
+    </tr>
+  `).join('') || '<tr><td colspan="4">Nenhuma coleta lançada.</td></tr>';
+
+  document.querySelectorAll('[data-del-col]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const id = b.getAttribute('data-del-col');
+      prestacaoAtual.coletas = (prestacaoAtual.coletas || []).filter(x=>x.id!==id);
+      colRender(); 
+      pcSchedule();
+    });
+  });
+
+  const total = rows.reduce((a,b)=> a + (Number(b.valor)||0), 0);
+  document.getElementById('colTotal').textContent = fmtBRL(total);
+}
+
+function vlAddFromForm(){
+  const ref   = document.getElementById('vlRef').value.trim();
+  const valor = Number(document.getElementById('vlValor').value || 0);
+  const obs   = document.getElementById('vlObs').value.trim();
+  if(!ref || !valor || valor<=0){ alert('Informe referência e valor válidos.'); return; }
+  (prestacaoAtual.vales ||= []).push({ id:uid(), ref, valor, obs });
+  document.getElementById('vlRef').value   = '';
+  document.getElementById('vlValor').value = '';
+  document.getElementById('vlObs').value   = '';
+  pcSchedule();
+}
+(function() {
+  const btn = document.getElementById('btnVlAdd');
+  if (!btn || btn.__pcWired) return;
+  btn.__pcWired = true;
+  
+  addPcListener(btn, 'click', vlAddFromForm);
+})();
+
+(function() {
+  const btn = document.getElementById('btnVlLimpar');
+  if (!btn || btn.__pcWired) return;
+  btn.__pcWired = true;
+  
+  addPcListener(btn, 'click', async function() {
+  prestacaoAtual.vales = [];
+  pcSchedule();
+});
+})();
+
+// ===== Helper de comissão (modos novo e antigo) =====
+function __calcComissao_v2({
+  coletas, coletasPos, despesasTot,
+  perc1, perc2 = 0,
+  porRota = false, sequencial = false,
+  negAnterior = 0
+}){
+  perc1 = Number(perc1) || 0;
+  perc2 = Number(perc2) || 0;
+  const resultadoSemana = coletas - despesasTot;
+
+  // —— MODOS NOVOS: base é COLETAS (ou só positivas) e NÃO usa carry de negativo
+  if (porRota || sequencial || perc2 > 0){
+    const base = porRota ? (Number(coletasPos) || 0) : (Number(coletas) || 0);
+
+    // 1ª comissão normal sobre a base
+    const comis1 = base * (perc1 / 100);
+
+    // ✅ NOVA REGRA COMISSÃO 2:
+    // - Sempre calculada sobre (Coletas - Comissão1)
+    // - Se coletas <= 0: não calcula comissão 2
+    // - Se não tem comissão 1: calcula direto sobre coletas
+    let comis2 = 0;
+    if (perc2 > 0 && coletas > 0){
+      const baseParaComissao2 = comis1 > 0 ? Math.max(coletas - comis1, 0) : coletas;
+      comis2 = baseParaComissao2 * (perc2 / 100);
+    }
+
+    return {
+      comissaoVal: comis1 + comis2,
+      comis1,
+      comis2,
+      baseComissao: base,
+      novoSaldoNeg: negAnterior,   // não mexe no saldo negativo aqui
+      resultadoSemana
+    };
+  }
+
+  // —— MODO ANTIGO (com carry do negativo) — igual ao seu original
+  let baseComissao = 0;
+  let novoSaldoNeg = negAnterior;
+
+  if (perc1 > 0 && perc1 < 50){
+    if (resultadoSemana < 0){
+      novoSaldoNeg = negAnterior + Math.abs(resultadoSemana);
+      baseComissao = 0;
+    } else {
+      const amort = Math.min(resultadoSemana, negAnterior);
+      novoSaldoNeg = negAnterior - amort;
+      baseComissao = resultadoSemana - amort;
+    }
+  } else {
+    baseComissao = Math.max(resultadoSemana, 0);
+    novoSaldoNeg = 0;
+  }
+
+  return {
+    comissaoVal: baseComissao * (perc1 / 100),
+    comis1: 0,
+    comis2: 0,
+    baseComissao,
+    novoSaldoNeg,
+    resultadoSemana
+  };
+}
+// Classe para gerenciar os diferentes tipos de cálculo
+class CalculadoraComissao {
+  constructor(gerente, coletas, despesas, coletores = []) {
+    this.gerente = gerente;
+    this.coletas = coletas || [];
+    this.despesas = despesas || [];
+    this.coletores = coletores || [];
+    
+    // Configurações do gerente
+    this.comissao1 = Number(gerente.comissao || 0);
+    this.comissao2 = Number(gerente.comissao2 || 0);
+    this.temSegundaComissao = !!gerente.temSegundaComissao || Number(gerente.comissao2) > 0;
+    this.comissaoPorRotaPositiva = !!gerente.comissaoPorRotaPositiva;
+    this.baseCalculo = (gerente.base_calculo || gerente.baseCalculo || 'COLETAS_MENOS_DESPESAS').toUpperCase();
+  }
+  
+  // Calcula o total de coletas
+  getTotalColetas() {
+    let total = 0;
+    
+    // Se tem coletores, soma os valores
+    if (this.coletores && this.coletores.length > 0) {
+      // Se é comissão por rota positiva, soma só positivos
+      if (this.comissaoPorRotaPositiva) {
+        total = this.coletores
+          .filter(c => c.valor > 0)
+          .reduce((sum, c) => sum + c.valor, 0);
+      } else {
+        total = this.coletores.reduce((sum, c) => sum + c.valor, 0);
+      }
+    } else {
+      // Se não tem coletores, usa o valor direto de coletas
+      total = Array.isArray(this.coletas) 
+        ? this.coletas.reduce((sum, c) => sum + (c.valor || 0), 0)
+        : Number(this.coletas) || 0;
+    }
+    
+    return total;
+  }
+  
+  // Calcula o total de despesas
+  getTotalDespesas() {
+    return Array.isArray(this.despesas)
+      ? this.despesas.reduce((sum, d) => sum + (d.valor || 0), 0)
+      : Number(this.despesas) || 0;
+  }
+  
+  // Calcula a base para comissão
+  getBaseComissao() {
+    const totalColetas = this.getTotalColetas();
+    const totalDespesas = this.getTotalDespesas();
+    
+    // Se tem 2ª comissão, sempre usa apenas coletas
+    if (this.temSegundaComissao) {
+      return totalColetas;
+    }
+    
+    // Se é por rota positiva, sempre usa apenas coletas
+    if (this.comissaoPorRotaPositiva) {
+      return totalColetas;
+    }
+    
+    // Senão, usa a configuração do gerente
+    if (this.baseCalculo === 'COLETAS') {  // ✅ Maiúscula
+      return totalColetas;
+    } else {
+      return totalColetas - totalDespesas;
+    }
+  }
+  
+  // Calcula valores de comissão
+  calcularComissoes() {
+    const totalColetas = this.getTotalColetas();
+    const totalDespesas = this.getTotalDespesas();
+    
+    // ✅ Verifica se resultado é positivo antes de calcular comissões
+    const resultadoSemComissao = totalColetas - totalDespesas;
+    
+    let baseComissao = 0;
+    let valorComissao1 = 0;
+    let valorComissao2 = 0;
+    
+    if (this.temSegundaComissao) {
+      // ✅ Só calcula comissões se coletas forem positivas
+      if (totalColetas > 0) {
+        baseComissao = this.getBaseComissao();
+        valorComissao1 = (baseComissao * this.comissao1) / 100;
+        
+        // ✅ NOVA REGRA: Comissão 2 é calculada sobre (Coletas - Com.1), SEM as despesas
+        // Se não tem comissão 1, calcula direto sobre as coletas
+        let baseParaComissao2 = 0;
+        if (valorComissao1 > 0) {
+          // Tem comissão 1: calcula sobre (Coletas - Comissão1)
+          baseParaComissao2 = totalColetas - valorComissao1;
+        } else {
+          // Não tem comissão 1: calcula direto sobre as coletas
+          baseParaComissao2 = totalColetas;
+        }
+        
+        // Só calcula comissão 2 se a base for positiva
+        if (baseParaComissao2 > 0) {
+          valorComissao2 = (baseParaComissao2 * this.comissao2) / 100;
+        }
+      }
+    } else {
+      // Outros modelos mantêm lógica original
+      baseComissao = this.getBaseComissao();
+      valorComissao1 = (baseComissao * this.comissao1) / 100;
+    }
+    
+    return {
+      base: baseComissao,
+      comissao1: valorComissao1,
+      comissao2: valorComissao2,
+      percentual1: this.comissao1,
+      percentual2: this.comissao2
+    };
+  }
+
+  
+  // Calcula o resultado final
+  calcularResultado(deveAnterior = 0, adiantamento = 0, valorExtra = 0) {
+    const totalColetas = this.getTotalColetas();
+    const totalDespesas = this.getTotalDespesas();
+    const comissoes = this.calcularComissoes();
+    
+    let resultado = 0;
+    
+    if (this.temSegundaComissao) {
+      // Modelo 1: Com 2ª comissão
+      // Resultado = Coletas - Comissão1 - Comissão2 - Despesas
+      resultado = totalColetas - comissoes.comissao1 - comissoes.comissao2 - totalDespesas;
+    } else if (this.comissaoPorRotaPositiva) {
+      // Modelo 2: Por rota positiva
+      // Resultado = Coletas(positivas) - Comissão - Despesas
+      resultado = totalColetas - comissoes.comissao1 - totalDespesas;
+    } else {
+      // Modelo 3: Padrão
+      // Resultado = (Coletas - Despesas) - Comissão
+      resultado = (totalColetas - totalDespesas) - comissoes.comissao1;
+    }
+    
+    // Adiciona valores extras
+    resultado = resultado + deveAnterior - adiantamento + valorExtra;
+    
+    return {
+      totalColetas,
+      totalDespesas,
+      baseComissao: comissoes.base,
+      valorComissao1: comissoes.comissao1,
+      valorComissao2: comissoes.comissao2,
+      percentual1: comissoes.percentual1,
+      percentual2: comissoes.percentual2,
+      resultado,
+      aPagar: resultado,
+      restante: resultado
+    };
+  }
+  
+  // Gera o HTML do relatório de acordo com o modelo
+  gerarRelatorioHTML() {
+    const calc = this.calcularResultado();
+    let html = '';
+    
+    if (this.temSegundaComissao) {
+      html = '<div class="coletas-info">' +
+        '<div class="info-row"><span class="label">Coletas:</span><span class="value">R$ ' + calc.totalColetas.toFixed(2) + '</span></div>' +
+        '<div class="info-row"><span class="label">Base Comissão:</span><span class="value success">R$ ' + calc.baseComissao.toFixed(2) + '</span></div>' +
+        '<div class="info-row"><span class="label">Saldo a Carregar:</span><span class="value">R$ 0,00</span></div>' +
+        '<div class="info-row"><span class="label">Comissão 1 (' + calc.percentual1 + '%):</span><span class="value success">R$ ' + calc.valorComissao1.toFixed(2) + '</span></div>' +
+        '<div class="info-row"><span class="label">Resultado (Coletas - Com. 1):</span><span class="value">R$ ' + (calc.totalColetas - calc.valorComissao1).toFixed(2) + '</span></div>' +
+        '<div class="info-row"><span class="label">Comissão 2 (' + calc.percentual2 + '%):</span><span class="value success">R$ ' + calc.valorComissao2.toFixed(2) + '</span></div>' +
+        '<div class="info-row"><span class="label">Despesas:</span><span class="value danger">R$ ' + calc.totalDespesas.toFixed(2) + '</span></div>' +
+        '<div class="info-row highlight"><span class="label">Resultado:</span><span class="value">R$ ' + calc.resultado.toFixed(2) + '</span></div>' +
+        '</div>';
+      
+    } else if (this.comissaoPorRotaPositiva && this.coletores.length > 0) {
+      const coletoresHtml = this.coletores.map(function(c) {
+        return '<div class="info-row ' + (c.valor < 0 ? 'negative' : '') + '">' +
+          '<span class="label">' + c.nome + ':</span>' +
+          '<span class="value">R$ ' + c.valor.toFixed(2) + '</span>' +
+          (c.valor < 0 ? '<small>(não entra na comissão)</small>' : '') +
+          '</div>';
+      }).join('');
+      
+      html = '<div class="coletas-info"><div class="coletores-list">' + coletoresHtml + '</div><hr>' +
+        '<div class="info-row"><span class="label">Total Coletas:</span><span class="value">R$ ' + this.coletores.reduce(function(s,c) { return s+c.valor; }, 0).toFixed(2) + '</span></div>' +
+        '<div class="info-row"><span class="label">Base Comissão (só positivas):</span><span class="value success">R$ ' + calc.baseComissao.toFixed(2) + '</span></div>' +
+        '<div class="info-row"><span class="label">Comissão (' + calc.percentual1 + '%):</span><span class="value success">R$ ' + calc.valorComissao1.toFixed(2) + '</span></div>' +
+        '<div class="info-row"><span class="label">Despesas:</span><span class="value danger">R$ ' + calc.totalDespesas.toFixed(2) + '</span></div>' +
+        '<div class="info-row highlight"><span class="label">Resultado:</span><span class="value">R$ ' + calc.resultado.toFixed(2) + '</span></div>' +
+        '</div>';
+    } else {
+      html = '<div class="coletas-info">' +
+        '<div class="info-row"><span class="label">Coletas:</span><span class="value">R$ ' + calc.totalColetas.toFixed(2) + '</span></div>' +
+        '<div class="info-row"><span class="label">Despesas:</span><span class="value danger">R$ ' + calc.totalDespesas.toFixed(2) + '</span></div>' +
+        '<div class="info-row"><span class="label">Total (Coletas - Despesas):</span><span class="value">R$ ' + (calc.totalColetas - calc.totalDespesas).toFixed(2) + '</span></div>' +
+        '<div class="info-row"><span class="label">Comissão (' + calc.percentual1 + '%):</span><span class="value success">R$ ' + calc.valorComissao1.toFixed(2) + '</span></div>' +
+        '<div class="info-row highlight"><span class="label">Resultado:</span><span class="value">R$ ' + calc.resultado.toFixed(2) + '</span></div>' +
+        '</div>';
+    }
+    
+    return html;
+  }}
+
+// ============================================
+// FUNÇÃO PARA ATUALIZAR A UI
+// ============================================
+
+function atualizarUIPrestacao() {
+  const gerenteSelect = document.getElementById('pcGerente');
+  if (!gerenteSelect) return;
+
+  const gerenteId = gerenteSelect.value || '';
+  const gerente = (window.gerentes || []).find(g => String(g.uid) === String(gerenteId));
+  if (!gerente) return;
+
+  // coerência com pcCalcular
+  gerente.temSegundaComissao = !!gerente.temSegundaComissao || Number(gerente.comissao2) > 0;
+
+  const coletores = (prestacaoAtual.coletas || []).map(c => ({
+    nome: c.nome || '',
+    valor: Number(c.valor) || 0
+  }));
+
+  const despesas = (prestacaoAtual.despesas || []).map(d => ({
+    valor: Number(d.valor) || 0
+  }));
+
+  const calc = new CalculadoraComissao(gerente, [], despesas, coletores);
+  const r = calc.calcularResultado(
+    pcNum('pcDeveAnterior'),
+    pcNum('pcAdiant'),
+    pcNum('pcValorExtra')
+  );
+
+  const campos = {
+    pcTotalColetas: 'R$ ' + r.totalColetas.toFixed(2),
+    pcTotalDespesas: 'R$ ' + r.totalDespesas.toFixed(2),
+    pcResultado: 'R$ ' + r.resultado.toFixed(2),
+    pcPagar: 'R$ ' + r.aPagar.toFixed(2),
+    pcRestam: 'R$ ' + r.restante.toFixed(2),
+    pcPerc: (r.percentual1 || 0) + '%' + (r.percentual2 ? ' + ' + r.percentual2 + '%' : '')
+  };
+
+  Object.entries(campos).forEach(([id, v]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.tagName === 'INPUT') el.value = v; else el.textContent = v;
+  });
+
+  const coletasSection = document.querySelector('.coletas-section');
+  if (coletasSection) coletasSection.innerHTML = calc.gerarRelatorioHTML();
+}
+
+
+// ============================================
+// ADICIONAR LISTENERS
+// ============================================
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Atualizar quando mudar gerente
+  const gerenteSelect = document.getElementById('pcGerente');
+  if (gerenteSelect) {
+    gerenteSelect.addEventListener('change', atualizarUIPrestacao);
+  }
+  
+  // Atualizar quando adicionar/remover coletor ou despesa
+  document.addEventListener('click', (e) => {
+    if (e.target.matches('.btn-remove-coletor, .btn-remove-despesa, #btnColAdd, #btnPcAddDespesa')) {
+      setTimeout(atualizarUIPrestacao, 100);
+    }
+  });
+});
+
+async function pcCalcular(){
+
+  
+  // gerente / % principal
+  const sel = document.getElementById('pcGerente');
+  const gerenteId = sel ? sel.value : '';
+  const g = (Array.isArray(window.gerentes) ? window.gerentes : []).find(function(x) { 
+    return String(x.uid || x.id) === String(gerenteId); 
+  });
+  
+  if (!g) {
+    console.warn('Gerente não encontrado:', gerenteId);
+    return;
+  }
+  
+  console.log('🔍 [DEBUG] Objeto gerente carregado:', {
+    uid: g.uid,
+    nome: g.nome,
+    comissao: g.comissao,
+    tem_saldo_acumulado: g.tem_saldo_acumulado,
+    temSaldoAcumulado: g.temSaldoAcumulado,
+    tem_segunda_comissao: g.tem_segunda_comissao
+  });
+  
+  const perc1 = Number(g.comissao) || 0;
+
+  // coletas (total e só as positivas p/ modo "por rota")
+  const totalColetasLista = (prestacaoAtual?.coletas || []).reduce(function(s,c) { 
+    return s + (Number(c?.valor)||0); 
+  }, 0);
+  const coletasPositivas = (prestacaoAtual?.coletas || []).reduce(function(s,c) { 
+    return s + Math.max(0, Number(c?.valor)||0); 
+  }, 0);
+  const coletas = totalColetasLista;
+
+  // entradas manuais
+  const valorExtra = pcNum('pcValorExtra');
+  const adiant     = pcNum('pcAdiant');
+  const deveAnt    = pcNum('pcDeveAnterior');
+  const divida     = pcNum('pcDivida');
+  const credito    = pcNum('pcCredito');
+
+  // despesas
+  const despesasTot = (prestacaoAtual?.despesas || []).reduce(function(a,b) { 
+    return a + (Number(b?.valor)||0); 
+  }, 0);
+
+// pagamentos
+const listaPg = Array.isArray(prestacaoAtual?.pagamentos) ? prestacaoAtual.pagamentos : [];
+let adiantPg = 0, pagos = 0, pagamentosDivida = 0;
+for(let i = 0; i < listaPg.length; i++){
+  const p = listaPg[i];
+  const forma = (p?.forma || '').toString().toUpperCase();
+  const val   = Number(p?.valor) || 0;
+  
+  if(forma === 'ADIANTAMENTO') adiantPg += val;
+  else if(forma === 'VALE')    continue;  // ✅ IGNORA - vales vêm de valeParcAplicado
+  else if(forma === 'DIVIDA_PAGA') pagamentosDivida += val;
+  else                         pagos    += val;
+}
+
+// ✅ Vales vêm SOMENTE de valeParcAplicado
+const valesAplicados = Array.isArray(prestacaoAtual?.valeParcAplicado) 
+  ? prestacaoAtual.valeParcAplicado 
+  : [];
+
+const valePg = valesAplicados.reduce((sum, v) => {
+  return sum + (Number(v.aplicado) || 0);
+}, 0);
+
+  // ======= CONFIGURAÇÕES DO GERENTE =======
+  // ✅ CORREÇÃO: 2ª comissão SOMENTE pela flag explícita (não automático por valor > 0)
+  // Suporta camelCase (cache) e snake_case (Supabase)
+  const temSegundaComissao = !!g.temSegundaComissao || !!g.tem_segunda_comissao;
+  const comissaoPorRotaPositiva = !!g.comissaoPorRotaPositiva || !!g.comissao_por_rota_positiva;
+  const baseCalculo = (g.baseCalculo || g.base_calculo || 'COLETAS_MENOS_DESPESAS').toUpperCase();
+  // perc2 só vale se a flag estiver ativa
+  const perc2 = temSegundaComissao ? (Number(g.comissao2) || 0) : 0;
+  
+  // ======= CÁLCULO BASEADO NO MODELO =======
+  let baseComissao = 0;
+  let valorComissao1 = 0;
+  let valorComissao2 = 0;
+  let resultado = 0;
+// SALDO ACUMULADO
+        // ✅ Empresa EMANUEL não usa saldo acumulado (acordo comercial)
+        const empresaAtualCheck = window.getCompany ? window.getCompany() : 'BSX';
+        const empresaSemSaldoAcumulado = empresaAtualCheck === 'EMANUEL';
+        
+        // ✅ NOVA REGRA (v3): Saldo acumulado é controlado APENAS pela flag explícita
+        // Funciona para QUALQUER porcentagem de comissão (10%, 20%, 25%, 30%, 40%, 50%)
+        // REMOVIDA a regra automática "(perc1 < 50 && temSegundaComissao)"
+        const temSaldoAcumuladoConfig = g.temSaldoAcumulado === true || g.tem_saldo_acumulado === true;
+        
+        const usaSaldoAcumulado = !empresaSemSaldoAcumulado && 
+        window.SaldoAcumulado && g && perc1 > 0 && 
+        temSaldoAcumuladoConfig;
+        
+        // ✅ Gerente 50% com saldo acumulado: regra especial mantida (metade do negativo vai p/ banco)
+        // Só ativa se NÃO tiver 2ª comissão (gerente 50% puro com saldo)
+        const isGerente50ComSaldo = !temSegundaComissao && perc1 >= 50 && temSaldoAcumuladoConfig;
+        
+        console.log('🔍 [DEBUG] Verificação Saldo Acumulado:', {
+          gerente: g.nome || g.numero,
+          perc1,
+          temSegundaComissao,
+          'g.temSegundaComissao': g.temSegundaComissao,
+          'g.tem_segunda_comissao': g.tem_segunda_comissao,
+          'g.comissao2': g.comissao2,
+          'g.temSaldoAcumulado': g.temSaldoAcumulado,
+          'g.tem_saldo_acumulado': g.tem_saldo_acumulado,
+          temSaldoAcumuladoConfig,
+          usaSaldoAcumulado,
+          isGerente50ComSaldo,
+          empresaSemSaldoAcumulado
+        });
+
+  if (usaSaldoAcumulado) {
+    console.log('📊 [SaldoAcumulado] Condições atendidas! Calculando...');
+    console.log('📊 [SaldoAcumulado] Parâmetros:', { 
+      gerenteId: g.uid, 
+      coletas, 
+      despesasTot, 
+      perc1, 
+      perc2,
+      baseCalculo,
+      temSegundaComissao 
+    });
+    
+    const empresaAtual = window.getCompany ? window.getCompany() : 'BSX';
+
+    // ✅ Busca saldo atual do Supabase (saldo COM todas as prestações até agora)
+    let saldoDoSupabase = await window.SaldoAcumulado.getSaldo(g.uid, empresaAtual);
+    let saldoParaCalcular = saldoDoSupabase;
+    
+    // Se está EDITANDO uma prestação que JÁ FOI SALVA no Supabase,
+    // precisamos tirar a contribuição DESSA prestação do saldo atual,
+    // para recalcular como se ela ainda não existisse.
+    // ✅ CORREÇÃO: Para gerentes com 2ª comissão E gerentes 50%, usa saldo do Supabase diretamente
+    // O saldo no Supabase representa o saldo ANTES dessa prestação
+    // ✅ Saldo no Supabase agora representa SEMPRE o estado "antes desta
+    // prestação" enquanto ela está aberta — porque save NÃO grava mais saldo
+    // no banco (só fecharSemanaById faz isso). Logo não precisa estornar.
+    //
+    // Se a prestação estiver FECHADA e for reaberta para edição, o
+    // reopenWeek estorna o efeito antes de marcar como aberta — portanto
+    // ao chegar aqui, o saldo no Supabase já está sem o efeito desta
+    // prestação. Em todos os casos: saldoParaCalcular = saldoDoSupabase.
+    saldoParaCalcular = saldoDoSupabase;
+    if (temSegundaComissao || isGerente50ComSaldo) {
+      console.log('🔄 [Saldo Especial] Usando saldo do Supabase direto:', {
+        tipo: isGerente50ComSaldo ? 'Gerente 50%' : '2ª Comissão',
+        saldoDoSupabase,
+        saldoParaCalcular,
+        coletas
+      });
+    }
+    
+    // ============================================
+    // REGRA ESPECIAL: Gerentes com 2ª comissão
+    // ============================================
+    // - Saldo acumula a BASE configurada (COLETAS ou COLETAS-DESPESAS)
+    // - Comissão 1: Só paga quando saldo a carregar = 0
+    // - Comissão 2: Paga sempre que a base > 0
+    // - Se base ≤ 0: Não paga nenhuma comissão, acumula no saldo
+    // ============================================
+    
+    if (temSegundaComissao) {
+      // ============================================
+      // ✅ REGRA CORRIGIDA: respeita baseCalculo do gerente
+      // - Base do gerente = COLETAS ou COLETAS - DESPESAS (padrão)
+      // - Base > Saldo: Paga com1 + com2 sobre (Base - Saldo), zera saldo
+      // - Base <= Saldo e Base > 0: Paga só com2 sobre Base, reduz saldo
+      // - Base <= 0: Não paga nada, aumenta saldo
+      // ============================================
+      
+      const saldoAnterior = saldoParaCalcular || 0;
+      let novoSaldo = 0;
+      
+      // ✅ Base usada pra comparar com saldo segue a configuração do gerente
+      // Default: COLETAS - DESPESAS (cobre 'COLETAS_MENOS_DESPESAS' e 'COLETAS_DESPESAS')
+      const baseParaSaldo = baseCalculo === 'COLETAS' 
+        ? coletas 
+        : (coletas - despesasTot);
+      
+      if (baseParaSaldo <= 0) {
+        // Base negativa ou zero: não paga nenhuma comissão, aumenta saldo
+        valorComissao1 = 0;
+        valorComissao2 = 0;
+        baseComissao = 0;
+        novoSaldo = saldoAnterior + Math.abs(baseParaSaldo);
+        
+      } else if (baseParaSaldo > saldoAnterior) {
+        // Base MAIOR que saldo: paga comissões
+        // - Comissão 1: sobre (Base - Saldo)
+        // - Comissão 2: sobre (Base - Comissão1)
+        const baseParaComissao = baseParaSaldo - saldoAnterior;
+        baseComissao = baseParaComissao;
+        valorComissao1 = baseParaComissao * (perc1 / 100);
+        
+        // ✅ Comissão 2 sobre (Base - Comissão1); se com1 = 0, é sobre a Base inteira
+        const baseParaComissao2 = valorComissao1 > 0 ? (baseParaSaldo - valorComissao1) : baseParaSaldo;
+        valorComissao2 = baseParaComissao2 * (perc2 / 100);
+        novoSaldo = 0;
+        
+      } else {
+        // Base MENOR ou IGUAL ao saldo: só paga com2 sobre a Base, reduz saldo
+        baseComissao = 0;
+        valorComissao1 = 0;
+        valorComissao2 = baseParaSaldo * (perc2 / 100);
+        novoSaldo = saldoAnterior - baseParaSaldo;
+      }
+      
+      // Resultado = Coletas - Despesas - Comissões
+      resultado = coletas - despesasTot - valorComissao1 - valorComissao2;
+      
+      // Calcula a base usada para comissão 2 (para exibição)
+      const baseComissao2Usada = valorComissao1 > 0 ? (baseParaSaldo - valorComissao1) : baseParaSaldo;
+      
+      console.log('📊 [SaldoAcumulado] Gerente com 2ª comissão - Cálculo:', {
+        coletas,
+        despesasTot,
+        baseCalculo,
+        baseParaSaldo,
+        saldoAnterior,
+        novoSaldo,
+        baseComissao,
+        perc1: perc1 + '%',
+        valorComissao1,
+        baseParaComissao2: baseComissao2Usada,
+        perc2: perc2 + '%',
+        valorComissao2,
+        resultado,
+        regra: baseParaSaldo > saldoAnterior ? 'Base > Saldo: Com1+Com2 sobre excedente' : 
+               baseParaSaldo > 0 ? 'Base <= Saldo: Com2 = ' + perc2 + '% da Base' : 'Base <= 0: não paga nada'
+      });
+      
+      // ✅ IMPORTANTE: Define saldoInfo para que o salvamento atualize o Supabase
+      prestacaoAtual.saldoInfo = {
+        saldoCarregarAnterior: saldoAnterior,
+        saldoCarregarNovo: novoSaldo,
+        usandoSaldoAcumulado: true,  // ← ESSENCIAL para atualizar Supabase
+        regraEspecial: 'SEGUNDA_COMISSAO',
+        baseComissaoCalculada: baseComissao
+      };
+      
+      prestacaoAtual.resumo = {
+        ...(prestacaoAtual.resumo || {}),
+        saldoNegAcarreado: novoSaldo,
+        saldoAnterior: saldoAnterior,           // ✅ Saldo ANTES de aplicar essa prestação
+        baseParaSaldo: baseParaSaldo,           // ✅ Base efetiva (coletas-despesas ou coletas)
+        baseComissao: baseComissao,
+        usandoSegundaComissaoComSaldo: true     // ✅ Flag para renderização correta
+      };
+      
+      console.log('📊 [SaldoAcumulado] saldoInfo definido:', prestacaoAtual.saldoInfo);
+      console.log('📊 [SaldoAcumulado] resumo.saldoNegAcarreado:', novoSaldo);
+      
+    } else if (isGerente50ComSaldo) {
+      // ============================================
+      // REGRA ESPECIAL PARA GERENTES 50% COM SALDO ACUMULADO:
+      // - Resultado NEGATIVO: Não paga comissão, METADE do negativo vai para o banco
+      // - Resultado POSITIVO: 
+      //   - Se saldo > 0: desconta do saldo, paga 50% sobre o que sobrar
+      //   - Se saldo = 0: paga 50% normal
+      // ============================================
+      
+      const saldoAnterior = saldoParaCalcular || 0;
+      let novoSaldo = 0;
+      
+      // Resultado SEM comissão (coletas - despesas)
+      const resultadoSemComissao = coletas - despesasTot;
+      
+      if (resultadoSemComissao <= 0) {
+        // RESULTADO NEGATIVO: Não paga comissão, metade do negativo vai para o banco
+        valorComissao1 = 0;
+        valorComissao2 = 0;
+        baseComissao = 0;
+        resultado = resultadoSemComissao; // Mantém o negativo
+        
+        // METADE do valor negativo vai para o banco
+        novoSaldo = saldoAnterior + Math.abs(resultadoSemComissao) / 2;
+        
+        console.log('📊 [Gerente50%] Resultado NEGATIVO:', {
+          resultadoSemComissao,
+          metadeParaBanco: Math.abs(resultadoSemComissao) / 2,
+          saldoAnterior,
+          novoSaldo
+        });
+        
+      } else {
+        // RESULTADO POSITIVO: Calcula 50% e desconta do banco
+        
+        // ✅ NOVA REGRA: 50% do positivo é a "comissão virtual" que vai abater do banco
+        const comissaoVirtual = resultadoSemComissao * (perc1 / 100); // 50% do resultado
+        
+        if (saldoAnterior > 0) {
+          // Tem saldo no banco
+          
+          if (comissaoVirtual <= saldoAnterior) {
+            // Comissão virtual cabe no saldo: desconta do banco, não paga ao gerente
+            baseComissao = resultadoSemComissao;
+            valorComissao1 = 0; // Gerente não recebe (vai pro banco)
+            resultado = resultadoSemComissao; // Resultado integral (sem desconto de comissão)
+            novoSaldo = saldoAnterior - comissaoVirtual; // Desconta 50% do banco
+            
+            console.log('📊 [Gerente50%] Positivo com saldo: 50% vai pro banco:', {
+              resultadoSemComissao,
+              comissaoVirtual,
+              saldoAnterior,
+              descontoDoBanco: comissaoVirtual,
+              novoSaldo
+            });
+            
+          } else {
+            // Comissão virtual maior que saldo: zera banco e paga diferença ao gerente
+            const comissaoPagaAoGerente = comissaoVirtual - saldoAnterior;
+            baseComissao = resultadoSemComissao;
+            valorComissao1 = comissaoPagaAoGerente;
+            resultado = resultadoSemComissao - comissaoPagaAoGerente;
+            novoSaldo = 0;
+            
+            console.log('📊 [Gerente50%] Positivo zerou banco e sobrou:', {
+              resultadoSemComissao,
+              comissaoVirtual,
+              saldoAnterior,
+              comissaoPagaAoGerente,
+              novoSaldo
+            });
+          }
+          
+        } else {
+          // Sem saldo no banco: paga 50% normal ao gerente
+          baseComissao = resultadoSemComissao;
+          valorComissao1 = comissaoVirtual;
+          resultado = resultadoSemComissao - valorComissao1;
+          novoSaldo = 0;
+          
+          console.log('📊 [Gerente50%] Sem saldo: paga 50% normal:', {
+            resultadoSemComissao,
+            valorComissao1,
+            resultado
+          });
+        }
+      }
+      
+      valorComissao2 = 0; // Gerente 50% não tem 2ª comissão
+      
+      // Calcula quanto foi descontado do saldo (50% do positivo, limitado ao saldo)
+      const comissaoVirtualParaDesconto = resultadoSemComissao > 0 ? resultadoSemComissao * (perc1 / 100) : 0;
+      const descontoSaldo = saldoAnterior > 0 ? Math.min(saldoAnterior, comissaoVirtualParaDesconto) : 0;
+      
+      // ✅ IMPORTANTE: Define saldoInfo para que o salvamento atualize o Supabase
+      prestacaoAtual.saldoInfo = {
+        saldoCarregarAnterior: saldoAnterior,
+        saldoCarregarNovo: novoSaldo,
+        usandoSaldoAcumulado: true,
+        regraEspecial: 'GERENTE_50_SALDO',
+        baseComissaoCalculada: baseComissao,
+        resultadoSemComissao: resultadoSemComissao,
+        descontoSaldo: descontoSaldo,
+        comissaoVirtual: comissaoVirtualParaDesconto
+      };
+      
+      prestacaoAtual.resumo = {
+        ...(prestacaoAtual.resumo || {}),
+        saldoNegAcarreado: novoSaldo,
+        saldoAnterior: saldoAnterior,
+        baseComissao: baseComissao,
+        resultadoSemComissao: resultadoSemComissao,
+        descontoSaldo: descontoSaldo,
+        comissaoVirtual: comissaoVirtualParaDesconto,
+        usandoSaldo50: true  // Flag para renderização
+      };
+      
+      console.log('📊 [Gerente50%] Resumo final:', {
+        coletas,
+        despesasTot,
+        resultadoSemComissao,
+        saldoAnterior,
+        novoSaldo,
+        baseComissao,
+        valorComissao1,
+        resultado
+      });
+      
+    } else {
+      // Gerentes SEM 2ª comissão: usa o módulo SaldoAcumulado normalmente
+      const calculoSaldo = await window.SaldoAcumulado.calcular({
+        gerenteId: g.uid,
+        empresaId: empresaAtual,
+        coletas: coletas,
+        despesas: despesasTot,
+        comissao: perc1,
+        comissao2: 0,
+        baseCalculo: baseCalculo,
+        saldoAnterior: saldoParaCalcular
+      });
+      
+      console.log('💰 [SaldoAcumulado] Resultado do cálculo:', calculoSaldo);
+
+      baseComissao   = Number(calculoSaldo.baseCalculo) || 0;
+      valorComissao1 = Number(calculoSaldo.valorComissao) || 0;
+      valorComissao2 = 0;
+      resultado = Number(calculoSaldo.resultadoFinal) || calculoSaldo.resultado;
+      
+      // Atualiza saldoInfo
+      const saldoNovoFinal = window.getSaldoParaUsar 
+        ? window.getSaldoParaUsar(calculoSaldo.saldoCarregarNovo)
+        : calculoSaldo.saldoCarregarNovo;
+
+      prestacaoAtual.saldoInfo = {
+        saldoCarregarAnterior: calculoSaldo.saldoCarregarAnterior,
+        saldoCarregarNovo: saldoNovoFinal,
+        saldoManualUsado: window.__saldoManualAtivo || false,
+        usandoSaldoAcumulado: true
+      };
+      
+      prestacaoAtual.resumo = {
+        ...(prestacaoAtual.resumo || {}),
+        saldoNegAcarreado: Number(saldoNovoFinal) || 0
+      };
+      
+      console.log('💰 Saldo Acumulado aplicado:', {
+        baseComissao,
+        valorComissao1,
+        resultado,
+        saldoAnterior: calculoSaldo.saldoCarregarAnterior,
+        saldoNovo: calculoSaldo.saldoCarregarNovo
+      });
+    }
+
+
+    
+  }else if (comissaoPorRotaPositiva) {
+    // MODELO 2: Comissão por rota positiva (MARCOS)
+    baseComissao = coletasPositivas;
+    valorComissao1 = (baseComissao * perc1) / 100;
+    resultado = coletas - valorComissao1 - despesasTot;
+    
+  } else {
+    // MODELO 3: Padrão ou Comissão 50%
+    
+    if (baseCalculo === 'COLETAS') {
+      // ✅ Comissão sobre COLETAS
+      // Só calcula se coletas for POSITIVO
+      if (coletas > 0) {
+        baseComissao = coletas;
+        valorComissao1 = (baseComissao * perc1) / 100;
+        resultado = coletas - valorComissao1 - despesasTot;
+      } else {
+        // Coletas negativas ou zero - NÃO calcula comissão
+        baseComissao = 0;
+        valorComissao1 = 0;
+        resultado = coletas - despesasTot;
+      }
+      
+    } else {
+      // ✅ Comissão sobre (COLETAS - DESPESAS)
+      baseComissao = coletas - despesasTot;
+      
+      // Se base negativa E comissão < 50%, NÃO calcula
+      if (baseComissao < 0 && perc1 < 50) {
+        valorComissao1 = 0;
+        resultado = baseComissao;
+      } else {
+        // Comissão 50% calcula SEMPRE (mesmo negativo)
+        valorComissao1 = (baseComissao * perc1) / 100;
+        resultado = baseComissao - valorComissao1;
+      }
+    }
+  }
+// ✅ FÓRMULA CORRETA: A Pagar = Resultado + Acréscimos - Crédito
+// Acréscimos = Deve Anterior + Adiantamento + Valor Extra + Vales Aplicados
+const totalAcrescimos = deveAnt + adiant + valorExtra + valePg;
+const aPagar = resultado + totalAcrescimos - credito;
+
+// ✅ FÓRMULA CORRETA: RESTAM = A Pagar - Pagamentos
+// Pagamentos = Normal + Adiantamento (não inclui vales pois já estão nos acréscimos)
+const restam = aPagar - (pagos + adiantPg) + pagamentosDivida;
+
+  // UI - Atualizar campos
+  const $ = function(id) { return document.getElementById(id); };
+  if($('pcResultado')) $('pcResultado').value = fmtBRL(resultado);
+  if($('pcPerc'))      $('pcPerc').value      = perc1 + '%' + (perc2 ? ' + ' + perc2 + '%' : '');
+  if($('pcPagar'))     $('pcPagar').value     = fmtBRL(aPagar);
+  if($('pcRestam'))    $('pcRestam').value    = fmtBRL(restam);
+
+  // ✅ ADICIONA COR VERMELHA SE NEGATIVO
+  if (restam < 0) {
+    $('pcRestam').style.color = '#b91c1c';
+    $('pcRestam').style.fontWeight = 'bold';
+  } else {
+    $('pcRestam').style.color = '';
+    $('pcRestam').style.fontWeight = '';
+  }
+
+  // snapshot completo
+  // ✅ PRESERVA as flags de saldo acumulado APENAS se o gerente atual usa essa regra
+  // Verifica se o gerente atual é 50% com saldo acumulado
+  const _gerenteAtual50 = prestacaoAtual.saldoInfo?.regraEspecial === 'GERENTE_50_SALDO';
+  
+  // ✅ Verifica se gerente atual usa regra de 2ª comissão COM saldo
+  const _gerenteAtual2comSaldo = prestacaoAtual.saldoInfo?.regraEspecial === 'SEGUNDA_COMISSAO';
+  
+  const _saldoFlags = {
+    // ✅ IMPORTANTE: Só preserva usandoSaldo50 se o gerente atual realmente usa essa regra
+    usandoSaldo50: _gerenteAtual50 && (prestacaoAtual.resumo?.usandoSaldo50 || false),
+    saldoAnterior: _gerenteAtual50 ? (prestacaoAtual.resumo?.saldoAnterior || 0) : 0,
+    descontoSaldo: _gerenteAtual50 ? (prestacaoAtual.resumo?.descontoSaldo || 0) : 0,
+    resultadoSemComissao: _gerenteAtual50 ? (prestacaoAtual.resumo?.resultadoSemComissao || 0) : 0,
+    comissaoVirtual: _gerenteAtual50 ? (prestacaoAtual.resumo?.comissaoVirtual || 0) : 0,
+    // ✅ NOVO: flags da regra de 2ª comissão com saldo
+    usandoSegundaComissaoComSaldo: _gerenteAtual2comSaldo,
+    saldoAnteriorCom2: _gerenteAtual2comSaldo ? (prestacaoAtual.saldoInfo?.saldoCarregarAnterior || 0) : 0,
+    baseParaSaldo: _gerenteAtual2comSaldo ? (prestacaoAtual.resumo?.baseParaSaldo || 0) : 0
+  };
+  
+  console.log('🔄 [Resumo] Flags de saldo:', { _gerenteAtual50, _saldoFlags });
+  
+  prestacaoAtual.resumo = {
+    coletas: coletas, 
+    coletasPos: coletasPositivas, 
+    valorExtra: valorExtra, 
+    adiant: adiant, 
+    deveAnt: deveAnt,
+    divida: divida, 
+    credito: credito,
+    despesas: despesasTot, 
+    resultado: resultado,
+    perc: perc1, 
+    perc2: perc2,
+    comissaoVal: valorComissao1 + valorComissao2, 
+    comis1: valorComissao1, 
+    comis2: valorComissao2,
+    baseComissao: baseComissao,
+    totalAcrescimos: totalAcrescimos,  // ✅ Adiciona total de acréscimos
+    aPagar: aPagar, 
+    pagos: pagos, 
+    restam: restam, 
+    baseColeta: coletas,
+    // ✅ FLAGS DE SALDO ACUMULADO PRESERVADAS
+    usandoSaldo50: _saldoFlags.usandoSaldo50,
+    saldoAnterior: _saldoFlags.saldoAnterior,
+    descontoSaldo: _saldoFlags.descontoSaldo,
+    resultadoSemComissao: _saldoFlags.resultadoSemComissao,
+    comissaoVirtual: _saldoFlags.comissaoVirtual,
+    // ✅ NOVO: Flags da regra de 2ª comissão com saldo
+    usandoSegundaComissaoComSaldo: _saldoFlags.usandoSegundaComissaoComSaldo,
+    saldoAnteriorCom2: _saldoFlags.saldoAnteriorCom2,
+    baseParaSaldo: _saldoFlags.baseParaSaldo,
+resultadoSemana: coletas - despesasTot,
+// saldo negativo acumulado que já existia ANTES dessa prestação
+negAnterior: (
+  (prestacaoAtual.resumo && Number(prestacaoAtual.resumo.deveAnt || 0)) ||
+  0
+),
+// saldo que vai ficar para a PRÓXIMA prestação
+saldoNegAcarreado: (function() {
+  // Prioridade 1: saldoInfo.saldoCarregarNovo (set pelo bloco de saldo acumulado)
+  if (prestacaoAtual.saldoInfo && prestacaoAtual.saldoInfo.saldoCarregarNovo !== undefined) {
+    return Number(prestacaoAtual.saldoInfo.saldoCarregarNovo);
+  }
+  // Prioridade 2: resumo.saldoNegAcarreado existente
+  if (prestacaoAtual.resumo && prestacaoAtual.resumo.saldoNegAcarreado !== undefined) {
+    return Number(prestacaoAtual.resumo.saldoNegAcarreado);
+  }
+  return 0;
+})(),
+adiantPg: adiantPg,
+totalColetasLista: coletas, 
+totalVales: valePg,
+flags: { 
+  porRota: comissaoPorRotaPositiva, 
+  sequencial: false,
+  temSegundaComissao: temSegundaComissao,
+  baseCalculo: baseCalculo
+}
+  };
+}
+// Atualiza estilo visual dos campos monetários
+function atualizarEstilosMonetarios() {
+  const restamEl = document.getElementById('pcRestam');
+  if (!restamEl) return;
+  
+  const valor = String(restamEl.value || '').replace(/[^\d,-]/g, '').replace(',', '.');
+  const num = parseFloat(valor) || 0;
+  
+  if (num < 0) {
+    restamEl.classList.add('valor-negativo');
+    restamEl.classList.remove('valor-positivo');
+  } else if (num > 0) {
+    restamEl.classList.add('valor-positivo');
+    restamEl.classList.remove('valor-negativo');
+  } else {
+    restamEl.classList.remove('valor-negativo', 'valor-positivo');
+  }
+}
+
+// ===== CRIAR PENDÊNCIA DE PAGAMENTO (quando empresa deve ao gerente) =====
+async function criarPendenciaPagamento(prestacao) {
+  try {
+    // ✅ BUSCA LANÇAMENTOS JÁ CONFIRMADOS (não deve recriar pendências para eles)
+    const lancamentos = window.lanc || window.__getLanc?.() || [];
+    const confirmadosUIDs = new Set(
+      lancamentos
+        .map(l => l?.meta?.fromUID)
+        .filter(Boolean)
+    );
+    
+    // ✅ REMOVE APENAS PENDÊNCIAS AINDA NÃO CONFIRMADAS
+    let todasPendencias = __getPendencias();
+    todasPendencias = todasPendencias.filter(p => {
+      // Se não é desta prestação, mantém
+      if (p.prestId !== prestacao.id) return true;
+      
+      // Se já foi confirmado (existe lançamento), mantém a pendência confirmada
+      // (ela será removida naturalmente pelo sistema de confirmação)
+      if (confirmadosUIDs.has(p.uid) || confirmadosUIDs.has(p.altUID)) {
+        console.log('⚠️ Mantendo pendência já confirmada:', p.uid);
+        return true;
+      }
+      
+      // Remove pendências não confirmadas (serão recriadas se necessário)
+      return false;
+    });
+    __setPendencias(todasPendencias);
+
+    // ✅ NOVO: Só cria pendência dos pagamentos do tipo "DIVIDA_PAGA"
+    const pagamentosDivida = (prestacao.pagamentos || [])
+      .filter(p => String(p.forma || '').toUpperCase() === 'DIVIDA_PAGA');
+    
+    // Se não tem pagamento de dívida, não cria pendência
+    if (!pagamentosDivida.length) {
+      console.log('ℹ️ Sem pagamentos de dívida para criar pendência');
+      return;
+    }
+    
+    // Busca dados do gerente (pode ser por id ou uid)
+    const g = (window.gerentes || []).find(x =>
+      x.uid === prestacao.gerenteId || x.id === prestacao.gerenteId
+    );
+    const gerenteNome = g?.nome || prestacao.gerenteNome || 'Gerente desconhecido';
+
+    // ✅ Descobre a EMPRESA da prestação (via gerente) — evita gravar no caixa errado
+    // quando o usuário está logado em outra empresa no momento do save/close.
+    let empresaNome = null;
+    try {
+      const empId = g?.empresa_id;
+      if (empId && window.SupabaseAPI?.client) {
+        const { data } = await window.SupabaseAPI.client
+          .from('empresas')
+          .select('nome')
+          .eq('id', empId)
+          .maybeSingle();
+        empresaNome = data?.nome || null;
+      }
+    } catch(e) {
+      console.warn('[criarPendenciaPagamento] Não conseguiu resolver empresa do gerente:', e);
+    }
+    // Fallback: se nao achou pelo gerente, usa a empresa ativa
+    if (!empresaNome) empresaNome = window.getCompany?.() || 'BSX';
+    console.log('[criarPendenciaPagamento] Empresa da prestação:', empresaNome, 'gerente:', gerenteNome);
+    
+    // Cria uma pendência para CADA pagamento de dívida
+    const pendencias = __getPendencias();
+    let criadas = 0;
+    
+for (const pag of pagamentosDivida) {
+  const valorPagamento = Number(pag.valor) || 0;
+  if (valorPagamento <= 0) continue;  // ✅ era 'return'
+  
+  // UID único para este pagamento
+  const uid = `DIVPAG:${prestacao.id}:${pag.id}:${valorPagamento}`;
+  
+  // ✅ VERIFICA SE JÁ FOI CONFIRMADO
+  if (confirmadosUIDs.has(uid)) {
+    console.log('⚠️ Pagamento já confirmado, não recria:', uid);
+    continue;  // ✅ era 'return'
+  }
+  
+  // Verifica se já existe pendência
+  const jaExiste = pendencias.some(p => p.uid === uid);
+  if (jaExiste) {
+    console.log('⚠️ Pendência já existe para este pagamento');
+    continue;  // ✅ era 'return'
+  }
+      
+      // Cria pendência
+const novaPendencia = {
+  id: (crypto?.randomUUID ? crypto.randomUUID() : 'pend_' + Date.now() + '_' + Math.random()),
+  uid: `DIVPAG:${prestacao.id}:${pag.id}:${valorPagamento}`,
+  prestId: prestacao.id,
+  gerenteId: prestacao.gerenteId,
+  gerenteNome: gerenteNome,
+  data: pag.data || prestacao.fim || prestacao.ini || new Date().toISOString().slice(0,10),
+  valorOriginal: valorPagamento,
+  valorConfirm: valorPagamento,
+  info: 'Dívida Prest. ' + (prestacao.ini||'').slice(5).split('-').reverse().join('/') +
+        '–' + (prestacao.fim||'').slice(5).split('-').reverse().join('/') +
+        (pag.obs ? ' - ' + pag.obs : ''),
+  forma: 'PIX',
+  status: 'PENDENTE',
+  edited: false,
+  createdAt: new Date().toISOString(),
+
+  // ✅ CRÍTICO: Estes dois campos determinam onde aparece!
+  tipoCaixa: 'PAGO',    // ← Define que é PAGAMENTO
+  tipo: 'PAGAR',        // ← Confirma que é PAGAMENTO
+
+  // ✅ CRÍTICO: Empresa da prestação (via gerente), não da empresa ativa
+  company: empresaNome
+};
+      
+// ✅ SALVA NO SUPABASE
+if (window.PendenciasAPI?.create) {
+  await window.PendenciasAPI.create(novaPendencia);
+} else {
+  pendencias.push(novaPendencia);
+}
+criadas++;
+
+console.log('✅ Pendência de dívida criada:', valorPagamento);
+}
+
+if (criadas > 0) {
+// Recarrega do Supabase
+if (window.__getPendenciasAsync) {
+  await window.__getPendenciasAsync();
+} else {
+  __setPendencias(pendencias);
+}
+      
+      // Atualiza interface do financeiro
+      try {
+        if (typeof window.renderFinPendencias === 'function') {
+          window.renderFinPendencias();
+        }
+      } catch(e) {
+        console.warn('Erro ao atualizar interface financeiro:', e);
+      }
+      
+      return criadas;
+    }
+    
+  } catch(e) {
+    console.error('Erro ao criar pendência de pagamento:', e);
+  }
+}
+
+// ✅ ADICIONA A FUNÇÃO __negMakeUID SE NÃO EXISTIR
+window.__negMakeUID = window.__negMakeUID || function(prest, valorAbs){
+  const pid  = prest?.id ?? 'prest';
+  const data = prest?.fim || prest?.ini || '';
+  const v    = Number(valorAbs)||0;
+  // estável e independente de índice
+  const stable = `NEG:${pid}|D:${data}|V:${v.toFixed(2)}`;
+  // legado (compatibilidade)
+  const legacy = `prest:saida:${pid}:${data}:${v}`;
+  return { stable, legacy };
+};
+// ===== FUNÇÕES AUXILIARES DE DESENHO NO CANVAS =====
+
+// Desenha texto no canvas
+function drawText(ctx, text, x, y, align = 'left') {
+  if (!ctx) return;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(text || ''), x, y);
+}
+
+// Desenha par chave-valor
+function drawKV(ctx, x, y, w, key, value, opts = {}) {
+  const fontSize = opts.size || 14;
+  const bold = opts.bold ? 'bold ' : '';
+  const color = opts.color || '#000';
+  const valueColor = opts.valueColor || color;
+  
+  ctx.font = `${bold}${fontSize}px Arial`;
+  
+  // Chave (esquerda)
+  ctx.fillStyle = color;
+  ctx.textAlign = 'left';
+  ctx.fillText(String(key || ''), x, y);
+  
+  // Valor (direita)
+  ctx.fillStyle = valueColor;
+  ctx.textAlign = 'right';
+  ctx.fillText(String(value || ''), x + w, y);
+  
+  return y + fontSize + (opts.spacing || 8);
+}
+
+// Versão 2 do drawKV (usada no código)
+function drawKV2(ctx, x, y, w, key, value, opts = {}) {
+  return drawKV(ctx, x, y, w, key, value, opts);
+}
+
+// Desenha cabeçalho de grupo
+function drawGroup(ctx, x, y, w, title, fontSize = 16) {
+  const h = fontSize + 12;
+  
+  // Fundo cinza
+  ctx.fillStyle = '#f3f4f6';
+  ctx.fillRect(x, y, w, h);
+  
+  // Borda
+  ctx.strokeStyle = '#d1d5db';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, w, h);
+  
+  // Texto
+  ctx.fillStyle = '#111827';
+  ctx.font = `bold ${fontSize}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(title, x + w/2, y + h/2);
+  
+  return y + h;
+}
+
+// Desenha linha horizontal
+function drawLine(ctx, x1, y, x2, color = '#000', width = 1) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.moveTo(x1, y);
+  ctx.lineTo(x2, y);
+  ctx.stroke();
+}
+
+// ==== PRESTAÇÕES: helpers de desenho (restaurados do backup) ====
+(function(){
+  const _g = window;
+
+  // padding vertical entre grupos (compatível com "groupPad" do backup)
+  const GROUP_PAD = 8;
+  Object.defineProperty(_g, 'groupPad', { value: GROUP_PAD, writable: false });
+
+  _g.drawText = function drawText(ctx, txt, x, y, align = 'left') {
+    ctx.textAlign = align || 'left';
+    ctx.fillText(String(txt ?? ''), x, y);
+  };
+
+  _g.drawGroup = function drawGroup(ctx, x, y, w, title, size = 20) {
+    const h = size + 14;
+    ctx.fillStyle = '#111';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + size + 'px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText(String(title || ''), x + 12, y + Math.round(h * 0.7));
+    ctx.fillStyle = '#000';
+    return y + h + GROUP_PAD;
+  };
+
+  _g.drawKV2 = function drawKV2(ctx, x, y, w, key, value, opts = {}) {
+    const size = Number(opts.size) || 16;
+    const lh = Math.round(size * 1.6);
+    ctx.font = (opts.bold ? 'bold ' : '') + size + 'px Arial';
+
+    // chave à esquerda
+    ctx.textAlign = 'left';
+    ctx.fillStyle = opts.color || '#000';
+    ctx.fillText(String(key ?? ''), x, y + Math.round(lh * 0.7));
+
+    // valor à direita (pode ter cor diferente)
+    ctx.textAlign = 'right';
+    ctx.fillStyle = opts.valueColor || ctx.fillStyle;
+    ctx.fillText(String(value ?? ''), x + w, y + Math.round(lh * 0.7));
+
+    // volta cor padrão
+    ctx.fillStyle = '#000';
+    return y + lh;
+  };
+})();
+
+
+// Desenha o relatório direto no <canvas id="pcCanvas"> da tela atual 
+async function pcDesenharCanvas(){
+  const cvs = document.getElementById('pcCanvas');
+  if(!cvs){ return; }
+  if(!cvs.getContext){ alert('Seu navegador não suporta canvas.'); return; }
+  const ctx = cvs.getContext('2d');
+
+    // monta o "rec" atual a partir do formulário
+    const rec = await getPrestacaoFromForm();  // ✅ AGUARDA
+    const dataURL = (typeof window.prestToDataURL === 'function') 
+  ? window.prestToDataURL(rec) 
+  : null;
+
+if (!dataURL) {
+  console.error('[Relatórios] Não foi possível gerar imagem da prestação');
+  // Continua sem a imagem
+}
+  
+    const img = new Image();
+    img.onload = () => {
+      ctx.clearRect(0, 0, cvs.width, cvs.height);
+      // mantém proporção, ocupando toda a área
+      ctx.drawImage(img, 0, 0, cvs.width, cvs.height);
+    };
+    img.src = dataURL;
+  
+
+  // fundo/topo
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,cvs.width,cvs.height);
+  ctx.fillStyle='#ffe600'; ctx.fillRect(0,0,cvs.width,80);
+  ctx.fillStyle='#000'; ctx.font='bold 22px Arial';
+
+  const gidSel = document.getElementById('pcGerente')?.value || '';
+  const g = (window.gerentes || []).find(x=>String(x.uid||x.id)===String(gidSel));
+  const periodo = `${fmtData(document.getElementById('pcIni')?.value||'')} a ${fmtData(document.getElementById('pcFim')?.value||'')}`;
+  drawText(ctx, 'Gerente', 20, 50, 'left');
+  const coletorLinha = g ? (g.nome || '') : '';
+  drawText(ctx, coletorLinha, 120, 50, 'left');  
+  drawText(ctx, 'Período:', cvs.width/2, 25, 'center');
+  drawText(ctx, periodo, cvs.width/2, 55, 'center');
+
+  const gap = 20;
+  const leftX = 20, leftY = 100, leftW = Math.floor(cvs.width*0.58), leftH = cvs.height-leftY-40;
+  const rightX = leftX + leftW + gap, rightY = 100, rightW = cvs.width - rightX - 20, rightH = cvs.height-rightY-40;
+
+  // ===== TABELA DE DESPESAS (esquerda) =====
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth   = 2;
+  ctx.strokeRect(leftX, leftY, leftW, leftH);
+
+  const headerH = 30;
+  const col1W = Math.floor(leftW * 0.18);
+  const col3W = Math.floor(leftW * 0.20);
+  const col2W = leftW - col1W - col3W;
+
+  ctx.fillStyle = '#111';
+  ctx.fillRect(leftX, leftY, leftW, headerH);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 14px Arial';
+  ctx.textAlign = 'left';
+  ctx.fillText('FICHA', leftX + 8, leftY + 20);
+  ctx.fillText('INFORMAÇÕES', leftX + col1W + 8, leftY + 20);
+  ctx.textAlign = 'right';
+  ctx.fillText('VALOR', leftX + leftW - 8, leftY + 20);
+
+  ctx.beginPath();
+  ctx.moveTo(leftX, leftY + headerH);
+  ctx.lineTo(leftX + leftW, leftY + headerH);
+  ctx.moveTo(leftX + col1W, leftY);
+  ctx.lineTo(leftX + col1W, leftY + leftH);
+  ctx.moveTo(leftX + col1W + col2W, leftY);
+  ctx.lineTo(leftX + col1W + col2W, leftY + leftH);
+  ctx.stroke();
+
+  const bodyH  = leftH - headerH - 28;
+  const itens  = (prestacaoAtual.despesas || []);
+  const qtdLin = Math.max(itens.length, 1);
+
+  let rowH, fz;
+  if (qtdLin <= 27) { rowH = 32; fz = 16; }
+  else { rowH = Math.floor(bodyH / qtdLin); fz = Math.max(10, Math.floor(rowH * 0.60)); }
+
+  let y = leftY + headerH;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(leftX, y, leftW, bodyH);
+  ctx.clip();
+
+  itens.forEach(d => {
+    const ficha = String(d.ficha || '');
+    const info  = String(d.info  || '');
+    const valor = fmtBRL(Number(d.valor) || 0);
+
+    ctx.font = `${fz}px Arial`;
+    ctx.fillStyle = '#000';
+    ctx.textAlign = 'left';
+    ctx.fillText(ficha, leftX + 8, y + Math.round(rowH * 0.7));
+
+    const maxInfoW = col2W - 12;
+    let txt = info;
+    while (ctx.measureText(txt).width > maxInfoW && txt.length > 0) txt = txt.slice(0, -1);
+    if (txt !== info) txt = txt.slice(0, -1) + '…';
+    ctx.fillText(txt, leftX + col1W + 8, y + Math.round(rowH * 0.7));
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#b91c1c';
+    ctx.fillText(valor, leftX + col1W + col2W + col3W - 8, y + Math.round(rowH * 0.7));
+
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.beginPath();
+    ctx.moveTo(leftX, y + rowH - 2);
+    ctx.lineTo(leftX + leftW, y + rowH - 2);
+    ctx.stroke();
+
+    y += rowH;
+  });
+
+  ctx.restore();
+
+  ctx.font = 'bold 16px Arial';
+  ctx.fillStyle = '#000';
+  ctx.textAlign = 'left';
+  ctx.fillText('TOTAL DESPESAS:', leftX + 10, leftY + leftH - 12);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#b91c1c';
+  ctx.fillText(fmtBRL((prestacaoAtual.resumo || {}).despesas || 0), leftX + leftW - 10, leftY + leftH - 12);
+
+  // ===== COLUNA DIREITA (Resumo) =====
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(rightX, rightY, rightW, rightH);
+
+  // Variáveis do resumo
+  const r = prestacaoAtual.resumo || {};
+  
+  console.log('🎨 [PNG] Resumo para renderização:', {
+    usandoSaldo50: r.usandoSaldo50,
+    saldoAnterior: r.saldoAnterior,
+    saldoNegAcarreado: r.saldoNegAcarreado,
+    descontoSaldo: r.descontoSaldo,
+    baseComissao: r.baseComissao,
+    comis1: r.comis1,
+    perc: r.perc
+  });
+  
+  const coletas2 = Number(r.coletas) || 0;
+  const despesas2 = Number(r.despesas) || 0;
+  const perc2 = Number(r.perc) || 0;
+  const deveAnt2 = Number(r.deveAnt || 0);
+  const c1 = Number(r.comis1) || 0;
+  const c2 = Number(r.comis2) || 0;
+  const temSegundaComissao = c2 > 0;
+  
+// ============================================
+  // CÁLCULO DINÂMICO DE TAMANHOS
+  // ============================================
+  
+  // Contar itens em cada seção (variáveis temporárias para contagem)
+  const _pagtsCount = Array.isArray(rec.pagamentos) ? rec.pagamentos : [];
+  const _parcelasCount = Array.isArray(rec.valeParcAplicado) ? rec.valeParcAplicado : [];
+  const _coletasCount = Array.isArray(rec.coletas) ? rec.coletas : [];
+  
+  const numColetas = _coletasCount.length + 8; // coletas + totais + comissão + resultado
+  const numVales = _parcelasCount.length || (window.vales||[]).filter(v => v.gerenteId === rec.gerenteId && !v.quitado).length;
+  const numAcrescimos = 3 + numVales + 1; // Adiant + Deve + Extra + Vales + Total
+  const numPagamentos = _pagtsCount.filter(p => String(p.forma||'').toUpperCase() !== 'VALE').length;
+  const numResultado = 2 + numPagamentos + 2; // Crédito + À Pagar + Pagtos + RESTAM
+  
+  const totalItens = numColetas + numAcrescimos + numResultado;
+  const alturaDisponivel = rightH - 120; // Espaço disponível (descontando headers)
+  
+  // Calcular tamanho ideal baseado na quantidade de itens
+  const espacoPorItem = alturaDisponivel / Math.max(totalItens, 15);
+  
+  // Limites mínimo e máximo para os tamanhos
+  const R_GROUP = 18;
+  const R_BOLD = Math.max(12, Math.min(16, espacoPorItem * 0.7));
+  const R_LINE = Math.max(10, Math.min(14, espacoPorItem * 0.6));
+  const R_SUB = Math.max(9, Math.min(12, espacoPorItem * 0.5));
+  const groupPad = Math.max(4, Math.min(8, espacoPorItem * 0.3));
+  
+  // Espaçamento para itens de lista (vales, pagamentos)
+  const SPACING_ITEM = Math.max(2, Math.min(6, espacoPorItem * 0.25));
+  const SIZE_ITEM = Math.max(9, Math.min(12, espacoPorItem * 0.5));
+  const R_REST = Math.max(18, Math.min(24, espacoPorItem * 1.0));
+  
+  console.log('📐 Layout dinâmico:', { totalItens, espacoPorItem: espacoPorItem.toFixed(1), R_LINE, SIZE_ITEM, SPACING_ITEM });
+
+  // Inicializa posição Y da coluna direita
+  let ry = rightY + 10;
+
+
+// ========================================
+// SEQUÊNCIA PARA MODELO COM 2ª COMISSÃO
+// ========================================
+if (temSegundaComissao) {
+  // ✅ Verifica se está usando saldo acumulado (regra coletas-despesas)
+  const usandoSaldoCom2_b = r.usandoSegundaComissaoComSaldo === true;
+  const saldoAntCom2_b = Number(r.saldoAnteriorCom2 || 0);
+  const baseParaSaldo2_b = Number(r.baseParaSaldo || 0);
+  const saldoCarry2_b = Number(r.saldoNegAcarreado || 0);
+  
+  if (usandoSaldoCom2_b) {
+    // ============================================
+    // RENDERIZAÇÃO COM SALDO ACUMULADO (despesas saem primeiro)
+    // ============================================
+    
+    // 1. Coletas
+    ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', fmtBRL(coletas2), 
+                 { bold:true, size:R_BOLD });
+    
+    // 2. Despesas (PRIMEIRO descontadas)
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Despesas', fmtBRL(despesas2), 
+                 { valueColor:'#b91c1c', size:R_LINE });
+    
+    // 3. Total (Coletas - Despesas) = BASE
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Total (Coletas - Despesas)', 
+                 fmtBRL(baseParaSaldo2_b), 
+                 { bold:true, color:'#16a34a', valueColor:'#16a34a', size:R_BOLD });
+    
+    // 4. Saldo Anterior (do banco)
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo Anterior', 
+                 fmtBRL(saldoAntCom2_b), 
+                 { valueColor:'#b91c1c', size:R_LINE });
+    
+    // 5. Comissão 1
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+      'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+      fmtBRL(c1),
+      { valueColor:'#16a34a', size: R_LINE }
+    );
+    
+    // 6. Comissão 2
+    const rotB = r?.flags?.sequencial ? 'Comissão 2 (seq.)' : 'Comissão 2';
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+      rotB + ' (' + (Number(r.perc2)||0) + '%)',
+      fmtBRL(c2),
+      { valueColor:'#16a34a', size: R_LINE }
+    );
+    
+    // 7. Saldo a Carregar (novo)
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo a Carregar', 
+                 fmtBRL(saldoCarry2_b), 
+                 { valueColor:'#b91c1c', bold:true, size:R_LINE });
+    
+    // 8. Resultado FINAL
+    const resultadoFinalB = baseParaSaldo2_b - c1 - c2;
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', fmtBRL(resultadoFinalB),
+                 { bold:true, size:R_BOLD });
+    
+  } else {
+    // ============================================
+    // SEM SALDO ACUMULADO (sequência antiga)
+    // ============================================
+    
+    // 1. Coletas
+    ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', fmtBRL(coletas2), 
+                 { bold:true, size:R_BOLD });
+    
+    // 2. Base Comissão
+    const baseComissao2 = Number(r.baseComissao || coletas2);
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Base Comissão', fmtBRL(baseComissao2), 
+                 { color:'#16a34a', valueColor:'#16a34a', size:R_LINE });
+    
+    // 3. Comissão 1
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+      'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+      fmtBRL(c1),
+      { valueColor:'#16a34a', size: R_LINE }
+    );
+    
+    // 4. Resultado (Coletas - Com. 1)
+    const resIntermediario = coletas2 - c1;
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+      'Resultado (Coletas - Com. 1)',
+      fmtBRL(resIntermediario),
+      { size: R_LINE }
+    );
+    
+    // 5. Comissão 2
+    const rotB2 = r?.flags?.sequencial ? 'Comissão 2 (seq.)' : 'Comissão 2';
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+      rotB2 + ' (' + (Number(r.perc2)||0) + '%)',
+      fmtBRL(c2),
+      { valueColor:'#16a34a', size: R_LINE }
+    );
+    
+    // 6. Despesas
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Despesas', fmtBRL(despesas2), 
+                 { valueColor:'#b91c1c', size:R_LINE });
+    
+    // 7. Total
+    const totalIntermediario = coletas2 - despesas2 - c1 - c2;
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 
+      'Total (Coletas - Despesas - Comissões)', 
+      fmtBRL(totalIntermediario), 
+      { bold:true, size:R_BOLD }
+    );
+    
+    // 8. Resultado
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', fmtBRL(totalIntermediario),
+                 { bold:true, size:R_BOLD });
+  }
+
+} 
+// ========================================
+// SEQUÊNCIA PARA MODELOS SEM 2ª COMISSÃO
+// ========================================
+else {
+  // Modelo padrão ou por rota positiva
+  const _resColetas2 = coletas2 - despesas2;
+  const showNeg2 = perc2 > 0 && perc2 < 50;  // ✅ CORREÇÃO: definir showNeg2 neste bloco
+  
+  // ✅ VERIFICA SE É GERENTE 50% COM SALDO ACUMULADO
+  const usandoSaldo50 = r.usandoSaldo50 === true;
+  const saldoAnterior50 = Number(r.saldoAnterior || 0);
+  const descontoSaldo50 = Number(r.descontoSaldo || 0);
+  const saldoNovo50 = Number(r.saldoNegAcarreado || 0);
+  const baseComissao50 = Number(r.baseComissao || 0);
+  const comissaoVirtual50 = Number(r.comissaoVirtual || 0);
+  
+  ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', fmtBRL(coletas2),
+               { bold:true, size:R_BOLD });
+  
+  ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Despesas', fmtBRL(despesas2), 
+               { bold:true, valueColor:'#b91c1c', size:R_LINE });
+  
+  ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Total (Coletas - Despesas)', 
+               fmtBRL(_resColetas2), { bold:true, size:R_BOLD });
+
+  // ========================================
+  // GERENTE 50% COM SALDO ACUMULADO
+  // ========================================
+  if (usandoSaldo50) {
+    // Saldo Anterior (do banco)
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo Anterior (banco)', fmtBRL(saldoAnterior50), 
+                 { valueColor:'#b91c1c', size:R_LINE });
+    
+    // Comissão 50% calculada (valor que seria a comissão)
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 
+      'Comissão 50% (calculada)',
+      fmtBRL(comissaoVirtual50),
+      { valueColor:'#6b7280', size: R_LINE }
+    );
+    
+    // Desconto do Saldo (quanto efetivamente foi descontado do banco)
+    if (descontoSaldo50 > 0) {
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Abatido do Banco', '- ' + fmtBRL(descontoSaldo50), 
+                   { valueColor:'#16a34a', size:R_LINE });
+    }
+    
+    // Novo Saldo (no banco)
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Novo Saldo (banco)', fmtBRL(saldoNovo50), 
+                 { valueColor:'#b91c1c', bold: true, size:R_LINE });
+    
+    // Comissão efetivamente paga ao gerente (pode ser 0 se foi pro banco)
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+      'Comissão Paga',
+      fmtBRL(c1),
+      { valueColor:'#16a34a', size: R_LINE }
+    );
+    
+    // Resultado = (Coletas - Despesas) - Comissão Paga
+    const resultadoFinal = _resColetas2 - c1;
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', fmtBRL(resultadoFinal),
+                 { bold:true, size:R_BOLD });
+  }
+  // Se tem modo antigo (com carry de negativo)
+  else if (showNeg2) {
+    const baseComissao2 = Number(r.baseComissao || r.comissaoBase || 0);
+    const saldoCarry2   = Number(r.saldoNegAcarreado || 0);
+
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Base Comissão', fmtBRL(baseComissao2), 
+                 { color:'#16a34a', valueColor:'#16a34a', size:R_LINE });
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo a Carregar', fmtBRL(saldoCarry2), 
+                 { valueColor:'#b91c1c', size:R_LINE });
+
+    // Se tem comissão (mesmo sem ser 2ª)
+    if (c1 > 0) {
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+        'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+        fmtBRL(c1),
+        { valueColor:'#16a34a', size: R_LINE }
+      );
+    }
+
+    // Resultado = (Coletas - Despesas) - Comissão (SEM deve anterior)
+    const resultadoFinal = _resColetas2 - c1;
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', fmtBRL(resultadoFinal),
+                 { bold:true, size:R_BOLD });
+  }
+  else {
+    // Modelo padrão sem saldo acumulado
+    // Se tem comissão (mesmo sem ser 2ª)
+    if (c1 > 0) {
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+        'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+        fmtBRL(c1),
+        { valueColor:'#16a34a', size: R_LINE }
+      );
+    }
+
+    // Resultado = (Coletas - Despesas) - Comissão (SEM deve anterior)
+    const resultadoFinal = _resColetas2 - c1;
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', fmtBRL(resultadoFinal),
+                 { bold:true, size:R_BOLD });
+  }
+}
+
+// ---- ACRÉSCIMOS ---- (PARA TODOS OS MODELOS)
+ry += groupPad;
+ry = drawGroup(ctx, rightX, ry + 6, rightW, 'ACRÉSCIMOS', R_GROUP);
+ry += groupPad;
+ctx.fillStyle = '#fff';
+ctx.fillRect(rightX + 1, ry - Math.ceil(groupPad / 2), rightW - 2, 2000);
+
+// Lista os itens individuais
+ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Adiantamento', fmtBRL(r.adiant), 
+             { valueColor:'#b91c1c', size: R_LINE, spacing: SPACING_ITEM });
+
+ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Deve Anterior', fmtBRL(deveAnt2),
+             { valueColor:'#b91c1c', size: R_LINE, spacing: SPACING_ITEM });
+
+ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Valor Extra', fmtBRL(r.valorExtra), 
+             { valueColor:'#b91c1c', size: R_LINE, spacing: SPACING_ITEM });
+
+// VALES
+const iniPNG = rec.ini || '';
+const fimPNG = rec.fim || '';
+const gidPNG = rec.gerenteId || '';
+const parcelasVale = Array.isArray(rec.valeParcAplicado) ? rec.valeParcAplicado : [];  // ✅ Esta é a declaração correta
+const aplicadoPorId = new Map(parcelasVale.map(function(p) { 
+  return [p.id, Number(p.aplicado)||0]; 
+}));
+
+const saldoDepoisPorVale = (function() {
+  try {
+    if (!gidPNG || !iniPNG || !fimPNG) return new Map();  // ← usar gidPNG
+    const todos = (window.valesLog?.list({gerenteId: gidPNG}) || [])  // ← usar gidPNG
+      .filter(function(ev) { return ev.periodoIni === iniPNG && ev.periodoFim === fimPNG; });
+    const m = new Map();
+    todos.forEach(function(ev) { m.set(ev.valeId, Number(ev.saldoDepois)||0); });
+    return m;
+  } catch(e) { return new Map(); }
+})();
+
+const itensVale = parcelasVale.length
+  ? parcelasVale.map(function(p) { return { id:p.id, cod:p.cod, aplicado: aplicadoPorId.get(p.id)||0 }; })
+  : (window.vales||[]).filter(function(v) { return v.gerenteId===gidPNG && !v.quitado; })  // ← usar gidPNG
+                       .map(function(v) { return { id:v.id, cod:v.cod, aplicado: aplicadoPorId.get(v.id)||0 }; });
+
+let totalVales = 0;
+itensVale.forEach(function(p) {
+  const v = (window.vales||[]).find(function(x) { return x.id===p.id; });
+  const codTxt = v?.cod || p.cod || '—';
+  const aplicado = Number(p.aplicado)||0;
+  totalVales += aplicado;
+
+  const saldoLabel = saldoDepoisPorVale.has(p.id)
+    ? saldoDepoisPorVale.get(p.id)
+    : Math.max((Number(v?.valor)||0) - aplicado, 0);
+
+    const rotulo = 'VALE ' + codTxt + ': ' + fmtBRL(saldoLabel);
+    ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, rotulo, fmtBRL(Math.abs(aplicado)),
+                 { valueColor:'#b91c1c', size: SIZE_ITEM, spacing: SPACING_ITEM });
+  });
+
+// ✅ TOTAL ACRÉSCIMOS (Deve Anterior + Adiantamento + Valor Extra + Vales)
+const totalAcrescimos = (Number(r.adiant)||0) + deveAnt2 + (Number(r.valorExtra)||0) + totalVales;
+
+ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Total Acréscimos', fmtBRL(totalAcrescimos),
+             { bold:true, valueColor:'#b91c1c', size: R_BOLD });
+
+// listas de pagamentos (usa _pagtsCount já declarado)
+const adiantamentos = _pagtsCount
+  .filter(function(p) { return String(p.forma||'').toUpperCase() === 'ADIANTAMENTO'; })
+  .sort(function(a,b) { return (a.data||'').localeCompare(b.data||''); });
+
+const pagamentosNormais = _pagtsCount
+  .filter(function(p) {
+    const f = String(p.forma||'').toUpperCase();
+    return f !== 'ADIANTAMENTO' && f !== 'VALE';
+  })
+  .sort(function(a,b) { return (a.data||'').localeCompare(b.data||''); });
+// ---- RESULTADO ----
+ry += groupPad;
+ry = drawGroup(ctx, rightX, ry + 6, rightW, 'RESULTADO', R_GROUP);
+ry += groupPad;
+
+ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Crédito', fmtBRL(r.credito),
+             { bold:true, color:'#16a34a', valueColor:'#16a34a', size: R_LINE });
+
+// À Pagar = Resultado das Coletas + Total Acréscimos - Crédito
+let resultadoColetas = 0;
+if (temSegundaComissao) {
+  resultadoColetas = coletas2 - despesas2 - c1 - c2;
+} else {
+  resultadoColetas = (coletas2 - despesas2) - c1;  // ✅ CORREÇÃO: usar cálculo direto
+}
+
+const aPagarCalc = Number(r.aPagar) || 0;  
+
+ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'À Pagar', fmtBRL(aPagarCalc),
+             { bold:true, size: R_BOLD });
+
+// ADIANTAMENTOS / PAGAMENTOS
+adiantamentos.forEach(function(p) {
+  const rot = fmtData(p.data||'') + ' — ADIANTAMENTO';
+  ry = drawKV2(ctx, rightX+26, ry, rightW-52, rot, fmtBRL(Number(p.valor)||0),
+               { color:'#16a34a', valueColor:'#16a34a', size: SIZE_ITEM, spacing: SPACING_ITEM });
+});
+
+pagamentosNormais.forEach(function(p) {
+  const forma = (p.forma || '').toString().toUpperCase() || 'PAGTO';
+  const rot = fmtData(p.data||'') + ' — ' + forma;
+  ry = drawKV2(ctx, rightX+12, ry, rightW-24, rot, fmtBRL(Number(p.valor)||0),
+               { color:'#16a34a', valueColor:'#16a34a', size: SIZE_ITEM, spacing: SPACING_ITEM });
+});
+
+
+// RESTAM (com cor diferente se negativo)
+const restamValor = Number(r.restam) || 0;
+const restamCor = restamValor < 0 ? '#b91c1c' : '#111'; // Vermelho se negativo
+const restamTexto = restamValor < 0 
+  ? '(EMPRESA DEVE AO GERENTE)' 
+  : '';
+
+ctx.font = 'bold ' + R_REST + 'px Arial';
+ctx.fillStyle = restamCor;
+ctx.textAlign = 'left';  
+ctx.fillText('RESTAM:', rightX+12, ry+32);
+ctx.textAlign = 'right'; 
+ctx.fillText(fmtBRL(restamValor), rightX+rightW-12, ry+32);
+
+// Adiciona aviso se negativo
+if (restamTexto) {
+  ry += 32;
+  ctx.font = 'bold 14px Arial';
+  ctx.fillStyle = '#b91c1c';
+  ctx.textAlign = 'center';
+  ctx.fillText(restamTexto, rightX + rightW/2, ry + 20);
+};
+}
+
+// Garante migrar parcelas de VALE a partir da lista de pagamentos da prestação
+function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
+  const out = [];
+  try {
+    const list = Array.isArray(arrPag)
+      ? arrPag
+      : (Array.isArray(arrPag?.lista) ? arrPag.lista : []);
+
+    list.forEach(p => {
+      const forma = String(p.forma || '').toUpperCase();
+      if (forma !== 'VALE') return;
+
+      // ✅ CORREÇÃO: Primeiro tenta valeId, depois busca pelo código
+      let valeId = p.valeId || null;
+      let cod = p.cod || p.codigo || p.obs || '';
+      
+      // Se não tem valeId mas tem código, busca o vale correto
+      if (!valeId && cod) {
+        const ref = String(cod).trim();
+        const valeEncontrado = (window.vales || []).find(v =>
+          v.gerenteId === gerenteId && 
+          !v.quitado && 
+          String(v.cod || '').trim() === ref
+        );
+        if (valeEncontrado) {
+          valeId = valeEncontrado.id;
+          cod = valeEncontrado.cod || cod;
+        }
+      }
+      
+      const apl = Number(p.valor) || 0;
+
+      if (!valeId || !apl) return;
+      
+      // ✅ Evita duplicatas
+      const existente = out.find(x => x.id === valeId);
+      if (existente) {
+        existente.aplicado += apl;
+      } else {
+        out.push({ id: valeId, cod, aplicado: apl, gerenteId: gerenteId || '' });
+      }
+    });
+  } catch (e) {
+    console.warn('__backfillValeParcFromPagamentos: falha ao migrar', e);
+  }
+  return out;
+}
+
+
+
+/* =================== /RELATÓRIO NO CANVAS =================== */
+
+(function() {
+  const btn = document.getElementById('btnPcSalvar');
+  if (!btn || btn.__pcWired) return;
+  btn.__pcWired = true;
+  
+  addPcListener(btn, 'click', async function() {
+    // ✅ PROTEÇÃO CONTRA DUPLO CLIQUE
+    if (window.__isSavingPrestacao) {
+      console.warn('⚠️ Prestação já está sendo salva, ignorando clique duplicado');
+      return;
+    }
+    window.__isSavingPrestacao = true;
+    btn.disabled = true;
+    btn.textContent = 'Salvando...';
+    
+    try {
+      await pcCalcular();  // ✅ AGUARDA o recálculo terminar
+      
+      const ini = document.getElementById('pcIni').value;
+      const fim = document.getElementById('pcFim').value || new Date().toISOString().slice(0,10);
+      const gerenteId = document.getElementById('pcGerente').value;
+      const g = (window.gerentes || []).find(x=>String(x.uid||x.id)===String(gerenteId)) || {};
+      
+      if(!gerenteId || !ini || !fim){ 
+        alert('Selecione Gerente e informe o período.'); 
+        return; 
+      }
+
+      const arr = await window.carregarPrestacoesGlobal();
+
+      // ✅ PROTEÇÃO CONTRA PRESTAÇÃO DUPLICADA
+      if (!window.__prestBeingEdited?.id) {
+        const jaExiste = arr.find(p => 
+          p.gerenteId === gerenteId && 
+          p.ini === ini && 
+          p.fim === fim
+        );
+        
+        if (jaExiste) {
+          alert('⚠️ Já existe uma prestação para este gerente neste período!\n\nUse o botão "Editar" para modificar a prestação existente.');
+          return;
+        }
+      }
+
+      let reusedId = null;
+      let prevRec  = null;
+      let idx      = -1;
+
+      if (window.__prestBeingEdited?.id) {
+        idx = arr.findIndex(p => p.id === window.__prestBeingEdited.id);
+      }
+
+      if (idx === -1) {
+        idx = arr.findIndex(p => p.gerenteId===gerenteId && p.ini===ini && p.fim===fim);
+      }
+
+      if (idx > -1) {
+        reusedId = arr[idx].id;
+        prevRec  = arr[idx];
+        arr.splice(idx, 1);
+      }
+
+      __recalcValeParcFromPagamentos();
+
+      const migVale = (
+        !prestacaoAtual.valeParcAplicado || prestacaoAtual.valeParcAplicado.length === 0
+      )
+        ? __backfillValeParcFromPagamentos(prestacaoAtual.pagamentos, gerenteId)
+        : prestacaoAtual.valeParcAplicado.slice();
+      
+      prestacaoAtual.valeParcAplicado = migVale;
+      
+      const recPrest = {
+        id: reusedId || uid(),
+        gerenteId,
+        gerenteNome: (g?.nome || '(excluído)'),
+        ini, fim,
+        despesas:  (prestacaoAtual.despesas  || []).map(d => ({...d})),
+        pagamentos:(prestacaoAtual.pagamentos|| []).map(p => ({...p})),
+        coletas:   (prestacaoAtual.coletas   || []).map(c => ({...c})),
+        vales:     (prestacaoAtual.vales     || []).map(v => ({...v})),
+        valesSel:  (prestacaoAtual.valeSelec || []).map(v => ({...v})),
+        resumo:    {...(prestacaoAtual.resumo || {})},
+        saldoInfo: prestacaoAtual.saldoInfo ? {...prestacaoAtual.saldoInfo} : null,
+        valeParcAplicado: migVale.map(x => ({...x})),
+      };
+
+      if (!prestacaoAtual.valeParcAplicado || prestacaoAtual.valeParcAplicado.length === 0){
+        prestacaoAtual.valeParcAplicado =
+          __backfillValeParcFromPagamentos(prestacaoAtual.pagamentos, gerenteId);
+      }
+      // ✅ Enquanto a prestação está ABERTA, o desconto fica somente provisório
+      // (registrado em valeParcAplicado). O saldo real do vale só é debitado
+      // quando a semana é fechada (ver fecharSemanaById → __applyValesOnSave).
+      // Isso evita o duplo-desconto ao editar uma prestação ainda em aberto.
+
+      console.log('🔍 DEBUG SALDO - Verificando condições para salvar:', {
+        temSaldoAcumulado: !!window.SaldoAcumulado,
+        saldoInfo: prestacaoAtual.saldoInfo,
+        usandoSaldoAcumulado: prestacaoAtual.saldoInfo?.usandoSaldoAcumulado,
+        prestacaoAtualCompleta: prestacaoAtual
+      });
+      
+      // ⛔ DESATIVADO: NÃO atualizar saldo_acumulado ao salvar prestação aberta.
+      // Mesma lógica aplicada aos VALES: enquanto a prestação está aberta o
+      // efeito no saldo é apenas PROVISÓRIO (mostrado em prestacaoAtual.saldoInfo).
+      // O saldo no banco SÓ é alterado ao FECHAR a semana (fecharSemanaById).
+      // Ao REABRIR, o efeito é estornado (reopenWeek).
+      // Isso elimina o bug do "saldo dobrando" ao editar uma prestação aberta.
+
+      arr.push(recPrest);
+
+      // ✅ Salva no Supabase + localStorage
+      if (typeof window.salvarPrestacaoGlobal === 'function') {
+        try {
+          await window.salvarPrestacaoGlobal(recPrest);
+          console.log('✅ Prestação salva no Supabase:', recPrest.id);
+        } catch(e) {
+          console.error('❌ Erro ao salvar no Supabase:', e);
+        }
+      } 
+
+      try { window.__syncAbertasMirror(); } catch {}
+
+      console.log('✅ Saldo gerenciado via SaldoAcumulado (Supabase)');
+
+      // ✅ CRIA PENDÊNCIA APENAS DOS PAGAMENTOS DE DÍVIDA
+      const qtdPendencias = criarPendenciaPagamento(recPrest);
+
+      // Salvar despesas no Supabase
+      console.log('💰 Iniciando salvamento de despesas no Supabase...');
+      const despesasValidas = (prestacaoAtual.despesas || []).filter(d => {
+        const temValor = Number(d.valor) > 0;
+        const temDescricao = (d.info || '').trim().length > 0;
+        return temValor || temDescricao;
+      });
+      console.log('💰 Despesas válidas a salvar:', despesasValidas.length, 'de', (prestacaoAtual.despesas || []).length);
+
+      // ✅ FIX: Coleta UIDs existentes no banco para este período+gerente
+      // Isso permite detectar despesas removidas e limpá-las
+      const uidsSalvos = new Set();
+      
+      for (const d of despesasValidas) {
+        const dataLanc = (d.data || fim || ini || new Date().toISOString().slice(0,10)).slice(0,10);
+        const despesaUid = d.id || uid();
+        // ✅ Atualiza o id da despesa no objeto local para manter consistência
+        d.id = despesaUid;
+        uidsSalvos.add(despesaUid);
+        
+        console.log('💰 Processando despesa:', { uid: despesaUid, info: d.info, valor: d.valor });
+        
+        try {
+          // ✅ FIX: Antes de upsert, verifica se já existe para preservar campo oculta
+          let ocultaAtual = false;
+          try {
+            const { data: existente } = await window.SupabaseAPI.client
+              .from('despesas')
+              .select('oculta')
+              .eq('uid', despesaUid)
+              .maybeSingle();
+            if (existente) {
+              ocultaAtual = existente.oculta || false;
+            }
+          } catch(_){}
+          
+          // ✅ FIX: Sempre usa upsert para evitar duplicatas
+          if (window.SupabaseAPI?.despesas?.upsert) {
+            await window.SupabaseAPI.despesas.upsert({
+              uid: despesaUid,
+              prestacao_uid: recPrest.id,  // ✅ FIX BUG #2: vincula despesa à prestação
+              gerente_nome: g?.nome || '',
+              ficha: d.ficha || '',
+              descricao: d.info || '',
+              valor: Number(d.valor) || 0,
+              data: dataLanc,
+              periodo_ini: ini,
+              periodo_fim: fim,
+              oculta: ocultaAtual,   // ✅ FIX: Preserva estado oculta
+              rota: '',
+              categoria: '',
+              editada: false
+            });
+            console.log('✅ Despesa upsert:', despesaUid, '→ prestacao:', recPrest.id);
+          }
+        } catch(e) {
+          console.error('❌ Erro ao salvar despesa:', despesaUid, e);
+        }
+      }
+
+      // ✅ FIX: Remove despesas órfãs do Supabase (removidas da prestação pelo usuário)
+      // Só faz isso ao EDITAR (quando __prestBeingEdited existe)
+      if (window.__prestBeingEdited?.id && uidsSalvos.size > 0) {
+        try {
+          // ✅ FIX BUG #3: Guard — sem gerente identificado, a query filtraria gerente_nome=''
+          // podendo deletar despesas de outros gerentes. Aborta se g.nome não estiver disponível.
+          if (!g?.nome) {
+            console.warn('[Prestações] ⚠️ Pulando remoção de órfãs: gerente não identificado em window.gerentes');
+          } else {
+            const empresaIdClean = await (window.getEmpresaAtual?.() || Promise.resolve(null));
+            if (empresaIdClean) {
+              // ✅ FIX BUG #3: Prioriza filtro por prestacao_uid (preciso) com fallback por período+gerente
+              let query = window.SupabaseAPI.client
+                .from('despesas')
+                .select('uid')
+                .eq('empresa_id', empresaIdClean);
+
+              if (recPrest.id) {
+                // Filtro preciso: apenas despesas vinculadas a esta prestação
+                query = query.eq('prestacao_uid', recPrest.id);
+              } else {
+                // Fallback: filtra por período + gerente
+                query = query
+                  .eq('gerente_nome', g.nome)
+                  .eq('periodo_ini', ini)
+                  .eq('periodo_fim', fim);
+              }
+
+              const { data: despBanco } = await query;
+              
+              if (despBanco) {
+                const orphans = despBanco.filter(d => !uidsSalvos.has(d.uid));
+                for (const orph of orphans) {
+                  console.log('🗑️ Removendo despesa órfã:', orph.uid);
+                  try {
+                    await window.SupabaseAPI.despesas.deleteByUid(orph.uid);
+                  } catch(e) {
+                    console.warn('Erro ao remover órfã:', orph.uid, e);
+                  }
+                }
+              }
+            }
+          }
+        } catch(e) {
+          console.warn('Erro ao limpar despesas órfãs:', e);
+        }
+      }
+
+      console.log('✅ Todas as despesas processadas');
+        
+      window.__prestBeingEdited = null;
+      pcResetForm();
+      
+      try { renderRelatorios(); } catch(e){};
+      
+      // ✅ NOTIFICA SINCRONIZAÇÃO
+      if (typeof window.SyncManager !== 'undefined') {
+        window.SyncManager.notify('prestacoes', { id: recPrest.id });
+        window.SyncManager.notify('financeiro', { pendenciaPagamento: true });
+      }
+
+      // ✅ ALERTA DE SUCESSO (no final de tudo)
+      if (qtdPendencias && qtdPendencias > 0) {
+        alert('Prestação salva!\n\n' + qtdPendencias + ' pagamento(s) de dívida enviado(s) ao Financeiro para confirmação.');
+      } else {
+        alert('Prestação salva com sucesso!');
+      }
+
+    } catch (error) {
+      console.error('❌ Erro ao salvar prestação:', error);
+      alert('Erro ao salvar prestação. Tente novamente.');
+    } finally {
+      // ✅ SEMPRE reseta o botão, mesmo em caso de erro
+      window.__isSavingPrestacao = false;
+      btn.disabled = false;
+      btn.textContent = 'Salvar';
+    }
+  });
+})();
+
+// ====== FUNÇÃO: aplicar/estornar parcelas de VALE ao SALVAR (FORA do handler) ======
+async function __applyValesOnSave(prevRec, recPrest){
+  try{
+    const EPS = 0.005;
+    
+    if (window.__valesReloadAsync) {
+      await window.__valesReloadAsync();
+      console.log('[Vales] ✅ Vales recarregados do Supabase antes de aplicar descontos');
+    }
+    
+    // ✅ FIX BUG #4: Se editando, busca prevMap do log do Supabase como fonte confiável
+    // Isso previne re-desconto quando prevRec.valeParcAplicado estava vazio
+    let prevMap = new Map((prevRec?.valeParcAplicado || []).map(x => [x.id, Number(x.aplicado)||0]));
+    
+    // Se estamos editando E prevMap está vazio, busca do vales_log
+    const isEditing = !!recPrest?.id && !!prevRec;
+    if (isEditing && prevMap.size === 0 && window.SupabaseAPI?.client) {
+      console.log('[Vales] ⚠️ prevMap vazio ao editar — consultando vales_log...');
+      try {
+        const { data: logs } = await window.SupabaseAPI.client
+          .from('vales_log')
+          .select('vale_id, delta')
+          .eq('prestacao_id', recPrest.id);
+        
+        if (logs && logs.length > 0) {
+          // Reconstrói prevMap a partir dos logs
+          const logMap = new Map();
+          logs.forEach(l => {
+            const existing = logMap.get(l.vale_id) || 0;
+            logMap.set(l.vale_id, existing + (Number(l.delta) || 0));
+          });
+          prevMap = logMap;
+          console.log('[Vales] ✅ prevMap reconstruído dos logs:', prevMap.size, 'vales');
+        }
+      } catch(e) {
+        console.warn('[Vales] Erro ao buscar logs para prevMap:', e);
+      }
+    }
+    
+    // ✅ FIX: usa recPrest (não prestacaoAtual) — assim funciona quando chamada
+    // de fora do handler de salvar (ex.: fecharSemanaById passa o registro pronto).
+    const curSource = (recPrest?.valeParcAplicado && recPrest.valeParcAplicado.length)
+      ? recPrest.valeParcAplicado
+      : (prestacaoAtual?.valeParcAplicado || []);
+    const curMap  = new Map(curSource.map(x => [x.id, Number(x.aplicado)||0]));
+    const eventos = [];
+    const valesParaAtualizar = [];
+
+    async function verificarLogDuplicado(valeId, prestacaoId) {
+      if (!window.SupabaseAPI?.client || !prestacaoId) return false;
+      try {
+        const { data } = await window.SupabaseAPI.client
+          .from('vales_log')
+          .select('id')
+          .eq('vale_id', valeId)
+          .eq('prestacao_id', prestacaoId)
+          .limit(1);
+        return data && data.length > 0;
+      } catch (e) {
+        console.warn('[Vales] Erro ao verificar duplicidade:', e);
+        return false;
+      }
+    }    
+
+    for (const v of (window.vales || [])) {
+      const prev  = prevMap.get(v.id) || 0;
+      const cur   = curMap.get(v.id)  || 0;
+      const delta = +(cur - prev);
+      if (Math.abs(delta) < 1e-6) continue;
+
+      // ✅ FIX: Busca saldo REAL do Supabase (não do cache local que pode estar desatualizado)
+      let saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
+      if (window.SupabaseAPI?.client) {
+        try {
+          const { data: valeAtual } = await window.SupabaseAPI.client
+            .from('vales')
+            .select('saldo, valor')
+            .eq('uid', v.id)
+            .single();
+          if (valeAtual) {
+            saldoAntes = Number(valeAtual.saldo) || Number(valeAtual.valor) || 0;
+          }
+        } catch (e) {
+          console.warn('[Vales] Erro ao buscar saldo atual:', e);
+        }
+      }
+      
+      let saldoDepois  = +(saldoAntes - delta);
+      if (saldoDepois < EPS) saldoDepois = 0;
+
+      console.log('[Vales] 💰 Aplicando desconto:', {
+        vale: v.cod, valeId: v.id,
+        prev, cur, delta,
+        saldoAntes, saldoDepois,
+        isEditing
+      });
+
+      v.valor = Number(saldoDepois.toFixed(2));
+      v.saldo = v.valor;
+
+      if (v.valor === 0) {
+        v.quitado   = true;
+        v.quitadoEm = new Date().toISOString();
+      } else {
+        v.quitado = false;
+        delete v.quitadoEm;
+      }
+
+      valesParaAtualizar.push({ id: v.id, saldo: v.valor, quitado: v.quitado });
+
+      eventos.push({
+        id: (typeof uid==='function'? uid(): 'vl_'+Math.random().toString(36).slice(2,9)),
+        valeId: v.id, cod: v.cod||'', gerenteId: v.gerenteId,
+        delta: Number(delta),
+        saldoAntes, saldoDepois: v.valor,
+        prestacaoId: recPrest.id,
+        periodoIni: recPrest.ini, periodoFim: recPrest.fim,
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    if (eventos.length){
+      // ✅ FIX: Se editando, remove logs antigos desta prestação antes de inserir novos
+      if (isEditing && window.SupabaseAPI?.client) {
+        try {
+          await window.SupabaseAPI.client
+            .from('vales_log')
+            .delete()
+            .eq('prestacao_id', recPrest.id);
+          console.log('[Vales] 🗑️ Logs antigos removidos para re-inserção');
+        } catch(e) {
+          console.warn('[Vales] Erro ao limpar logs antigos:', e);
+        }
+      }
+      
+      if (window.SupabaseAPI?.vales) {
+        for (const upd of valesParaAtualizar) {
+          await window.SupabaseAPI.vales.update(upd.id, { 
+            saldo: upd.saldo, 
+            valor: upd.saldo,
+            quitado: upd.quitado 
+          });
+          
+          // ✅ FIX: Verifica se o update persistiu
+          try {
+            const { data: check } = await window.SupabaseAPI.client
+              .from('vales')
+              .select('saldo')
+              .eq('uid', upd.id)
+              .single();
+            if (check && Math.abs(Number(check.saldo) - upd.saldo) > 0.01) {
+              console.error('[Vales] ❌ Saldo não persistiu! Esperado:', upd.saldo, 'Real:', check.saldo);
+            }
+          } catch(_){}
+        }
+      }
+      
+      // Insere novos logs (sem verificar duplicata pois já limpamos)
+      if (eventos.length) {
+        window.valesLog?.bulkAdd?.(eventos);
+      }
+    }
+    try { renderValesPrestacao?.(); } catch {}
+    try { window.dispatchEvent(new Event('vales:updated')); } catch {}
+
+  } catch(e){
+    console.warn('__applyValesOnSave error:', e);
+  }
+}
+
+// ✅ Estorna o desconto de vales de uma prestação (usado ao REABRIR).
+// Soma todos os deltas registrados em vales_log para a prestação; se o
+// resultado líquido for positivo (vale efetivamente debitado), devolve esse
+// valor ao saldo do vale e grava um log inverso para zerar a contabilidade.
+async function __estornarValesDePrestacao(rec){
+  try{
+    if (!rec?.id || !window.SupabaseAPI?.client) return;
+
+    const { data: logs, error } = await window.SupabaseAPI.client
+      .from('vales_log')
+      .select('vale_id, delta')
+      .eq('prestacao_id', rec.id);
+    if (error) throw error;
+    if (!logs || !logs.length) return;
+
+    // soma efetiva por vale
+    const efetivo = new Map();
+    logs.forEach(l => {
+      efetivo.set(l.vale_id, (efetivo.get(l.vale_id) || 0) + (Number(l.delta) || 0));
+    });
+
+    // garante cache local de vales atualizado
+    if (window.__valesReloadAsync) {
+      try { await window.__valesReloadAsync(); } catch(_){}
+    }
+
+    const reversos = [];
+    for (const [valeId, deltaEfetivo] of efetivo){
+      if (!deltaEfetivo || deltaEfetivo <= 1e-6) continue; // já estornado
+
+      const v = (window.vales||[]).find(x => x.id === valeId);
+      if (!v) continue;
+
+      const saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
+      const saldoDepois = +(saldoAntes + deltaEfetivo).toFixed(2);
+
+      v.valor = saldoDepois;
+      v.saldo = saldoDepois;
+      if (saldoDepois > 0) { v.quitado = false; delete v.quitadoEm; }
+
+      if (window.SupabaseAPI?.vales){
+        await window.SupabaseAPI.vales.update(v.id, {
+          saldo: saldoDepois,
+          valor: saldoDepois,
+          quitado: v.quitado || false
+        });
+      }
+
+      reversos.push({
+        id: (typeof uid==='function'? uid(): 'rv_'+Math.random().toString(36).slice(2,9)),
+        valeId: v.id, cod: v.cod||'', gerenteId: v.gerenteId,
+        delta: -deltaEfetivo,
+        saldoAntes, saldoDepois,
+        prestacaoId: rec.id,
+        periodoIni: rec.ini || null, periodoFim: rec.fim || null,
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    if (reversos.length && window.valesLog?.bulkAdd){
+      await window.valesLog.bulkAdd(reversos);
+    }
+
+    try { renderValesPrestacao?.(); } catch {}
+    try { window.dispatchEvent(new Event('vales:updated')); } catch {}
+  } catch(e){
+    console.warn('__estornarValesDePrestacao error:', e);
+  }
+}
+
+// Expõe globalmente para uso a partir de relatorios.js (fechar/reabrir semana)
+window.__applyValesOnSave = __applyValesOnSave;
+window.__estornarValesDePrestacao = __estornarValesDePrestacao;
+
+/* ========== VALES LOG - SUPABASE ========== */
+(function VALES_LOG_SUPABASE(){
+  const EMP = () => localStorage.getItem('empresa_ativa') || window.getCompany?.() || 'BSX';
+
+  const ValesLogAPI = {
+    async add(ev) {
+      if (!window.SupabaseAPI?.client) return false;
+      const emp = EMP();
+      try {
+        const { error } = await window.SupabaseAPI.client
+          .from('vales_log')
+          .insert({
+            uid: ev.id || 'vl_' + Math.random().toString(36).slice(2, 9),
+            vale_id: ev.valeId,
+            cod: ev.cod || '',
+            gerente_id: ev.gerenteId,
+            delta: Number(ev.delta) || 0,
+            saldo_antes: Number(ev.saldoAntes) || 0,
+            saldo_depois: Number(ev.saldoDepois) || 0,
+            prestacao_id: ev.prestacaoId || null,
+            periodo_ini: ev.periodoIni || null,
+            periodo_fim: ev.periodoFim || null,
+            company: emp
+          });
+        
+        if (error) throw error;
+        return true;
+      } catch (e) {
+        console.error('[ValesLog] Erro add:', e);
+        return false;
+      }
+    },
+
+    async bulkAdd(evs) {
+      if (!Array.isArray(evs) || !evs.length) return;
+      for (const ev of evs) {
+        await this.add(ev);
+      }
+    },
+
+    async list(filter = {}) {
+      if (!window.SupabaseAPI?.client) return [];
+      const emp = EMP();
+      try {
+        let query = window.SupabaseAPI.client
+          .from('vales_log')
+          .select('*')
+          .eq('company', emp)
+          .order('created_at', { ascending: false });
+        
+        if (filter.valeId) query = query.eq('vale_id', filter.valeId);
+        if (filter.gerenteId) query = query.eq('gerente_id', filter.gerenteId);
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        return (data || []).map(l => ({
+          id: l.uid,
+          valeId: l.vale_id,
+          cod: l.cod,
+          gerenteId: l.gerente_id,
+          delta: Number(l.delta),
+          saldoAntes: Number(l.saldo_antes),
+          saldoDepois: Number(l.saldo_depois),
+          prestacaoId: l.prestacao_id,
+          periodoIni: l.periodo_ini,
+          periodoFim: l.periodo_fim,
+          createdAt: l.created_at
+        }));
+      } catch (e) {
+        console.error('[ValesLog] Erro list:', e);
+        return [];
+      }
+    },
+
+    async removeByValeId(valeId) {
+      if (!window.SupabaseAPI?.client) return false;
+      try {
+        await window.SupabaseAPI.client
+          .from('vales_log')
+          .delete()
+          .eq('vale_id', valeId);
+        return true;
+      } catch (e) {
+        console.error('[ValesLog] Erro remove:', e);
+        return false;
+      }
+    },
+
+    async migrate() {
+      const emp = EMP();
+      const KEY = `${emp}__bsx_vales_log_v1`;
+      const KEY_LEG = 'bsx_vales_log_v1';
+      
+      let local = [];
+      try { local = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch {}
+      if (!local.length) {
+        try { local = JSON.parse(localStorage.getItem(KEY_LEG) || '[]'); } catch {}
+      }
+      
+      if (!local.length) {
+        console.log('[ValesLog] Nada para migrar');
+        return { migrated: 0 };
+      }
+
+      console.log(`[ValesLog] 🔄 Migrando ${local.length} logs...`);
+      
+      let migrated = 0;
+      for (const ev of local) {
+        const ok = await this.add(ev);
+        if (ok) migrated++;
+      }
+
+      console.log(`[ValesLog] ✅ Migrados: ${migrated}`);
+      return { migrated };
+    }
+  };
+
+  // Registra API global
+  window.SupabaseAPI = window.SupabaseAPI || {};
+  window.SupabaseAPI.valesLog = ValesLogAPI;
+
+  // Interface compatível com código existente
+  window.valesLog = {
+    add(ev) {
+      ValesLogAPI.add(ev);
+    },
+    bulkAdd(evs) {
+      ValesLogAPI.bulkAdd(evs);
+    },
+    list(filter) {
+      // Para compatibilidade síncrona, retorna array vazio
+      // Use listAsync para buscar do Supabase
+      console.warn('[ValesLog] list() é síncrono - use listAsync() para Supabase');
+      return [];
+    },
+    async listAsync(filter) {
+      return await ValesLogAPI.list(filter);
+    },
+    removeByValeId(valeId) {
+      ValesLogAPI.removeByValeId(valeId);
+    }
+  };
+
+  console.log('[ValesLog] ✅ API Supabase inicializada');
+})();
+
+/* ===== EXCLUIR UM VALE (com histórico) ===== */
+window.deleteValeById = async function(id){
+  const v = (window.vales||[]).find(x => x.id === id);
+  if (!v){ alert('Vale não encontrado.'); return; }
+
+  const msg = `Excluir definitivamente o vale ${v.cod || ''}? 
+Isso também APAGA TODO o histórico desse vale.`;
+  if (!confirm(msg)) return;
+
+  // 1) Remove do Supabase
+  if (window.SupabaseAPI?.vales) {
+    await window.SupabaseAPI.vales.delete(id);
+  }
+
+  // 2) Remove da memória
+  window.vales = (window.vales||[]).filter(x => x.id !== id);
+
+  // 3) Remove pagamentos VALE desta prestação que referenciem o código apagado
+  try {
+    const cod = String(v.cod || '').trim();
+    prestacaoAtual.pagamentos = (prestacaoAtual.pagamentos||[])
+      .filter(p => !(String(p.forma||'').toUpperCase()==='VALE' && String(p.obs||'').trim()===cod));
+  } catch {}
+
+  // 4) Recalcula e atualiza a UI
+  try { __recalcValeParcFromPagamentos?.(); } catch {}
+  try { renderValesPrestacao?.(); } catch {}
+  try { pgRender?.(); } catch {}
+  pcSchedule();
+};
+
+
+// Monta um objeto de prestação a partir do formulário atual
+async function getPrestacaoFromForm(){
+  await pcCalcular(); // ✅ AGUARDA recálculo antes de montar o objeto
+  __recalcValeParcFromPagamentos();
+  return {
+    id: uid(),
+    gerenteId: document.getElementById('pcGerente')?.value || '',
+    ini: document.getElementById('pcIni')?.value || '',
+    fim: document.getElementById('pcFim')?.value || '',
+    despesas:  (prestacaoAtual.despesas  || []).map(d => ({...d})),
+    pagamentos:(prestacaoAtual.pagamentos|| []).map(p => ({...p})),
+    coletas:   (prestacaoAtual.coletas   || []).map(c => ({...c})),
+    vales:     (prestacaoAtual.vales     || []).map(v => ({...v})),
+    resumo:    {...(prestacaoAtual.resumo || {})},
+    valeParcAplicado: (prestacaoAtual.valeParcAplicado || []).map(x => ({...x}))
+  };
+}
+
+window.prestToDataURL = function(rec) {
+  if (!rec || !rec.id) {
+    console.error('[prestToDataURL] Registro inválido');
+    return null;
+  }
+  
+  try {
+    console.log('[prestToDataURL] Gerando PNG para prestação:', rec.id);
+    
+    // ✅ Calcula altura necessária baseada no número de despesas
+    const qtdDespesas = (rec.despesas || []).length;
+    const rowHeight = 28;
+    const headerHeight = 110; // Aumentado para acomodar aviso da diretoria
+    const footerHeight = 60;
+    const minTableHeight = 700;
+    
+    // ✅ CALCULA ALTURA NECESSÁRIA PARA COLUNA DIREITA
+    const _pagtsCalc = Array.isArray(rec.pagamentos) ? rec.pagamentos : [];
+    const _parcelasCalc = Array.isArray(rec.valeParcAplicado) ? rec.valeParcAplicado : [];
+    const _coletasCalc = Array.isArray(rec.coletas) ? rec.coletas : [];
+    
+    const numValesCalc = _parcelasCalc.length || (window.vales||[]).filter(v => v.gerenteId === rec.gerenteId && !v.quitado).length;
+    const numPagtosCalc = _pagtsCalc.filter(p => String(p.forma||'').toUpperCase() !== 'VALE').length;
+    
+    // Itens na coluna direita: coletas + acréscimos + resultado
+    const itensColunaDireita = _coletasCalc.length + 10 + // coletas + totais
+                               (3 + numValesCalc + 1) +    // acréscimos
+                               (2 + numPagtosCalc + 2);    // resultado
+    
+    const alturaColunaDireita = itensColunaDireita * 22 + 150; // 22px por item + headers
+    
+    const tableHeightNeeded = Math.max(minTableHeight, qtdDespesas * rowHeight + 100, alturaColunaDireita);
+    const canvasHeight = Math.max(900, headerHeight + tableHeightNeeded + footerHeight);
+    
+    // Canvas base (offscreen)
+    const cvs = document.createElement('canvas');
+    cvs.width = 1200;
+    cvs.height = canvasHeight; // ✅ Altura dinâmica
+    const ctx = cvs.getContext('2d');
+    
+    console.log('[prestToDataURL] Canvas:', cvs.width, 'x', cvs.height, '| Despesas:', qtdDespesas, '| Itens direita:', itensColunaDireita);
+    
+    if (!ctx) {
+      console.error('[prestToDataURL] Erro ao criar contexto 2D');
+      return null;
+    }
+
+    // ===== CÁLCULO DINÂMICO DE TAMANHOS =====
+    const rightHCalc = canvasHeight - 150; // Ajustado para novo header
+    const espacoPorItemCalc = rightHCalc / Math.max(itensColunaDireita, 15);
+    
+    const R_GROUP = 18;
+    const R_BOLD = Math.max(12, Math.min(17, espacoPorItemCalc * 0.7));
+    const R_LINE = Math.max(10, Math.min(16, espacoPorItemCalc * 0.65));
+    const R_SUB = Math.max(9, Math.min(15, espacoPorItemCalc * 0.55));
+    const R_REST = Math.max(18, Math.min(24, espacoPorItemCalc * 1.0));
+    const groupPad = Math.max(4, Math.min(8, espacoPorItemCalc * 0.3));
+    const SPACING_ITEM = Math.max(2, Math.min(6, espacoPorItemCalc * 0.25));
+    const SIZE_ITEM = Math.max(9, Math.min(14, espacoPorItemCalc * 0.5));
+    
+    console.log('📐 [prestToDataURL] Layout:', { itensColunaDireita, espacoPorItemCalc: espacoPorItemCalc.toFixed(1), R_LINE, SIZE_ITEM });
+
+    // ===== Fundo / Topo =====
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, cvs.width, cvs.height);
+    ctx.fillStyle = '#ffe600';
+    ctx.fillRect(0, 0, cvs.width, 100); // Header amarelo
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 22px Arial';
+
+    // Cabeçalho
+    const g = (window.gerentes || []).find(x => x.uid === rec.gerenteId);
+    const periodo = (window.fmtData ? window.fmtData(rec.ini) : rec.ini) + ' a ' + 
+                    (window.fmtData ? window.fmtData(rec.fim) : rec.fim);
+    
+    if (typeof drawText === 'function') {
+      drawText(ctx, 'Gerente', 20, 40, 'left');
+      drawText(ctx, (g ? (g.nome || '') : ''), 120, 40, 'left');
+      drawText(ctx, 'Período:', 420, 25, 'left');
+      drawText(ctx, periodo, 420, 55, 'left');
+    }
+    
+    // ✅ AVISO DA DIRETORIA - Design Profissional
+    ctx.save();
+    
+    // Dimensões e posição da caixa de aviso
+    const avisoBoxW = 500;
+    const avisoBoxH = 88;
+    const avisoBoxX = cvs.width - avisoBoxW - 15;
+    const avisoBoxY = 5;
+    const borderRadius = 8;
+    
+    // Fundo da caixa com gradiente simulado (cor sólida escura)
+    ctx.fillStyle = '#7f1d1d'; // Vermelho escuro (bg)
+    
+    // Desenha retângulo com bordas arredondadas
+    ctx.beginPath();
+    ctx.moveTo(avisoBoxX + borderRadius, avisoBoxY);
+    ctx.lineTo(avisoBoxX + avisoBoxW - borderRadius, avisoBoxY);
+    ctx.quadraticCurveTo(avisoBoxX + avisoBoxW, avisoBoxY, avisoBoxX + avisoBoxW, avisoBoxY + borderRadius);
+    ctx.lineTo(avisoBoxX + avisoBoxW, avisoBoxY + avisoBoxH - borderRadius);
+    ctx.quadraticCurveTo(avisoBoxX + avisoBoxW, avisoBoxY + avisoBoxH, avisoBoxX + avisoBoxW - borderRadius, avisoBoxY + avisoBoxH);
+    ctx.lineTo(avisoBoxX + borderRadius, avisoBoxY + avisoBoxH);
+    ctx.quadraticCurveTo(avisoBoxX, avisoBoxY + avisoBoxH, avisoBoxX, avisoBoxY + avisoBoxH - borderRadius);
+    ctx.lineTo(avisoBoxX, avisoBoxY + borderRadius);
+    ctx.quadraticCurveTo(avisoBoxX, avisoBoxY, avisoBoxX + borderRadius, avisoBoxY);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Borda da caixa
+    ctx.strokeStyle = '#fca5a5'; // Vermelho claro para borda
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Ícone de alerta (triângulo com !) - MAIS PARA DENTRO
+    const iconX = avisoBoxX + 35;
+    const iconY = avisoBoxY + avisoBoxH / 2;
+    const iconSize = 26;
+    
+    // Triângulo amarelo
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.moveTo(iconX, iconY - iconSize/2);
+    ctx.lineTo(iconX + iconSize, iconY + iconSize/2);
+    ctx.lineTo(iconX - iconSize, iconY + iconSize/2);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Borda do triângulo
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Exclamação no triângulo
+    ctx.fillStyle = '#7f1d1d';
+    ctx.font = 'bold 22px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('!', iconX, iconY + 10);
+    
+    // Texto do aviso - MAIOR para WhatsApp
+    ctx.fillStyle = '#fef2f2';
+    ctx.font = '14px Arial';
+    ctx.textAlign = 'left';
+    
+    const avisoLinhas = [
+      'Os adiantamentos só serão pagos mediante prestação em dias.',
+      'Caso esteja com valores em aberto, será descontado e enviado',
+      'somente a diferença, caso necessário.'
+    ];
+    
+    avisoLinhas.forEach((linha, i) => {
+      ctx.fillText(linha, avisoBoxX + 68, avisoBoxY + 26 + (i * 19));
+    });
+    
+    // Assinatura
+    ctx.font = 'bold 13px Arial';
+    ctx.fillStyle = '#fcd34d'; // Amarelo dourado
+    ctx.textAlign = 'right';
+    ctx.fillText('— Diretoria', avisoBoxX + avisoBoxW - 12, avisoBoxY + avisoBoxH - 8);
+    
+    ctx.restore();
+
+    // Layout: esquerda (despesas) / direita (resumo)
+    const gap = 20;
+    const leftX = 20, leftY = 110, leftW = Math.floor(cvs.width * 0.58), leftH = cvs.height - leftY - 40;
+    const rightX = leftX + leftW + gap, rightY = 110, rightW = cvs.width - rightX - 20, rightH = cvs.height - rightY - 40;
+
+    // ======= TABELA DE DESPESAS (lado esquerdo) — limite 27 linhas =======
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(leftX, leftY, leftW, leftH);
+
+    // Cabeçalho da tabela
+    const headerH = 30;
+    const col1W = Math.floor(leftW * 0.18); // FICHA
+    const col3W = Math.floor(leftW * 0.20); // VALOR
+    const col2W = leftW - col1W - col3W;    // INFORMAÇÕES
+
+    ctx.fillStyle = '#111';
+    ctx.fillRect(leftX, leftY, leftW, headerH);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px Arial';
+    
+    // ✅ CENTRALIZANDO OS CABEÇALHOS
+    ctx.textAlign = 'center';
+    ctx.fillText('FICHA', leftX + col1W / 2, leftY + 20);
+    ctx.fillText('INFORMAÇÕES', leftX + col1W + col2W / 2, leftY + 20);
+    ctx.fillText('VALOR', leftX + col1W + col2W + col3W / 2, leftY + 20);
+
+    // Divisórias verticais + linha do header
+    ctx.beginPath();
+    ctx.moveTo(leftX, leftY + headerH);
+    ctx.lineTo(leftX + leftW, leftY + headerH);
+    ctx.moveTo(leftX + col1W, leftY);
+    ctx.lineTo(leftX + col1W, leftY + leftH);
+    ctx.moveTo(leftX + col1W + col2W, leftY);
+    ctx.lineTo(leftX + col1W + col2W, leftY + leftH);
+    ctx.stroke();
+
+    // Corpo da tabela
+    const bodyH  = leftH - headerH - 28;                  // 28px para o rodapé "TOTAL DESPESAS"
+    const itens  = (rec.despesas || []);
+    const qtdLin = Math.max(itens.length, 1);
+
+    let rowH, fz;
+    if (qtdLin <= 20) {
+      rowH = 32;
+      fz   = 16;
+    } else if (qtdLin <= 35) {
+      rowH = 26;
+      fz   = 14;
+    } else if (qtdLin <= 50) {
+      rowH = 22;
+      fz   = 12;
+    } else {
+      rowH = Math.max(18, Math.floor(bodyH / qtdLin));
+      fz   = Math.max(10, Math.floor(rowH * 0.55));
+    }
+
+    let y = leftY + headerH;
+
+    // Clipping do corpo
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(leftX, y, leftW, bodyH);
+    ctx.clip();
+
+    itens.forEach(d => {
+      const ficha = String(d.ficha || '');
+      const info  = String(d.info  || '');
+      const valor = window.fmtBRL ? window.fmtBRL(Number(d.valor) || 0) : String(Number(d.valor)||0);
+
+      // Ficha
+      ctx.font = fz + 'px Arial';
+      ctx.fillStyle = '#000';
+      ctx.textAlign = 'left';
+      ctx.fillText(ficha, leftX + 8, y + Math.round(rowH * 0.7));
+
+      // Informações (crop com "…")
+      const maxInfoW = col2W - 12;
+      let txt = info;
+      while (ctx.measureText(txt).width > maxInfoW && txt.length > 0) txt = txt.slice(0, -1);
+      if (txt !== info) txt = txt.slice(0, -1) + '…';
+      ctx.fillText(txt, leftX + col1W + 8, y + Math.round(rowH * 0.7));
+
+      // Valor
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#b91c1c';
+      ctx.fillText(valor, leftX + col1W + col2W + col3W - 8, y + Math.round(rowH * 0.7));
+
+      // Linha horizontal
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.beginPath();
+      ctx.moveTo(leftX, y + rowH - 2);
+      ctx.lineTo(leftX + leftW, y + rowH - 2);
+      ctx.stroke();
+
+      y += rowH;
+    });
+
+    ctx.restore();
+
+    // Rodapé: TOTAL DESPESAS
+    const totalDespesas = (rec.resumo && typeof rec.resumo.despesas === 'number')
+      ? rec.resumo.despesas
+      : itens.reduce((a,b)=> a + (Number(b.valor)||0), 0);
+
+    ctx.font = 'bold 16px Arial';
+    ctx.fillStyle = '#000';
+    ctx.textAlign = 'center';
+    ctx.fillText('TOTAL DESPESAS:', leftX + Math.floor(leftW / 2), leftY + leftH - 12);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#b91c1c';
+    ctx.fillText(window.fmtBRL ? window.fmtBRL(totalDespesas) : String(totalDespesas), leftX + leftW - 10, leftY + leftH - 12);
+
+    // ======= COLUNA DIREITA (Resumo) =======
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(rightX, rightY, rightW, rightH);
+
+    // Clip interno
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(rightX + 1, rightY + 1, rightW - 2, rightH - 2);
+    ctx.clip();
+
+    const r = (rec && rec.resumo) ? rec.resumo : {
+      coletas: 0, valorExtra: 0, adiant: 0, deveAnt: 0, credito: 0,
+      despesas: 0, comissaoVal: 0, divida: 0, resultado: 0,
+      aPagar: 0, pagos: 0, restam: 0, adiantPg: 0, comis1: 0, comis2: 0
+    };
+
+    let ry = rightY;
+
+    // ---------- COLETAS ----------
+    if (typeof drawGroup === 'function') {
+      ry = drawGroup(ctx, rightX, ry, rightW, 'COLETAS', R_GROUP);
+    }
+    ry += 10;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(rightX + 1, ry - 5, rightW - 2, 2000);
+
+    // Lista nominal de coletores
+    const listaColetas2 = (rec.coletas || []);
+    listaColetas2.forEach(function(c) {
+      if (typeof drawKV2 === 'function') {
+        ry = drawKV2(ctx, rightX + 26, ry, rightW - 52, c.nome || 'Coleta',
+                     window.fmtBRL ? window.fmtBRL(Number(c.valor)||0) : String(Number(c.valor)||0), 
+                     { size: R_SUB });
+      }
+    });
+
+    // Valores do resumo
+    const coletas2   = Number(r.coletas)   || 0;
+    const despesas2  = Number(r.despesas)  || 0;
+    const perc2      = Number(r.perc)      || 0;
+    const deveAnt2   = Number(r.deveAnt || 0);
+    const _resColetas2 = coletas2 - despesas2;
+    const showNeg2 = perc2 > 0 && perc2 < 50;
+
+    const c1 = Number(r.comis1) || 0;
+    const c2 = Number(r.comis2) || 0;
+    const temSegundaComissao = c2 > 0;
+
+    // ========================================
+    // SEQUÊNCIA PARA MODELO COM 2ª COMISSÃO
+    // ========================================
+    if (temSegundaComissao && typeof drawKV2 === 'function') {
+      // ✅ Verifica se está usando saldo acumulado (regra coletas-despesas)
+      const usandoSaldoCom2 = r.usandoSegundaComissaoComSaldo === true;
+      const saldoAntCom2 = Number(r.saldoAnteriorCom2 || 0);
+      const baseParaSaldo2 = Number(r.baseParaSaldo || 0);
+      const saldoCarry2 = Number(r.saldoNegAcarreado || 0);
+      
+      if (usandoSaldoCom2) {
+        // ============================================
+        // RENDERIZAÇÃO COM SALDO ACUMULADO (despesas saem primeiro)
+        // ============================================
+        
+        // 1. Coletas
+        ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', 
+                     window.fmtBRL ? window.fmtBRL(coletas2) : String(coletas2), 
+                     { bold:true, size:R_BOLD });
+        
+        // 2. Despesas (PRIMEIRO descontadas)
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Despesas', 
+                     window.fmtBRL ? window.fmtBRL(despesas2) : String(despesas2), 
+                     { valueColor:'#b91c1c', size:R_LINE });
+        
+        // 3. Total (Coletas - Despesas) = BASE
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Total (Coletas - Despesas)', 
+                     window.fmtBRL ? window.fmtBRL(baseParaSaldo2) : String(baseParaSaldo2), 
+                     { bold:true, color:'#16a34a', valueColor:'#16a34a', size:R_BOLD });
+        
+        // 4. Saldo Anterior (do banco)
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo Anterior', 
+                     window.fmtBRL ? window.fmtBRL(saldoAntCom2) : String(saldoAntCom2), 
+                     { valueColor:'#b91c1c', size:R_LINE });
+        
+        // 5. Comissão 1
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+          'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+          window.fmtBRL ? window.fmtBRL(c1) : String(c1),
+          { valueColor:'#16a34a', size: R_LINE }
+        );
+        
+        // 6. Comissão 2
+        const rot = r?.flags?.sequencial ? 'Comissão 2 (seq.)' : 'Comissão 2';
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+          rot + ' (' + (Number(r.perc2)||0) + '%)',
+          window.fmtBRL ? window.fmtBRL(c2) : String(c2),
+          { valueColor:'#16a34a', size: R_LINE }
+        );
+        
+        // 7. Saldo a Carregar (novo, após abater base)
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo a Carregar', 
+                     window.fmtBRL ? window.fmtBRL(saldoCarry2) : String(saldoCarry2), 
+                     { valueColor:'#b91c1c', bold:true, size:R_LINE });
+        
+        // 8. Resultado FINAL
+        const resultadoFinal = baseParaSaldo2 - c1 - c2;
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', 
+                     window.fmtBRL ? window.fmtBRL(resultadoFinal) : String(resultadoFinal),
+                     { bold:true, size:R_BOLD });
+        
+      } else {
+        // ============================================
+        // SEM SALDO ACUMULADO (sequência antiga, base = coletas)
+        // ============================================
+        
+        // 1. Coletas
+        ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', 
+                     window.fmtBRL ? window.fmtBRL(coletas2) : String(coletas2), 
+                     { bold:true, size:R_BOLD });
+        
+        // 2. Base Comissão
+        const baseComissao2 = Number(r.baseComissao || coletas2);
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Base Comissão', 
+                     window.fmtBRL ? window.fmtBRL(baseComissao2) : String(baseComissao2), 
+                     { color:'#16a34a', valueColor:'#16a34a', size:R_LINE });
+        
+        // 3. Comissão 1
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+          'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+          window.fmtBRL ? window.fmtBRL(c1) : String(c1),
+          { valueColor:'#16a34a', size: R_LINE }
+        );
+        
+        // 4. Resultado (Coletas - Com. 1)
+        const resIntermediario = coletas2 - c1;
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+          'Resultado (Coletas - Com. 1)',
+          window.fmtBRL ? window.fmtBRL(resIntermediario) : String(resIntermediario),
+          { size: R_LINE }
+        );
+        
+        // 5. Comissão 2
+        const rot = r?.flags?.sequencial ? 'Comissão 2 (seq.)' : 'Comissão 2';
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+          rot + ' (' + (Number(r.perc2)||0) + '%)',
+          window.fmtBRL ? window.fmtBRL(c2) : String(c2),
+          { valueColor:'#16a34a', size: R_LINE }
+        );
+        
+        // 6. Despesas
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Despesas', 
+                     window.fmtBRL ? window.fmtBRL(despesas2) : String(despesas2), 
+                     { valueColor:'#b91c1c', size:R_LINE });
+        
+        // 7. Total
+        const totalIntermediario = coletas2 - despesas2 - c1 - c2;
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 
+          'Total (Coletas - Despesas - Comissões)', 
+          window.fmtBRL ? window.fmtBRL(totalIntermediario) : String(totalIntermediario), 
+          { bold:true, size:R_BOLD }
+        );
+        
+        // 8. Resultado
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', 
+                     window.fmtBRL ? window.fmtBRL(totalIntermediario) : String(totalIntermediario),
+                     { bold:true, size:R_BOLD });
+      }
+
+    } 
+    // ========================================
+    // SEQUÊNCIA PARA MODELOS SEM 2ª COMISSÃO
+    // ========================================
+    else if (typeof drawKV2 === 'function') {
+      // Modelo padrão ou por rota positiva
+      
+      // ✅ VERIFICA SE É GERENTE 50% COM SALDO ACUMULADO
+      const usandoSaldo50 = r.usandoSaldo50 === true;
+      const saldoAnterior50 = Number(r.saldoAnterior || 0);
+      const descontoSaldo50 = Number(r.descontoSaldo || 0);
+      const saldoNovo50 = Number(r.saldoNegAcarreado || 0);
+      const baseComissao50 = Number(r.baseComissao || 0);
+      const comissaoVirtual50 = Number(r.comissaoVirtual || 0);
+      
+      ry = drawKV2(ctx, rightX + 12, ry + 2, rightW - 24, 'Coletas', 
+                   window.fmtBRL ? window.fmtBRL(coletas2) : String(coletas2), 
+                   { bold:true, size:R_BOLD });
+      
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Despesas', 
+                   window.fmtBRL ? window.fmtBRL(despesas2) : String(despesas2), 
+                   { bold:true, valueColor:'#b91c1c', size:R_LINE });
+      
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Total (Coletas - Despesas)', 
+                   window.fmtBRL ? window.fmtBRL(_resColetas2) : String(_resColetas2), 
+                   { bold:true, size:R_BOLD });
+
+      // ========================================
+      // GERENTE 50% COM SALDO ACUMULADO
+      // ========================================
+      if (usandoSaldo50) {
+        // Saldo Anterior (do banco)
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo Anterior (banco)', 
+                     window.fmtBRL ? window.fmtBRL(saldoAnterior50) : String(saldoAnterior50), 
+                     { valueColor:'#b91c1c', size:R_LINE });
+        
+        // Comissão 50% calculada (valor que seria a comissão)
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 
+          'Comissão 50% (calculada)',
+          window.fmtBRL ? window.fmtBRL(comissaoVirtual50) : String(comissaoVirtual50),
+          { valueColor:'#6b7280', size: R_LINE }
+        );
+        
+        // Desconto do Saldo (quanto efetivamente foi descontado do banco)
+        if (descontoSaldo50 > 0) {
+          ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Abatido do Banco', 
+                       '- ' + (window.fmtBRL ? window.fmtBRL(descontoSaldo50) : String(descontoSaldo50)), 
+                       { valueColor:'#16a34a', size:R_LINE });
+        }
+        
+        // Novo Saldo (no banco)
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Novo Saldo (banco)', 
+                     window.fmtBRL ? window.fmtBRL(saldoNovo50) : String(saldoNovo50), 
+                     { valueColor:'#b91c1c', bold: true, size:R_LINE });
+        
+        // Comissão efetivamente paga ao gerente (pode ser 0 se foi pro banco)
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+          'Comissão Paga',
+          window.fmtBRL ? window.fmtBRL(c1) : String(c1),
+          { valueColor:'#16a34a', size: R_LINE }
+        );
+        
+        // Resultado = (Coletas - Despesas) - Comissão Paga
+        const resultadoFinal = _resColetas2 - c1;
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', 
+                     window.fmtBRL ? window.fmtBRL(resultadoFinal) : String(resultadoFinal),
+                     { bold:true, size:R_BOLD });
+      }
+      // Se tem modo antigo (com carry de negativo)
+      else if (showNeg2) {
+        const baseComissao2 = Number(r.baseComissao || r.comissaoBase || 0);
+        const saldoCarry2   = Number(r.saldoNegAcarreado || 0);
+
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Base Comissão', 
+                     window.fmtBRL ? window.fmtBRL(baseComissao2) : String(baseComissao2), 
+                     { color:'#16a34a', valueColor:'#16a34a', size:R_LINE });
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Saldo a Carregar', 
+                     window.fmtBRL ? window.fmtBRL(saldoCarry2) : String(saldoCarry2), 
+                     { valueColor:'#b91c1c', size:R_LINE });
+
+        // Se tem comissão (mesmo sem ser 2ª)
+        if (c1 > 0) {
+          ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+            'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+            window.fmtBRL ? window.fmtBRL(c1) : String(c1),
+            { valueColor:'#16a34a', size: R_LINE }
+          );
+        }
+
+        // Resultado = (Coletas - Despesas) - Comissão (SEM deve anterior)
+        const resultadoFinal = _resColetas2 - c1;
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', 
+                     window.fmtBRL ? window.fmtBRL(resultadoFinal) : String(resultadoFinal),
+                     { bold:true, size:R_BOLD });
+      }
+      else {
+        // Modelo padrão sem saldo acumulado
+        // Se tem comissão (mesmo sem ser 2ª)
+        if (c1 > 0) {
+          ry = drawKV2(ctx, rightX + 12, ry, rightW - 24,
+            'Comissão 1 (' + (Number(r.perc)||0) + '%)',
+            window.fmtBRL ? window.fmtBRL(c1) : String(c1),
+            { valueColor:'#16a34a', size: R_LINE }
+          );
+        }
+
+        // Resultado = (Coletas - Despesas) - Comissão (SEM deve anterior)
+        const resultadoFinal = _resColetas2 - c1;
+        ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Resultado', 
+                     window.fmtBRL ? window.fmtBRL(resultadoFinal) : String(resultadoFinal),
+                     { bold:true, size:R_BOLD });
+      }
+    }
+
+    // ---- ACRÉSCIMOS ---- (PARA TODOS OS MODELOS)
+    ry += groupPad;
+    if (typeof drawGroup === 'function') {
+      ry = drawGroup(ctx, rightX, ry + 6, rightW, 'ACRÉSCIMOS', R_GROUP);
+    }
+    ry += groupPad;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(rightX + 1, ry - Math.ceil(groupPad / 2), rightW - 2, 2000);
+
+    if (typeof drawKV2 === 'function') {
+      // Lista os itens individuais
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Adiantamento', 
+                   window.fmtBRL ? window.fmtBRL(r.adiant || 0) : String(r.adiant || 0), 
+                   { size: R_LINE });
+
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Deve Anterior', 
+                   window.fmtBRL ? window.fmtBRL(deveAnt2) : String(deveAnt2),
+                   { bold: true, size: R_LINE });
+
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Valor Extra', 
+                   window.fmtBRL ? window.fmtBRL(r.valorExtra || 0) : String(r.valorExtra || 0), 
+                   { size: R_LINE });
+
+      // VALES
+      const iniPNG = rec.ini || '';
+      const fimPNG = rec.fim || '';
+      const gidPNG = rec.gerenteId || '';
+      const parcelasVale = Array.isArray(rec.valeParcAplicado) ? rec.valeParcAplicado : [];
+      const aplicadoPorId = new Map(parcelasVale.map(function(p) { 
+        return [p.id, Number(p.aplicado)||0]; 
+      }));
+
+      const saldoDepoisPorVale = (function() {
+        try {
+          if (!gidPNG || !iniPNG || !fimPNG) return new Map();
+          const todos = (window.valesLog?.list({gerenteId: gidPNG}) || [])
+            .filter(function(ev) { return ev.periodoIni === iniPNG && ev.periodoFim === fimPNG; });
+          const m = new Map();
+          todos.forEach(function(ev) { m.set(ev.valeId, Number(ev.saldoDepois)||0); });
+          return m;
+        } catch(e) { return new Map(); }
+      })();
+
+      const itensVale = parcelasVale.length
+        ? parcelasVale.map(function(p) { return { id:p.id, cod:p.cod, aplicado: aplicadoPorId.get(p.id)||0 }; })
+        : (window.vales||[]).filter(function(v) { return v.gerenteId===gidPNG && !v.quitado; })
+                           .map(function(v) { return { id:v.id, cod:v.cod, aplicado: aplicadoPorId.get(v.id)||0 }; });
+
+      let totalVales = 0;
+      itensVale.forEach(function(p) {
+        const v = (window.vales||[]).find(function(x) { return x.id===p.id; });
+        const codTxt = v?.cod || p.cod || '—';
+        const aplicado = Number(p.aplicado)||0;
+        totalVales += aplicado;
+
+        const saldoLabel = saldoDepoisPorVale.has(p.id)
+          ? saldoDepoisPorVale.get(p.id)
+          : Math.max((Number(v?.valor)||0) - aplicado, 0);
+
+          const rotulo = 'VALE ' + codTxt + ': ' + (window.fmtBRL ? window.fmtBRL(saldoLabel) : String(saldoLabel));
+          ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, rotulo, 
+                       window.fmtBRL ? window.fmtBRL(Math.abs(aplicado)) : String(Math.abs(aplicado)),
+                       { valueColor:'#b91c1c', size: SIZE_ITEM, spacing: SPACING_ITEM });
+      });
+
+      // ✅ TOTAL ACRÉSCIMOS (Deve Anterior + Adiantamento + Valor Extra + Vales)
+      const totalAcrescimos = (Number(r.adiant)||0) + deveAnt2 + (Number(r.valorExtra)||0) + totalVales;
+
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Total Acréscimos', 
+                   window.fmtBRL ? window.fmtBRL(totalAcrescimos) : String(totalAcrescimos),
+                   { bold:true, valueColor:'#b91c1c', size: R_BOLD });
+    }
+
+    // listas de pagamentos 
+    const _pagts = Array.isArray(rec.pagamentos) ? rec.pagamentos : [];
+    const adiantamentos = _pagts
+      .filter(function(p) { return String(p.forma||'').toUpperCase() === 'ADIANTAMENTO'; })
+      .sort(function(a,b) { return (a.data||'').localeCompare(b.data||''); });
+    const pagamentosNormais = _pagts
+      .filter(function(p) {
+        const f = String(p.forma||'').toUpperCase();
+        return f !== 'ADIANTAMENTO' && f !== 'VALE';
+      })
+      .sort(function(a,b) { return (a.data||'').localeCompare(b.data||''); });
+
+    // ---- RESULTADO ----
+    ry += groupPad;
+    if (typeof drawGroup === 'function') {
+      ry = drawGroup(ctx, rightX, ry + 6, rightW, 'RESULTADO', R_GROUP);
+    }
+    
+    // ✅ CRÉDITO MAIS PRÓXIMO DA LINHA (reduzindo espaço)
+    ry += 2; // Espaço mínimo após o título
+
+    if (typeof drawKV2 === 'function') {
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'Crédito', 
+                   window.fmtBRL ? window.fmtBRL(r.credito || 0) : String(r.credito || 0),
+                   { bold:true, color:'#16a34a', valueColor:'#16a34a', size: R_LINE });
+
+      // À Pagar = Resultado das Coletas + Total Acréscimos - Crédito
+      let resultadoColetas = 0;
+      if (temSegundaComissao) {
+        resultadoColetas = coletas2 - despesas2 - c1 - c2;
+      } else {
+        resultadoColetas = (coletas2 - despesas2) - c1;  // ✅ CORREÇÃO: cálculo direto
+      }
+
+      const aPagarCalc = Number(r.aPagar) || 0;
+
+      ry = drawKV2(ctx, rightX + 12, ry, rightW - 24, 'À Pagar', 
+                   window.fmtBRL ? window.fmtBRL(aPagarCalc) : String(aPagarCalc),
+                   { bold:true, size: R_BOLD });
+
+  // ADIANTAMENTOS / PAGAMENTOS
+  adiantamentos.forEach(function(p) {
+    const rot = (window.fmtData ? window.fmtData(p.data||'') : p.data||'') + ' — ADIANTAMENTO';
+    ry = drawKV2(ctx, rightX+26, ry, rightW-52, rot, 
+                 window.fmtBRL ? window.fmtBRL(Number(p.valor)||0) : String(Number(p.valor)||0),
+                 { color:'#16a34a', valueColor:'#16a34a', size: SIZE_ITEM, spacing: SPACING_ITEM });
+  });
+
+  pagamentosNormais.forEach(function(p) {
+    const forma = (p.forma || '').toString().toUpperCase() || 'PAGTO';
+    const rot = (window.fmtData ? window.fmtData(p.data||'') : p.data||'') + ' — ' + forma;
+    ry = drawKV2(ctx, rightX+12, ry, rightW-24, rot, 
+                 window.fmtBRL ? window.fmtBRL(Number(p.valor)||0) : String(Number(p.valor)||0),
+                 { color:'#16a34a', valueColor:'#16a34a', size: SIZE_ITEM, spacing: SPACING_ITEM });
+  });
+    }
+
+    // ✅ RESTAM NO FINAL (dentro do quadrado RESULTADO)
+    // Adiciona espaço antes do RESTAM para separá-lo do conteúdo acima
+    ry += 8;
+
+    const restamValor = Number(r.restam) || 0;
+    const restamCor = restamValor < 0 ? '#b91c1c' : '#111';
+    const restamTexto = restamValor < 0 ? '(EMPRESA DEVE AO GERENTE)' : '';
+
+    ctx.font = 'bold ' + R_REST + 'px Arial';
+    ctx.fillStyle = restamCor;
+    ctx.textAlign = 'left';  
+    ctx.fillText('RESTAM:', rightX+12, ry+24);
+    ctx.textAlign = 'right'; 
+    ctx.fillText(window.fmtBRL ? window.fmtBRL(restamValor) : String(restamValor), rightX+rightW-12, ry+24);
+
+    // Adiciona aviso se negativo
+    if (restamTexto) {
+      ry += 24;
+      ctx.font = 'bold 12px Arial';
+      ctx.fillStyle = '#b91c1c';
+      ctx.textAlign = 'center';
+      ctx.fillText(restamTexto, rightX + rightW/2, ry + 16);
+    }
+
+    ctx.restore();
+
+    // Converte para PNG
+    const dataURL = cvs.toDataURL('image/png', 1.0);
+    
+    if (!dataURL || dataURL === 'data:,') {
+      console.error('[prestToDataURL] Falha ao gerar imagem');
+      return null;
+    }
+    
+    console.log('[prestToDataURL] ✅ PNG gerado com sucesso');
+    return dataURL;
+    
+  } catch(e) {
+    console.error('[prestToDataURL] Erro geral:', e);
+    return null;
+  }
+};
+
+// Visualizar imagem de uma prestação salva (usado na aba Relatórios)
+function viewPrestImage(id){
+  const arr = JSON.parse(localStorage.getItem(DB_PREST) || '[]');
+  const r = arr.find(x => x.id === id);
+  if(!r){ alert("Prestação não encontrada."); return; }
+
+  const dataURL = prestToDataURL(r);
+  const w = window.open('', 'img_prestacao');
+  if(!w){ alert('Popup bloqueado.'); return; }
+
+  w.document.write(`
+    <html><head><meta charset="utf-8"><title>Prestação</title></head>
+    <body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;">
+      <img src="${dataURL}" style="max-width:100vw;max-height:100vh"/>
+    </body></html>
+  `);
+  w.document.close();
+}
+
+// Deixar acessível globalmente (para botões inline no HTML)
+window.getPrestacaoFromForm = getPrestacaoFromForm;
+window.viewPrestImage = viewPrestImage;
+
+// Excluir prestação salva (e reverter efeitos nos vales)
+async function deletePrest(id){
+  const arr = JSON.parse(localStorage.getItem(DB_PREST) || '[]');
+  const r   = arr.find(x => x.id === id);
+  if(!r){ alert('Prestação não encontrada.'); return; }
+  if(!confirm('Excluir esta prestação de contas? Isso também estorna os VALES aplicados nela.')) return;
+
+  // 1) Estornar efeitos nos vales com base no log dessa prestação
+  try {
+    const logs = (window.valesLog?.list({}) || []).filter(e => e.prestacaoId === id);
+    if (logs.length){
+      const reversos = [];
+      logs.forEach(ev=>{
+        const v = (window.vales||[]).find(x => x.id === ev.valeId);
+        if (!v) return;
+        const saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
+        v.valor   = Number((saldoAntes + Number(ev.delta||0)).toFixed(2));
+        if (v.valor > 0) v.quitado = false;
+
+        reversos.push({
+          id: (typeof uid==='function'? uid(): 'rv_'+Math.random().toString(36).slice(2,9)),
+          valeId: v.id, cod: v.cod||'', gerenteId: v.gerenteId,
+          delta: -(Number(ev.delta)||0),        // delta inverso
+          saldoAntes, saldoDepois: v.valor,
+          prestacaoId: id,                      // referencia de quem gerou o estorno
+          periodoIni: r.ini, periodoFim: r.fim,
+          createdAt: new Date().toISOString()
+        });
+      });
+      if (reversos.length){
+        try { window.valesLog?.bulkAdd(reversos); } catch {}
+        try { saveVales?.(); } catch {}
+        try { renderValesPrestacao?.(); } catch {}
+        try { window.dispatchEvent(new Event('vales:updated')); } catch {}
+      }
+    }
+  } catch(e){ console.warn('Estorno de vales ao excluir prestação:', e); }
+
+// 2) Remove a prestação
+const novo = arr.filter(x => x.id !== id);
+
+// ✅ Deleta do Supabase + localStorage
+if (typeof window.deletarPrestacaoGlobal === 'function') {
+  try {
+    await window.deletarPrestacaoGlobal(id);
+    console.log('✅ Prestação deletada do Supabase:', id);
+  } catch(e) {
+    console.error('❌ Erro ao deletar do Supabase:', e);
+    // Fallback: deleta apenas do localStorage
+    localStorage.setItem(DB_PREST, JSON.stringify(novo));
+  }
+} else {
+  // Fallback se Supabase não estiver carregado
+  localStorage.setItem(DB_PREST, JSON.stringify(novo));
+}
+
+try { window.__syncAbertasMirror(); } catch {}
+
+   // ✅ NOTIFICA SINCRONIZAÇÃO
+   if (typeof window.SyncManager !== 'undefined') {
+    window.SyncManager.notify('prestacoes', { deleted: id });
+  }
+
+
+  // 3) Remove despesas vinculadas a essa prestação
+  try {
+    despesas = (despesas || []).filter(d => d.prestacaoId !== id);
+    saveDesp();
+  } catch(e){ console.warn('Não foi possível atualizar despesas:', e); }
+
+  // 4) Atualiza UI
+  try { renderRelatorios(); } catch(e){}
+  alert('Prestação excluída e vales estornados.');
+}
+window.deletePrest = deletePrest;
+
+document.addEventListener('DOMContentLoaded', ()=>{ try{ __syncAbertasMirror(); }catch{} });
+window.addEventListener('prestacoes:changed', ()=>{ try{ __syncAbertasMirror(); }catch{} });
+window.addEventListener('storage', (e)=>{
+  const k = e?.key || '';
+  if (k.endsWith('bsx_prestacoes_v1') || k.includes('bsx_prestacoes_v1__')) {
+    try{ __syncAbertasMirror(); }catch{}
+  }
+});
+
+
+
+// --- Botão: GERAR PNG (baixa o arquivo)
+document.getElementById('btnPcPng')?.addEventListener('click', async ()=>{  // ✅ async
+  try{
+    const rec = await getPrestacaoFromForm();  // ✅ AGUARDA
+    const dataURL = prestToDataURL(rec);          // gera o PNG offscreen
+
+    if(!dataURL || !dataURL.startsWith('data:image/png')) {
+      alert('Falha ao gerar a imagem.');
+      return;
+    }
+
+    const g = (window.gerentes || []).find(x => String(x.uid||x.id) === String(rec.gerenteId));
+    const nomeGer = (g?.nome || 'Sem Gerente').trim();
+    const nomeGerSafe = nomeGer.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+
+    const fmtDM = (iso)=>{
+      if(!iso) return '';
+      const [y,m,d] = iso.split('-');
+      return `${d}-${m}`; // dia-mês
+    };
+
+    const nome = `${nomeGerSafe} ${fmtDM(rec.ini)} a ${fmtDM(rec.fim)}.png`;
+
+    const a = document.createElement('a');
+    a.href = dataURL;
+    a.download = nome;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }catch(err){
+    console.error(err);
+    alert('Erro ao gerar imagem (ver console).');
+  }
+});
+
+function pcResetForm(){
+  prestacaoAtual = { 
+    despesas: [], 
+    pagamentos: [], 
+    coletas: [], 
+    vales: [], 
+    valeSelec: [], 
+    resumo: {},
+    valeParcAplicado: [],
+    saldoInfo: null
+  };
+
+  const selGer = document.getElementById('pcGerente'); if (selGer) selGer.value = '';
+  ['pcIni','pcFim'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  ['pcValorExtra','pcAdiant','pcDeveAnterior','pcDivida','pcCredito','pcSaldoManual'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=0; });
+  // Reset do saldo manual
+  const chkSaldoManual = document.getElementById('pcUsarSaldoManual');
+  if (chkSaldoManual) {
+    chkSaldoManual.checked = false;
+    const inputSaldoManual = document.getElementById('pcSaldoManual');
+    const helpSaldoManual = document.getElementById('pcSaldoManualHelp');
+    if (inputSaldoManual) inputSaldoManual.style.display = 'none';
+    if (helpSaldoManual) helpSaldoManual.style.display = 'none';
+  }
+  window.__saldoManualAtivo = false;
+  window.__saldoManualValor = undefined;
+  ['pcResultado','pcPerc','pcPagar','pcRestam'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+
+   // (opcional) limpa campos rápidos de coleta (se existirem no DOM)
+   const cNome = document.getElementById('colNome');  if (cNome)  cNome.value = '';
+   const cVal  = document.getElementById('colValor'); if (cVal)   cVal.value  = '';
+ 
+   // (opcional) esvazia tabelas imediatamente (pcRender também fará isso, mas aqui é imediato)
+   document.getElementById('pcColetasBody')?.replaceChildren();
+   document.getElementById('pgNBody')?.replaceChildren();
+   document.getElementById('pgVBody')?.replaceChildren();
+   document.getElementById('pcDespesasBody')?.replaceChildren();
+   document.getElementById('pcValesBody')?.replaceChildren();
+   const tot = (id) => { const el = document.getElementById(id); if (el) el.textContent = 'R$ 0,00'; };
+   tot('pcColetasTotal'); tot('pgNTotal'); tot('pgVTotal'); tot('pcValesTotalDesc'); tot('pcTotalDespesas');
+
+  // apenas 1 ciclo de render/cálculo
+  pcRender();
+  pcSchedule();
+}
+  // 2) Evita que Enter dispare submit/re-render
+  document.getElementById('prestContas')?.addEventListener('keydown', (e)=>{
+    if (e.key === 'Enter' && e.target.matches('input')) e.preventDefault();
+  });
+
+
+// Preenche Deve Anterior e Adiantamento se houver carry pendente
+async function pcApplyCarryIfAny(){  // ✅ async
+  const sel = document.getElementById('pcGerente');
+  const ini = document.getElementById('pcIni')?.value || '';
+  const fim = document.getElementById('pcFim')?.value || '';
+  if (!sel || !sel.value || (!ini && !fim)) return;
+
+  const gerenteId = sel.value;
+
+  // normalizador de período (seg/dom)
+  let seg = '', dom = '';
+  if (typeof __normalizeSegDom === 'function') {
+    const out = __normalizeSegDom(ini, fim) || {};
+    seg = out.seg || ini;
+    dom = out.dom || (fim || ini);
+  } else {
+    seg = ini;
+    dom = fim || ini;
+  }
+
+  // helper local para número (suporta vírgula)
+  const toNum = (x) => {
+    if (typeof x === 'number') return x || 0;
+    let s = String(x || '').trim();
+    if (s.includes(',')) s = s.replace(/\./g,'').replace(',','.');
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? n : 0;
+    };
+
+  // aplica no máximo 1x por (gerente, semana)
+  window.__carryAppliedMap = window.__carryAppliedMap || new Set();
+  const keyOnce = `${gerenteId}_${seg}_${dom}`;
+  if (window.__carryAppliedMap.has(keyOnce)) return;
+
+  const list = (typeof __getCarry === 'function') ? __getCarry() : [];
+
+  // ⚠️ Sem filtro de empresa aqui (mantém seu comportamento atual)
+  const matches = list.filter(c =>
+    String(c.gerenteId) === gerenteId &&
+    c.periodoIni === seg &&
+    c.periodoFim === dom &&
+    !c.consumedAt
+  );
+
+  const somaDeve = matches.reduce((s,c)=> s + toNum(c.deveAnterior), 0);
+  const somaAdi  = matches.reduce((s,c)=> s + toNum(c.adiantamento), 0);
+
+  const deveEl   = document.getElementById('pcDeveAnterior');
+  const adiantEl = document.getElementById('pcAdiant');
+  if (deveEl)   deveEl.value   = (toNum(deveEl.value)   + somaDeve).toString();
+  if (adiantEl) adiantEl.value = (toNum(adiantEl.value) + somaAdi ).toString();
+
+  if (typeof pcCalcular === 'function') await pcCalcular();  // ✅ AGUARDA
+  window.__carryAppliedMap.add(keyOnce);
+}
+
+
+// Dispare quando mudar gerente / datas
+document.getElementById('pcGerente')?.addEventListener('change', pcApplyCarryIfAny);
+document.getElementById('pcIni')?.addEventListener('change', pcApplyCarryIfAny);
+document.getElementById('pcFim')?.addEventListener('change', pcApplyCarryIfAny);
+
+// ===== Modais: Adicionar Vale (banco geral) e Adicionar Pagamento =====
+(function setupPrestModals(){
+  // 0) Esconde os campos inline (UI antiga), mas mantém as tabelas
+  ['pgNData','pgNValor','pgNForma','pgNObs'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el){ el.style.display='none'; el.parentElement?.style && (el.parentElement.style.display='none'); }
+  });
+  const formVale = document.getElementById('formVale');
+  if (formVale){
+    // mantém o form oculto (fluxo antigo), mas NÃO cria botão algum
+    formVale.style.display = 'none';
+  }
+  
+  try { window.dispatchEvent(new Event('bsx:prest-salva')); } catch {}
+
+
+  // 1) CSS mínimo para os dialogs
+  const css = document.createElement('style');
+  css.textContent = `
+    dialog.pc { border:none; border-radius:16px; padding:0; max-width:520px; width:92vw; }
+    dialog::backdrop { background: rgba(0,0,0,.35); }
+    .pc-head{background:#111;color:#fff;padding:12px 20px;font-weight:700}
+    .pc-box{padding:18px 20px}
+    .pc-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .pc-grid label{display:flex;flex-direction:column;gap:6px;font-size:12px}
+    .pc-actions{display:flex;gap:8px;justify-content:flex-end;padding:12px 20px;border-top:1px solid #eee}
+    .col-2{grid-column:1 / -1}
+  `;
+  document.head.appendChild(css);
+
+  // 2) Dialog: Vale (banco geral)
+  const dlgVale = document.createElement('dialog');
+  dlgVale.id = 'dlgVale';
+  dlgVale.className = 'pc';
+  dlgVale.innerHTML = `
+    <div class="pc-head">Adicionar vale (banco geral)</div>
+    <form class="pc-box" id="dlgValeForm" method="dialog">
+      <div class="pc-grid">
+        <label>Código/Ref.<input id="dlgVcod" placeholder="ex.: 5125 / vendedor" required></label>
+        <label>Valor (R$)<input id="dlgVvalor" type="number" step="0.01" min="0" required></label>
+        <label class="col-2">Obs <input id="dlgVobs" placeholder="mensal/semana, acordo etc."></label>
+        <label>Período <input id="dlgVperiodo" placeholder="aaaa-mm"></label>
+      </div>
+      <div class="pc-actions">
+        <button value="cancel" type="reset" class="btn ghost">Cancelar</button>
+        <button id="dlgValeSalvar" class="btn">Salvar</button>
+      </div>
+    </form>`;
+  document.body.appendChild(dlgVale);
+
+  // 3) Dialog: Pagamento (NORMAL/ADIANTAMENTO/PIX/DINHEIRO/CARTÃO)
+  const dlgPg = document.createElement('dialog');
+  dlgPg.id = 'dlgPg';
+  dlgPg.className = 'pc';
+  dlgPg.innerHTML = `
+    <div class="pc-head">Adicionar pagamento</div>
+    <form class="pc-box" id="dlgPgForm" method="dialog">
+      <div class="pc-grid">
+        <label>Data<input id="dlgPgData" type="date"></label>
+        <label>Valor (R$)<input id="dlgPgValor" type="number" step="0.01" min="0" required></label>
+        <label>Forma
+          <select id="dlgPgForma">
+            <option>PIX</option>
+            <option>DINHEIRO</option>
+            <option>CARTÃO</option>
+            <option>ADIANTAMENTO</option>
+          </select>
+        </label>
+        <label class="col-2">Obs <input id="dlgPgObs" placeholder="opcional"></label>
+      </div>
+      <div class="pc-actions">
+        <button value="cancel" type="reset" class="btn ghost">Cancelar</button>
+        <button id="dlgPgSalvar" class="btn">Salvar</button>
+      </div>
+    </form>`;
+  document.body.appendChild(dlgPg);
+
+// 4) Abrir os dialogs
+document.getElementById('btnAbrirVale')?.addEventListener('click', ()=> dlgVale.showModal());
+
+// Reaproveita o botão existente “Adicionar pagamento”:
+// remove TODOS os listeners antigos clonando o botão e colocando só o do diálogo
+{
+  const oldBtn = document.getElementById('btnPgNAdd');
+  if (oldBtn) {
+    const clone = oldBtn.cloneNode(true); // sem listeners antigos
+    oldBtn.parentNode.replaceChild(clone, oldBtn);
+    clone.addEventListener('click', (e)=>{ e.preventDefault(); dlgPg.showModal(); }, {capture:true});
+  }
+}
+
+
+  // 5) Salvar PAGAMENTO — reaproveita pgNAddFromForm()
+  dlgPg.querySelector('#dlgPgSalvar').addEventListener('click', (e)=>{
+    e.preventDefault();
+    const d = dlgPg.querySelector('#dlgPgData')?.value || '';
+    const v = dlgPg.querySelector('#dlgPgValor')?.value || '';
+    const f = dlgPg.querySelector('#dlgPgForma')?.value || 'PIX';
+    const o = dlgPg.querySelector('#dlgPgObs')?.value || '';
+
+    // Preenche os inputs originais (escondidos) e reutiliza a função nativa
+    if (document.getElementById('pgNData'))  document.getElementById('pgNData').value  = d;
+    if (document.getElementById('pgNValor')) document.getElementById('pgNValor').value = v;
+    if (document.getElementById('pgNForma')) document.getElementById('pgNForma').value = f;
+    if (document.getElementById('pgNObs'))   document.getElementById('pgNObs').value   = o;
+
+    if (typeof pgNAddFromForm === 'function') pgNAddFromForm(); // já calcula e atualiza
+    dlgPg.close();
+  });
+
+  // 6) Fechar ao clicar fora do conteúdo
+  [dlgVale, dlgPg].forEach(dlg=>{
+    dlg.addEventListener('click', (e)=>{ if (e.target === dlg) dlg.close(); });
+  });
+})();
+
+/* ===== Botão e modal: VER TODOS OS VALES (com Histórico) ===== */
+(function TodosValesUI(){
+  // CSS mínimo
+  const css = document.createElement('style');
+  css.textContent = `
+    dialog.tv { border:none; border-radius:16px; padding:0; max-width:980px; width:96vw; }
+    dialog::backdrop { background: rgba(0,0,0,.35); }
+    .tv-head{background:#111;color:#fff;padding:12px 20px;font-weight:700}
+    .tv-box{padding:18px 20px}
+    .tv-table{width:100%; border-collapse:collapse; font-size:14px}
+    .tv-table th,.tv-table td{border-bottom:1px solid #eee; padding:8px; text-align:left}
+    .tv-right{text-align:right}
+    .tv-mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
+    .tv-red{color:#b91c1c}
+    .tv-green{color:#16a34a}
+    .tv-actions{display:flex; gap:8px; justify-content:flex-end; padding:12px 20px; border-top:1px solid #eee}
+    .btn{padding:.5rem .8rem; border-radius:.5rem; background:#111; color:#fff; border:none; cursor:pointer}
+    .btn.ghost{background:#f3f4f6; color:#111}
+    .btn.danger{background:#b91c1c; color:#fff} 
+  `;
+  document.head.appendChild(css);
+
+  // Cria o botão ao lado do "Adicionar vale", se existir
+  let anchor = document.getElementById('btnAbrirVale')
+           || document.getElementById('btnPgNAdd')
+           || document.querySelector('#prestContas') || document.body;
+
+  const btn = document.createElement('button');
+  btn.id = 'btnVerTodosVales';
+  btn.className = 'btn';
+  btn.type = 'button';
+  btn.style.marginLeft = '8px';
+  btn.textContent = 'Ver todos os vales';
+  if (anchor.parentNode) anchor.parentNode.insertBefore(btn, anchor.nextSibling);
+  else document.body.appendChild(btn);
+
+  // Modal
+  const dlg = document.createElement('dialog');
+  dlg.id = 'dlgValesTodos';
+  dlg.className = 'tv';
+  dlg.innerHTML = `
+    <div class="tv-head">Todos os vales — empresa atual</div>
+    <div class="tv-box">
+      <div style="max-height:38vh;overflow:auto;border:1px solid #eee;border-radius:12px;margin-bottom:12px">
+        <table class="tv-table">
+          <thead>
+            <tr>
+              <th>Gerente</th>
+              <th>Código</th>
+              <th class="tv-right">Saldo (R$)</th>
+              <th>Obs</th>
+              <th>Período</th>
+              <th>Status</th>
+              <th class="tv-right">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tvBody"><tr><td colspan="7">—</td></tr></tbody>
+        </table>
+      </div>
+
+      <h3 style="margin:16px 0 8px 0">Histórico de pagamentos de VALE</h3>
+      <div style="max-height:34vh;overflow:auto;border:1px solid #eee;border-radius:12px">
+        <table class="tv-table">
+          <thead>
+            <tr>
+              <th>Data/Hora</th>
+              <th>Gerente</th>
+              <th>Código</th>
+              <th class="tv-right">Δ (R$)</th>
+              <th class="tv-right">Saldo (antes → depois)</th>
+              <th>Período / Prestação</th>
+            </tr>
+          </thead>
+          <tbody id="tvLogBody"><tr><td colspan="6">—</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="tv-actions">
+      <button class="btn ghost" id="tvFechar">Fechar</button>
+    </div>`;
+  document.body.appendChild(dlg);
+
+  const esc = window.esc || (s => String(s ?? ''));
+  const gname = (id) => ( (window.gerentes||[]).find(x=>String(x.uid)===String(id))?.nome || '—' );
+
+  function renderVales(){
+    const tb = dlg.querySelector('#tvBody'); if (!tb) return;
+    const arr = __valesReload();
+  
+    const rows = arr.slice().sort((a,b)=>{
+      const ga = gname(a.gerenteId).localeCompare(gname(b.gerenteId));
+      if (ga!==0) return ga;
+      return String(a.cod||'').localeCompare(String(b.cod||''));
+    }).map(v=>{
+      const per = v.periodo ? esc(v.periodo) : '';
+      const st  = v.quitado ? 'Quitado' : 'Em aberto';
+      return `<tr>
+        <td>${esc(gname(v.gerenteId))}</td>
+        <td class="tv-mono">${esc(v.cod||'')}</td>
+        <td class="tv-right tv-mono ${v.quitado?'':'tv-red'}">${fmtBRL(Number(v.valor)||0)}</td>
+        <td>${esc(v.obs||'')}</td>
+        <td>${per}</td>
+        <td>${st}</td>
+        <td class="tv-right">
+          <button class="btn danger" data-tv-del="${v.id}">Excluir</button>
+        </td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="7">Nenhum vale cadastrado nesta empresa.</td></tr>';
+  
+    tb.innerHTML = rows;
+    wireTvActions(); // conecta os cliques após renderizar
+  }
+  
+function wireTvActions(){
+  dlg.querySelectorAll('[data-tv-del]').forEach(btn=>{
+    if (btn.__wired) return;
+    btn.__wired = true;
+    btn.addEventListener('click', ()=>{
+      const id = btn.getAttribute('data-tv-del');
+      // usa o fluxo oficial (com confirmação, remoção de histórico etc.)
+      if (typeof window.deleteValeById === 'function'){
+        window.deleteValeById(id);
+        // atualiza as visões imediatamente neste mesmo modal
+        renderVales();
+        renderHist();
+        try { renderValesPrestacao?.(); } catch {}
+      }
+    });
+  });
+  }
+
+  function renderHist(){
+    const tb = dlg.querySelector('#tvLogBody'); if (!tb) return;
+    const logs = (window.valesLog?.list({}) || [])
+      .sort((a,b)=> String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
+
+    tb.innerHTML = logs.map(ev=>{
+      const delta = Number(ev.delta)||0;
+      const per   = (ev.periodoIni && ev.periodoFim) ? `${fmtData(ev.periodoIni)} a ${fmtData(ev.periodoFim)}` : '';
+      const dstr  = `${fmtData(ev.createdAt)} ${fmtHora?.(ev.createdAt) || ''}`;
+      return `<tr>
+        <td class="tv-mono">${dstr}</td>
+        <td>${esc(gname(ev.gerenteId))}</td>
+        <td class="tv-mono">${esc(ev.cod||'')}</td>
+        <td class="tv-right tv-mono ${delta>=0?'tv-red':'tv-green'}">${delta>=0?'-':'+'}${fmtBRL(Math.abs(delta))}</td>
+        <td class="tv-right tv-mono">${fmtBRL(Number(ev.saldoAntes)||0)} → ${fmtBRL(Number(ev.saldoDepois)||0)}</td>
+        <td>${esc(per)}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6">Ainda não há pagamentos registrados.</td></tr>';
+  }
+
+  // Abrir/fechar
+  btn.addEventListener('click', ()=>{ dlg.showModal(); renderVales(); renderHist(); });
+  dlg.querySelector('#tvFechar').addEventListener('click', ()=> dlg.close());
+  dlg.addEventListener('click', (e)=>{ if (e.target===dlg) dlg.close(); });
+
+  // Atualizar conteúdo quando algo mudar
+  window.addEventListener('storage', (e)=>{
+    const k = e?.key || '';
+    if ((k.includes('bsx_vales_v1') || k.includes('bsx_vales_log_v1')) && dlg.open){
+      renderVales(); renderHist();
+    }
+  });
+  // mesmo tab: re-render quando vales mudarem
+window.addEventListener('vales:updated', ()=>{
+  if (dlg.open) { renderVales(); renderHist(); }
+});
+
+  document.addEventListener('empresa:change', ()=>{ if (dlg.open){ renderVales(); renderHist(); }});
+})();
+
+
+// Reforço: garante que o botão Salvar do modal grava e não fecha por submit automático
+/* === MODAL "Adicionar vale" — versão estável (SUBSTITUIR o hardenDlgVale) === */
+(function ValeModalStable(){
+  const dlg      = document.getElementById('dlgVale');
+  const form     = document.getElementById('dlgValeForm');
+  const btnSave  = document.getElementById('dlgValeSalvar');
+  const btnCancel= dlg?.querySelector('.btn.ghost');
+
+  if (!dlg || !form || !btnSave) return;
+
+  // Evita submit/fechamento automático do <form method="dialog">
+  btnSave.type = 'button';
+
+  // Garante que só conecte uma vez
+  if (btnSave.__wired) return;
+  btnSave.__wired = true;
+
+  function salvarVale(e){
+    e && e.preventDefault();
+
+    const gid = document.getElementById('pcGerente')?.value || '';
+    if (!gid){ alert('Selecione um gerente para lançar o vale.'); return; }
+
+    let val = String(document.getElementById('dlgVvalor')?.value || '').trim();
+    if (val.includes(',')) val = val.replace(/\./g,'').replace(',','.');
+    const valor = parseFloat(val || '0') || 0;
+    if (valor <= 0){ alert('Informe um valor válido.'); return; }
+
+    const novo = {
+      id: (typeof uid==='function' ? uid() : 'v_'+Math.random().toString(36).slice(2,9)),
+      gerenteId: gid,
+      cod: (document.getElementById('dlgVcod')?.value || '').trim(),
+      valor,
+      saldo: valor,
+      obs: (document.getElementById('dlgVobs')?.value || '').trim(),
+      periodo: (document.getElementById('dlgVperiodo')?.value || '').trim(),
+      quitado: false,
+      criadoEm: new Date().toISOString()
+    };
+
+    // Salva no Supabase
+    if (window.SupabaseAPI?.vales) {
+      window.SupabaseAPI.vales.create(novo).then(() => {
+        (window.vales ||= []).push(novo);
+        requestAnimationFrame(()=> renderValesPrestacao?.());
+      });
+    } else {
+      (window.vales ||= []).push(novo);
+      requestAnimationFrame(()=> renderValesPrestacao?.());
+    }
+
+    dlg.close();
+    form.reset();
+  }
+
+  btnSave.addEventListener('click', salvarVale);
+  form.addEventListener('submit', salvarVale);
+
+  // Cancelar → fecha o diálogo de verdade
+  if (btnCancel){
+    btnCancel.type = 'button';
+    btnCancel.addEventListener('click', (e)=>{ e.preventDefault(); dlg.close(); }, { once:true });
+  }
+})();
+
+/* ========= REABRIR — versão única e estável ========= */
+(function ReabrirUnificado(){
+
+  
+  const lsRead  = (k)=>{ try{ return JSON.parse(localStorage.getItem(k)||'[]'); }catch{ return []; } };
+  const lsWrite = (k,a)=>{ try{ localStorage.setItem(k, JSON.stringify(a||[])); }catch(e){ console.warn('lsWrite',k,e); } };
+
+  function goToPrestTab(){
+    const btn = document.querySelector('[data-tab="prest"]');
+    if (btn) { btn.click(); return; }
+    if (typeof window.openTab === 'function') { openTab('prest'); return; }
+    try { location.hash = '#prest'; } catch(_){}
+  }
+
+  async function loadIntoEditor(r){
+    try{
+      console.log('[EDIT] Carregando:', r.id);
+      
+      window.__prestBeingEdited = { 
+        id: r.id, 
+        saldoInfo: r.saldoInfo ? {...r.saldoInfo} : null,
+        resumo: r.resumo ? {...r.resumo} : null
+      };
+      
+      // Preenche campos
+      const selGer = document.getElementById('pcGerente'); 
+      if (selGer) selGer.value = r.gerenteId || '';
+      
+      document.getElementById('pcIni').value = r.ini || '';
+      document.getElementById('pcFim').value = r.fim || '';
+
+      // ✅ FIX: SEMPRE busca despesas da tabela `despesas` do Supabase como fonte primária.
+      // Isso preserva os UIDs originais e evita duplicatas ao re-salvar.
+      // Fallback: usa dados.despesas do JSONB (snapshot) se a query falhar.
+      let despesasParaEditor = [];
+      let usouFontePrimaria = false;
+      
+      if (r.ini && r.fim && window.SupabaseAPI?.client) {
+        console.log('[EDIT] 📥 Buscando despesas da tabela despesas (fonte primária)...');
+        try {
+          const empresaId = await (window.getEmpresaAtual?.() || Promise.resolve(null));
+          
+          let query = window.SupabaseAPI.client
+            .from('despesas')
+            .select('uid, ficha, descricao, valor, data, rota, categoria');
+          
+          // Filtro por período (usa periodo_ini/periodo_fim se disponível, senão data)
+          query = query.eq('gerente_nome', r.gerenteNome || '');
+          query = query.or(`and(periodo_ini.eq.${r.ini},periodo_fim.eq.${r.fim}),and(data.gte.${r.ini},data.lte.${r.fim})`);
+          
+          if (empresaId) {
+            query = query.eq('empresa_id', empresaId);
+          }
+          
+          const { data: despBanco } = await query;
+          
+          if (despBanco && despBanco.length > 0) {
+            // Deduplica por uid
+            const uidSet = new Set();
+            despesasParaEditor = despBanco.filter(d => {
+              if (uidSet.has(d.uid)) return false;
+              uidSet.add(d.uid);
+              return true;
+            }).map(d => ({
+              id:    d.uid,           // ← Preserva o UID original!
+              ficha: d.ficha || '',
+              info:  d.descricao || '',
+              valor: Number(d.valor) || 0,
+              data:  d.data || ''
+            }));
+            usouFontePrimaria = true;
+            console.log('[EDIT] ✅ Recuperadas', despesasParaEditor.length, 'despesas da tabela (UIDs preservados)');
+          }
+        } catch(e) {
+          console.warn('[EDIT] Erro ao buscar despesas da tabela:', e);
+        }
+      }
+      
+      // Fallback: usa snapshot do JSONB se não conseguiu da tabela
+      if (!usouFontePrimaria) {
+        despesasParaEditor = (r.despesas || []).map(x => ({...x}));
+        if (despesasParaEditor.length > 0) {
+          console.log('[EDIT] ⚠️ Usando snapshot JSONB:', despesasParaEditor.length, 'despesas');
+        } else {
+          console.log('[EDIT] ⚠️ Nenhuma despesa encontrada para esta prestação');
+        }
+      }
+  
+      // Carrega dados
+      window.prestacaoAtual = {
+        despesas:  despesasParaEditor,
+        pagamentos:(r.pagamentos|| []).map(x => ({...x})),
+        coletas:   (r.coletas   || []).map(x => ({...x})),
+        vales:     (r.vales     || []).map(x => ({...x})),
+        valeSelec: (r.valesSel  || []).map(x => ({...x})),
+        resumo:    {...(r.resumo || {})},
+        valeParcAplicado: (r.valeParcAplicado || []).map(x => ({...x})),
+        saldoInfo: r.saldoInfo ? {...r.saldoInfo} : null
+      };
+  
+      console.log('[EDIT] Coletas:', window.prestacaoAtual.coletas?.length);
+      console.log('[EDIT] Despesas:', window.prestacaoAtual.despesas?.length);
+  
+      // Renderiza TUDO
+      pcRenderColetas?.();
+      pcRender?.();
+      pgRender?.();
+      renderValesPrestacao?.();
+      if (typeof pcCalcular === 'function') await pcCalcular();
+      
+      console.log('[EDIT] ✅ Prestação carregada!');
+      
+    } catch(e) {
+      console.error('[EDIT] ERRO:', e);
+      alert('Erro ao carregar: ' + e.message);
+    }
+  }
+
+  // reabrir: move de FINALIZADAS -> ABERTAS e (opcional) abre para editar
+  window.reabrirPrestacao = async function(id, opts={ open:false }){
+    try{
+      const fechadas = lsRead(DB_PREST);
+      const idx = fechadas.findIndex(p => p.id === id);
+      if (idx === -1){ alert('Prestação não encontrada.'); return; }
+
+      // ✅ Estorna o desconto efetivo dos vales (semana volta para "aberta")
+      try {
+        await window.__estornarValesDePrestacao?.(fechadas[idx]);
+      } catch(e) {
+        console.warn('reabrirPrestacao: falha ao estornar vales:', e);
+      }
+
+      // ✅ Estorna o efeito no saldo acumulado (devolve para estado anterior)
+      try {
+        const prest = fechadas[idx];
+        const deveEstornarSaldo = window.SaldoAcumulado && (
+          prest.saldoInfo?.usandoSaldoAcumulado ||
+          prest.saldoInfo?.regraEspecial === 'SEGUNDA_COMISSAO' ||
+          prest.saldoInfo?.regraEspecial === 'GERENTE_50_SALDO'
+        );
+        if (deveEstornarSaldo) {
+          const empresaId = prest.empresaId || (window.getCompany ? window.getCompany() : 'BSX');
+          const saldoAtual = await window.SaldoAcumulado.getSaldo(prest.gerenteId, empresaId);
+          const novoAnt = Number(prest.saldoInfo?.saldoCarregarAnterior) || 0;
+          const novoFinal = Number(prest.saldoInfo?.saldoCarregarNovo) || 0;
+          const delta = novoFinal - novoAnt;
+          const estornado = Math.max(0, Number(saldoAtual) - delta);
+          await window.SaldoAcumulado.setSaldo(prest.gerenteId, empresaId, estornado);
+          console.log('[reabrirPrestacao] Saldo estornado:', estornado);
+        }
+      } catch(e) {
+        console.warn('reabrirPrestacao: falha ao estornar saldo:', e);
+      }
+
+      const rec = fechadas[idx];
+      fechadas.splice(idx, 1);
+      lsWrite(DB_PREST, fechadas);
+
+      rec.status      = 'aberta';
+      rec.fechada     = false;
+      delete rec.fechadaEm;
+      rec.reabertaEm  = new Date().toISOString();
+
+// 🔁 Escreve de volta na MESMA base única (Relatórios enxerga aqui)
+const base = lsRead(DB_PREST);
+const j = base.findIndex(p => p.id === rec.id);
+if (j > -1) base.splice(j, 1);
+base.push(rec);
+lsWrite(DB_PREST, base);
+try { window.__syncAbertasMirror(); } catch {}
+
+
+      try { renderPrestFechadas?.(); } catch {}
+      try { renderPrestAbertas?.(); } catch {}
+      try { renderRelatorios?.(); }   catch {}
+      try { window.dispatchEvent(new Event('prestacoes:changed')); } catch {}
+
+      (window.toast ? toast('Prestação reaberta e movida para “Abertas”.')
+                    : alert('Prestação reaberta e movida para "Abertas".'));
+
+      if (opts.open){
+        // → abrir para edição
+        goToPrestTab();
+        const t0 = Date.now();
+        (function wait(){
+          const ok = !!document.querySelector('#prestContas');
+          if (ok) return loadIntoEditor(rec);
+          if (Date.now() - t0 > 5000) return;
+          requestAnimationFrame(wait);
+        })();
+      } else {
+        // → apenas navegar para Relatórios (onde você espera ver o efeito)
+        try { showPage?.('prest-rel'); }
+        catch(_) { try { openTab?.('prest-rel'); } catch(__) { location.hash = '#prest-rel'; } }
+      }
+
+    }catch(e){
+      console.warn('reabrirPrestacao:', e);
+      alert('Erro ao reabrir (veja o console).');
+    }
+  };
+
+  document.addEventListener('click', (ev)=>{
+    const btn = ev.target.closest('[data-reabrir]');
+    if (!btn) return;
+    ev.preventDefault();
+    const id = btn.getAttribute('data-reabrir');
+
+    // padrão: NÃO abrir editor (vai para Relatórios).
+    // se o botão tiver data-open="1", abre editor.
+    const open = btn.hasAttribute('data-open')
+      ? (btn.getAttribute('data-open') !== '0')
+      : false;
+
+    if (id) window.reabrirPrestacao(id, { open });
+  }, true);
+
+
+})();
+
+// Mantém compatibilidade com código antigo que ainda chama __syncAbertasMirror,
+// mas agora atualiza *abertas* e *fechadas* de uma vez.
+window.__syncAbertasMirror = function(){
+  try { window.__syncPrestMirrors?.(); } 
+  catch(e){ console.warn('__syncAbertasMirror wrapper:', e); }
+};
+
+
+// Helpers globais de status
+window.__isFechada = (p) =>
+  p?.fechada === true || !!p?.fechadaEm || p?.status === 'fechada';
+
+window.__isAberta = (p) =>
+  p?.fechada === false || p?.status === 'aberta' || p?.aberta === true ||
+  (!!p?.reabertaEm && !p?.fechadaEm);
+
+// 🔁 Espelhos compatíveis para telas antigas: <DB_PREST>_abertas e <DB_PREST>_fechadas
+window.__syncPrestMirrors = function(){
+  try{
+    const baseKey = String(window.DB_PREST || 'bsx_prestacoes_v1');
+    const arr = JSON.parse(localStorage.getItem(baseKey) || '[]') || [];
+    const fechadas = arr.filter(window.__isFechada);
+    const abertas  = arr.filter(window.__isAberta);
+
+    localStorage.setItem(baseKey + '_fechadas', JSON.stringify(fechadas));
+    localStorage.setItem(baseKey + '_abertas',  JSON.stringify(abertas));
+  }catch(e){
+    console.warn('__syncPrestMirrors:', e);
+  }
+};
+
+
+
+
+/* ==================== PRESTAÇÕES → PÁGINA "VALES" ==================== */
+// Sinaliza que a página dedicada está ativa (usado para desativar botões antigos)
+window.VALES_PAGE_ENABLED = true;
+
+// util: (re)carrega banco por empresa - usa versão definida na API Supabase
+// window.__valesReload já definido acima
+
+// permissão (somente admin edita)
+function vlsCanEdit(){
+  const A = window.UserAuth || {};
+  // admin sempre pode; senão precisa da permissão específica
+  return (A.isAdmin?.() === true) || (A.has?.('vales_edit') === true);
+}
+
+
+function vlsFillGerentes(selectEl){
+  try{
+    const list = Array.isArray(window.gerentes) ? window.gerentes : [];
+    selectEl.innerHTML = '<option value="">Selecione</option>' +
+      list.map(g=>`<option value="${g.uid}">${esc(g.nome||'(sem nome)')}</option>`).join('');
+  }catch{}
+}
+
+// popula filtro da tabela
+function vlsFillFiltro(){
+  const sel = document.getElementById('vlsFiltroGerente'); if (!sel) return;
+  const list = Array.isArray(window.gerentes) ? window.gerentes.slice() : [];
+  sel.innerHTML = '<option value="">Todos</option>' +
+    list.map(g=>`<option value="${g.uid}">${esc(g.nome||'(sem nome)')}</option>`).join('');
+}
+
+function vlsRenderTabela(){
+  const tb = document.getElementById('vlsTBody'); if (!tb) return;
+  const gid = document.getElementById('vlsFiltroGerente')?.value || '';
+  const q   = (document.getElementById('vlsBusca')?.value || '').trim().toLowerCase();
+
+  const gname = (id)=> (window.gerentes||[]).find(x=>String(x.uid)===String(id))?.nome || '—';
+
+  const arr = __valesReload().filter(v=>{
+    if (gid && String(v.gerenteId) !== String(gid)) return false;
+    if (q){
+      const hay = `${v.cod||''} ${v.obs||''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  }).sort((a,b)=>{
+    const ga = gname(a.gerenteId).localeCompare(gname(b.gerenteId));
+    if (ga!==0) return ga;
+    return String(a.cod||'').localeCompare(String(b.cod||''));
+  });
+
+  tb.innerHTML = arr.map(v=>{
+    const st = v.quitado ? 'Quitado' : 'Em aberto';
+    const can = vlsCanEdit();
+    return `
+      <tr data-id="${v.id}">
+        <td style="padding:10px">${esc(gname(v.gerenteId))}</td>
+        <td style="padding:10px">${esc(v.cod||'')}</td>
+        <td style="padding:10px;text-align:right" class="${v.quitado?'':'tv-red'}">${vlsFmt(v.valor||0)}</td>
+        <td style="padding:10px">${esc(v.obs||'')}</td>
+        <td style="padding:10px">${esc(v.periodo||'')}</td>
+        <td style="padding:10px">${st}</td>
+        <td style="padding:10px;text-align:right">
+          <button class="btn" data-vls-hist="${v.id}">Histórico</button>
+          <button class="btn ghost" data-vls-quitar="${v.id}" ${(!can || v.quitado)?'disabled':''}>Quitar</button>
+          <button class="btn danger" data-vls-del="${v.id}" ${!can?'disabled':''}>Excluir</button>
+        </td>
+      </tr>`;
+  }).join('') || '<tr><td colspan="7" style="padding:12px">Nenhum vale encontrado.</td></tr>';
+
+  // ações
+  tb.querySelectorAll('[data-vls-del]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      if (!vlsCanEdit()) return;
+      const id = b.getAttribute('data-vls-del');
+      window.deleteValeById?.(id);
+      vlsRenderTabela();
+      try { renderValesPrestacao?.(); } catch {}
+      try { window.dispatchEvent(new Event('vales:updated')); } catch {}
+    });
+  });
+
+  tb.querySelectorAll('[data-vls-quitar]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      if (!vlsCanEdit()) return;
+      const id = b.getAttribute('data-vls-quitar');
+      const v  = (__valesReload()||[]).find(x=>x.id===id);
+      if (!v || v.quitado) return;
+      const saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
+      if (!confirm(`Quitar este vale? Isso zera o saldo de ${fmtBRL(saldoAntes)}.`)) return;
+
+      v.valor = 0;
+      v.saldo = 0;
+      v.quitado = true;
+      
+      // Atualiza no Supabase
+      if (window.SupabaseAPI?.vales) {
+        await window.SupabaseAPI.vales.update(id, { saldo: 0, quitado: true });
+      }
+      
+      // Log
+      window.valesLog?.add({
+        id: (typeof uid==='function'? uid(): 'vl_'+Math.random().toString(36).slice(2,9)),
+        valeId: v.id, cod: v.cod||'', gerenteId: v.gerenteId,
+        delta: saldoAntes, saldoAntes, saldoDepois: 0,
+        prestacaoId: null, periodoIni: null, periodoFim: null,
+        createdAt: new Date().toISOString()
+      });
+      
+      vlsRenderTabela();
+      try { renderValesPrestacao?.(); } catch {}
+      try { window.dispatchEvent(new Event('vales:updated')); } catch {}
+    });
+  });
+}
+
+
+function vlsOpenNovo(){
+  if (!vlsCanEdit()){ alert('Somente administrador pode criar vales.'); return; }
+  const dlg = document.getElementById('dlgVlsNovo'); if (!dlg) return;
+  // popular gerentes no dialog
+  const sel = document.getElementById('vlsGerente'); if (sel){ vlsFillGerentes(sel); }
+  dlg.showModal();
+}
+
+function vlsSalvarNovo(){
+  if (!vlsCanEdit()) return;
+
+  const sel = document.getElementById('vlsGerente'); const gid = sel?.value || '';
+  if (!gid){ alert('Selecione o gerente.'); return; }
+
+  const cod = (document.getElementById('vlsCod')?.value || '').trim();
+  let valor = (document.getElementById('vlsValor')?.value || '').trim();
+  const obs = (document.getElementById('vlsObs')?.value || '').trim();
+  const periodo = (document.getElementById('vlsPeriodo')?.value || '').trim();
+
+  if (valor.includes(',')) valor = valor.replace(/\./g,'').replace(',','.');
+  const vnum = parseFloat(valor||'0')||0;
+  if (vnum <= 0){ alert('Informe um valor válido (> 0).'); return; }
+
+  const novo = {
+    id: (typeof uid==='function' ? uid() : 'v_'+Math.random().toString(36).slice(2,9)),
+    gerenteId: gid,
+    cod, valor: vnum, saldo: vnum, obs, periodo,
+    quitado: false,
+    criadoEm: new Date().toISOString()
+  };
+
+  // Salva no Supabase
+  if (window.SupabaseAPI?.vales) {
+    window.SupabaseAPI.vales.create(novo).then(() => {
+      (window.vales ||= []).push(novo);
+      
+      // Log de criação
+      window.valesLog?.add({
+        id: (typeof uid==='function'? uid(): 'vl_'+Math.random().toString(36).slice(2,9)),
+        valeId: novo.id, cod: novo.cod||'', gerenteId: novo.gerenteId,
+        delta: -(Number(novo.valor)||0),
+        saldoAntes: 0, saldoDepois: Number(novo.valor)||0,
+        prestacaoId: null, periodoIni: null, periodoFim: null,
+        createdAt: new Date().toISOString()
+      });
+      
+      vlsRenderTabela();
+      try { renderValesPrestacao?.(); } catch {}
+      try { window.dispatchEvent(new Event('vales:updated')); } catch {}
+    });
+  } else {
+    (window.vales ||= []).push(novo);
+    vlsRenderTabela();
+  }
+
+  document.getElementById('dlgVlsNovo')?.close();
+  document.getElementById('vlsForm')?.reset();
+}
+
+
+
+function ensureHistDialog(){
+  // CSS (uma vez só)
+  if (!document.getElementById('tvStyles')){
+    const css = document.createElement('style');
+    css.id = 'tvStyles';
+    css.textContent = `
+      dialog.tv { border:none; border-radius:16px; padding:0; max-width:980px; width:96vw; }
+      dialog::backdrop { background: rgba(0,0,0,.35); }
+      .tv-head{background:#111;color:#fff;padding:12px 20px;font-weight:700}
+      .tv-box{padding:18px 20px}
+      .tv-table{width:100%; border-collapse:collapse; font-size:14px}
+      .tv-table th,.tv-table td{border-bottom:1px solid #eee; padding:8px; text-align:left}
+      .tv-right{text-align:right}
+      .tv-mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
+      .tv-red{color:#b91c1c}
+      .tv-green{color:#16a34a}
+      .tv-actions{display:flex; gap:8px; justify-content:flex-end; padding:12px 20px; border-top:1px solid #eee}
+      .btn{padding:.5rem .8rem; border-radius:.5rem; background:#111; color:#fff; border:none; cursor:pointer}
+      .btn.ghost{background:#f3f4f6; color:#111}
+    `;
+    document.head.appendChild(css);
+  }
+
+  if (document.getElementById('dlgVlsHist')) return;
+
+  const dlg = document.createElement('dialog');
+  dlg.id = 'dlgVlsHist';
+  dlg.className = 'tv';
+  dlg.innerHTML = `
+    <div class="tv-head" id="vlsHistTitulo">Histórico</div>
+    <div class="tv-box" style="max-height:70vh;overflow:auto;border:1px solid #eee;border-radius:12px">
+      <table class="tv-table">
+        <thead>
+          <tr>
+            <th>Data/Hora</th>
+            <th class="tv-right">Δ (R$)</th>
+            <th class="tv-right">Saldo (antes → depois)</th>
+            <th>Período / Prestação</th>
+          </tr>
+        </thead>
+        <tbody id="vlsHistBody"><tr><td colspan="4">—</td></tr></tbody>
+      </table>
+    </div>
+    <div class="tv-actions"><button class="btn ghost" id="vlsHistFechar">Fechar</button></div>`;
+  document.body.appendChild(dlg);
+
+  dlg.querySelector('#vlsHistFechar').addEventListener('click', ()=> dlg.close());
+  dlg.addEventListener('click', (e)=>{ if (e.target===dlg) dlg.close(); });
+}
+
+async function vlsOpenHist(id){
+  const gname = (gid)=> (window.gerentes||[]).find(x=>String(x.uid)===String(gid))?.nome || '—';
+  const v = (__valesReload()||[]).find(x=>x.id===id);
+  if (!v) return;
+
+  ensureHistDialog();
+  const dlg = document.getElementById('dlgVlsHist');
+  dlg.querySelector('#vlsHistTitulo').textContent =
+    `Histórico — Vale ${v.cod||''} (${gname(v.gerenteId)})`;
+
+  const tb  = dlg.querySelector('#vlsHistBody');
+  tb.innerHTML = '<tr><td colspan="4">Carregando...</td></tr>';
+  dlg.showModal();
+
+  // Carrega logs do Supabase
+  let logs = [];
+  if (window.SupabaseAPI?.valesLog?.list) {
+    logs = await window.SupabaseAPI.valesLog.list({valeId: id});
+  }
+  logs.sort((a,b)=> String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
+
+  tb.innerHTML = logs.length ? logs.map(ev=>{
+    const delta = Number(ev.delta)||0;
+    const dstr  = `${fmtData(ev.createdAt)} ${fmtHora?.(ev.createdAt) || ''}`;
+    const per   = (ev.periodoIni && ev.periodoFim) ? `${fmtData(ev.periodoIni)} a ${fmtData(ev.periodoFim)}` : (ev.prestacaoId ? 'Prestação' : '');
+    return `<tr>
+      <td class="tv-mono">${dstr}</td>
+      <td class="tv-right tv-mono ${delta>=0?'tv-red':'tv-green'}">${delta>=0?'-':'+'}${fmtBRL(Math.abs(delta))}</td>
+      <td class="tv-right tv-mono">${fmtBRL(Number(ev.saldoAntes)||0)} → ${fmtBRL(Number(ev.saldoDepois)||0)}</td>
+      <td>${per}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="4">Nenhum evento registrado para este vale.</td></tr>';
+}
+
+
+async function vlsInit(){
+  const A = window.UserAuth || {};
+  if (!(A.isAdmin?.() || A.can?.('vales_view'))) {
+    alert('Você não tem permissão para ver a página de Vales.');
+    return;
+  }
+  document.getElementById('btnAbrirVale')?.remove();
+  document.getElementById('btnVerTodosVales')?.remove();
+
+  // Carrega vales do Supabase antes de renderizar
+  if (window.__valesReloadAsync) {
+    await window.__valesReloadAsync();
+  }
+
+  vlsFillFiltro();
+  vlsRenderTabela();
+
+  document.getElementById('vlsFiltroGerente')?.addEventListener('change', vlsRenderTabela);
+  document.getElementById('vlsBusca')?.addEventListener('input', vlsRenderTabela);
+  document.getElementById('vlsBtnNovo')?.addEventListener('click', vlsOpenNovo);
+  document.getElementById('vlsSalvar')?.addEventListener('click', vlsSalvarNovo);
+
+  // Delegação única: capta cliques no botão "Histórico" mesmo após re-render
+const tbHist = document.getElementById('vlsTBody');
+if (tbHist && !tbHist.__histWired){
+  tbHist.__histWired = true;
+  tbHist.addEventListener('click', (e)=>{
+    const b = e.target.closest('[data-vls-hist]');
+    if (!b) return;
+    e.preventDefault();
+    const id = b.getAttribute('data-vls-hist');
+    if (window.vlsOpenHist) window.vlsOpenHist(id);
+  }, true);
+}
+
+
+  // reagir a mudanças externas
+  window.addEventListener('vales:updated', vlsRenderTabela);
+  document.addEventListener('empresa:change', async ()=>{ 
+    await window.__valesReloadAsync?.(); 
+    vlsFillFiltro(); 
+    vlsRenderTabela(); 
+  });
+}
+
+// inicializa quando a aba “Vales” for exibida (se você usa openTab)
+document.addEventListener('click', (ev)=>{
+  const btn = ev.target.closest('[data-tab="vales"]');
+  if (!btn) return;
+  setTimeout(vlsInit, 0);
+});
+
+// fallback: se a aba já estiver no DOM ao carregar
+document.addEventListener('DOMContentLoaded', ()=>{
+  if (document.getElementById('tabVales')) vlsInit();
+});
+/* ==================== /PÁGINA "VALES" ==================== */
+/* ===== LIMPAR UI DA PRESTAÇÃO (sem espelho e sem botões de vales) ===== */
+
+
+/* ===== LIMPAR UI DA PRESTAÇÃO (sem espelho e sem botões de vales) ===== */
+(function CleanPrestUI(){
+  function run(){
+   
+    // Esconde controles legados de VALE (a UI nova já cobre)
+    ['formVale','btnAbrirVale'].forEach(id=>{
+      const el = document.getElementById(id);
+      if (el){
+        if (el.tagName === 'FORM') el.style.display = 'none';
+        else el.remove();
+      }
+    });
+
+    // Esconde inputs “inline” antigos (já foi feito em setupPrestModals, reforço aqui)
+    ['pgNData','pgNValor','pgNForma','pgNObs'].forEach(id=>{
+      const el = document.getElementById(id);
+      if (el){
+        el.style.display = 'none';
+        if (el.parentElement) el.parentElement.style.display = 'none';
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run, { once:true });
+  } else {
+    run();
+  }
+})();
+
+
+// Expor funções globalmente para uso em outros arquivos
+window.pcRenderColetas = pcRenderColetas;
+window.pcRender = pcRender;
+window.pgRender = pgRender;
+window.renderValesPrestacao = renderValesPrestacao;
+window.pcCalcular = pcCalcular;
+window.fillPcGerentes = fillPcGerentes;
+window.__backfillValeParcFromPagamentos = __backfillValeParcFromPagamentos;
+
+// ===== GARANTE ACESSO ÀS FUNÇÕES DO FINANCEIRO =====
+(function ensureFinanceiroFunctions() {
+  // Aguarda o financeiro estar pronto
+  const waitForFin = setInterval(() => {
+    if (typeof __getPendencias === 'function' && 
+        typeof __setPendencias === 'function' &&
+        typeof __negMakeUID === 'function') {
+      
+      clearInterval(waitForFin);
+      console.log('✅ Funções do Financeiro disponíveis para Prestações');
+      
+      // Se já existem prestações na memória, sincroniza pendências
+      try {
+        if (typeof syncPendenciasFromPrest === 'function') {
+          syncPendenciasFromPrest();
+        }
+      } catch(e) {
+        console.warn('Erro ao sincronizar pendências:', e);
+      }
+    }
+  }, 100);
+  
+  // Timeout de segurança (10 segundos)
+  setTimeout(() => clearInterval(waitForFin), 10000);
+})();
+
+// ===== BOTÕES DE DEBUG PARA PENDÊNCIAS =====
+document.getElementById('btnSyncPendencias')?.addEventListener('click', () => {
+  try {
+    if (typeof syncPendenciasFromPrest === 'function') {
+      syncPendenciasFromPrest();
+      renderFinPendencias();
+      alert('✅ Pendências sincronizadas!');
+    }
+  } catch(e) {
+    console.error('Erro ao sincronizar:', e);
+    alert('❌ Erro ao sincronizar: ' + e.message);
+  }
+});
+
+document.getElementById('btnDebugPendencias')?.addEventListener('click', () => {
+  try {
+    const pend = __getPendencias();
+    console.log('📊 Total de pendências:', pend.length);
+    console.log('Pendências PENDENTES:', pend.filter(p => p.status === 'PENDENTE').length);
+    console.log('Pendências de PAGAMENTO:', pend.filter(p => p.tipoCaixa === 'PAGO').length);
+    console.log('Pendências de RECEBIMENTO:', pend.filter(p => p.tipoCaixa === 'RECEBIDO').length);
+    console.table(pend);
+    
+    alert(`📊 Debug de Pendências:
+    
+Total: ${pend.length}
+Pendentes: ${pend.filter(p => p.status === 'PENDENTE').length}
+Pagamentos: ${pend.filter(p => p.tipoCaixa === 'PAGO').length}
+Recebimentos: ${pend.filter(p => p.tipoCaixa === 'RECEBIDO').length}
+
+Veja o console para mais detalhes.`);
+  } catch(e) {
+    console.error('Erro ao debugar:', e);
+    alert('❌ Erro: ' + e.message);
+  }
+
+ // ===== CLEANUP AO SAIR DA PÁGINA =====
+window.addEventListener('beforeunload', function() {
+  console.log('[Prestações] Limpando listeners...');
+  
+  // Limpa elementos principais
+  ['pcColetasBody', 'pcDespesasBody', 'pgVBody', 'pgNBody'].forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el) clearPcListeners(el);
+  });
+  
+  // Limpa botões
+  ['btnColAdd', 'btnPcSalvarColetores', 'btnPcAddDespesa', 'btnPcLimpar',
+   'btnPgVAdd', 'btnPgVLimpar', 'btnPgNAdd', 'btnPgNLimpar',
+   'btnVlAdd', 'btnVlLimpar', 'btnPcSalvar'].forEach(function(id) {
+    const btn = document.getElementById(id);
+    if (btn) {
+      clearPcListeners(btn);
+      btn.__pcWired = false;
+    }
+  });
+});
+// === FIX: (re)liga botões quando o DOM estiver pronto e em mudanças dinâmicas ===
+(function ensurePrestacoesWiring(){
+  function wire(ids, handler){
+    (Array.isArray(ids) ? ids : [ids]).forEach(id => {
+      const el = document.getElementById(id);
+      if (!el || el.__pcWired) return;
+      el.__pcWired = true;
+      if (typeof addPcListener === 'function') {
+        addPcListener(el, 'click', handler);
+      } else {
+        el.addEventListener('click', handler);
+      }
+    });
+  }
+
+  
+  function wireAll(){
+    // Compat com nome legado citado (prestotadaurl -> prestToDataURL)
+    if (!window.prestotadaurl && window.prestToDataURL) {
+      window.prestotadaurl = window.prestToDataURL;
+    }
+
+    // Salvar prestação (suporta 2 ids, caso o HTML varie)
+    wire(['btnPcSalvar','btnPcSalvarPrestacao'], function(e){
+      e.preventDefault();
+      try { salvarPrestacao(); } catch(err){ console.error(err); alert('Falha ao salvar.'); }
+    });
+
+
+    // Gerar PNG (popup da imagem)
+    wire(['btnPcPng','btnPcGerarImagem'], async function(e){  // ✅ async
+      e.preventDefault();
+      try {
+        const rec = typeof getPrestacaoFromForm === 'function'
+          ? await getPrestacaoFromForm() : null;  // ✅ AGUARDA
+        const png = window.prestToDataURL?.(rec);
+        if (!png) { alert('Não foi possível gerar a imagem.'); return; }
+        const w = window.open('', 'img_prestacao');
+        if (!w) { alert('Popup bloqueado.'); return; }
+        w.document.write(`
+          <html><head><meta charset="utf-8"><title>Prestação</title></head>
+          <body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;">
+            <img src="${png}" style="max-width:100vw;max-height:100vh"/>
+          </body></html>
+        `);
+        w.document.close();
+      } catch(err){ console.error(err); alert('Falha ao abrir a imagem.'); }
+    });
+
+    // Desenhar no canvas embutido (se você usar essa opção)
+    wire(['btnPcDesenhar','btnPcCanvas'], function(e){
+      e.preventDefault();
+      try { pcDesenharCanvas?.(); } catch(err){ console.error(err); alert('Falha ao desenhar no canvas.'); }
+    });
+  }
+
+  // roda no readyState adequado
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', wireAll, { once:true });
+  } else {
+    wireAll();
+  }
+  // re-liga ao trocar seções/abas dinamicamente
+  new MutationObserver(wireAll).observe(document.body, { childList:true, subtree:true });
+})();
+
+// Botões de pagamento de dívida
+(function() {
+  const btnAdd = document.getElementById('btnPgDivAdd');
+  if (btnAdd && !btnAdd.__pcWired) {
+    btnAdd.__pcWired = true;
+    addPcListener(btnAdd, 'click', pgDivAddFromForm);
+  }
+
+  const btnLimpar = document.getElementById('btnPgDivLimpar');
+  if (btnLimpar && !btnLimpar.__pcWired) {
+    btnLimpar.__pcWired = true;
+    addPcListener(btnLimpar, 'click', function() {
+      if(!confirm('Limpar todos os pagamentos de dívida desta prestação?')) return;
+      prestacaoAtual.pagamentos = (prestacaoAtual.pagamentos||[]).filter(p => 
+        (p.forma||'').toUpperCase()!=='DIVIDA_PAGA'
+      );
+      pcSchedule();
+    });
+  }
+})();
+
+// Preenche data automaticamente
+document.addEventListener('DOMContentLoaded', function() {
+  const hoje = new Date().toISOString().slice(0,10);
+  const dataDivida = document.getElementById('pgDivData');
+  if (dataDivida && !dataDivida.value) {
+    dataDivida.value = hoje;
+  }
+});
+
+// ====== CAMPO EDITÁVEL PARA SALDO A CARREGAR (EXCEÇÕES) ======
+(function() {
+  let tentativas = 0;
+  const maxTentativas = 30;
+  
+  function initSaldoManual() {
+    tentativas++;
+    
+    // Verifica se já foi criado
+    if (document.getElementById('pcSaldoManualContainer')) {
+      console.log('✅ Campo Saldo Manual já existe');
+      return;
+    }
+    
+    // Estratégias para encontrar onde inserir o campo
+    let targetEl = document.getElementById('pcCredito') 
+                || document.getElementById('pcDivida')
+                || document.getElementById('pcValorExtra')
+                || document.getElementById('pcAdiant')
+                || document.getElementById('pcDeveAnterior');
+    
+    // Se não encontrou, tenta pelo formulário de prestação
+    if (!targetEl) {
+      const pcForm = document.querySelector('#formPrestacao, .prestacao-form, [data-form="prestacao"]');
+      if (pcForm) {
+        targetEl = pcForm.querySelector('input[type="number"]');
+      }
+    }
+    
+    // Se não encontrou, tenta pelo canvas (indica que está na página de prestações)
+    if (!targetEl) {
+      const pcCanvas = document.getElementById('pcCanvas');
+      if (pcCanvas) {
+        // Procura inputs próximos ao canvas
+        const container = pcCanvas.closest('.card, .panel, section, .content');
+        if (container) {
+          targetEl = container.querySelector('input[id^="pc"]');
+        }
+      }
+    }
+    
+    if (!targetEl) {
+      if (tentativas < maxTentativas) {
+        setTimeout(initSaldoManual, 500);
+      } else {
+        console.warn('⚠️ Campo Saldo Manual: não encontrou local para inserir após', maxTentativas, 'tentativas');
+      }
+      return;
+    }
+    
+    // Cria o container do campo com visual destacado
+    const container = document.createElement('div');
+    container.id = 'pcSaldoManualContainer';
+    container.style.cssText = 'margin:15px 0; padding:12px; background:linear-gradient(135deg, #fff3cd 0%, #ffe69c 100%); border:2px solid #ffc107; border-radius:10px; box-shadow: 0 2px 8px rgba(255,193,7,0.3);';
+    container.innerHTML = `
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:8px;">
+        <input type="checkbox" id="pcUsarSaldoManual" style="width:20px;height:20px;margin:0;cursor:pointer;accent-color:#d39e00;">
+        <span style="font-weight:700;color:#856404;font-size:14px;">⚠️ Usar Saldo Manual (exceção/acordo)</span>
+      </label>
+      <div id="pcSaldoManualWrapper" style="display:none;margin-top:10px;">
+        <input type="number" 
+               id="pcSaldoManual" 
+               placeholder="Digite o valor (use 0 para zerar)..."
+               step="0.01" 
+               min="0"
+               style="width:100%;padding:10px;border:2px solid #d39e00;border-radius:6px;font-size:15px;background:#fff;">
+        <small id="pcSaldoManualHelp" style="color:#856404;font-size:12px;margin-top:6px;display:block;">
+          💡 Este valor substituirá o saldo calculado automaticamente
+        </small>
+      </div>
+    `;
+    
+    // Tenta inserir no melhor local possível
+    let inserted = false;
+    
+    // Estratégia 1: Após o último campo de input da seção
+    const parentContainer = targetEl.closest('.form-group, .input-group, .field, .form-row') || targetEl.parentElement;
+    if (parentContainer && parentContainer.parentElement) {
+      const siblings = parentContainer.parentElement.children;
+      // Insere no final do grupo de inputs
+      parentContainer.parentElement.appendChild(container);
+      inserted = true;
+    }
+    
+    // Estratégia 2: Após o elemento target
+    if (!inserted && targetEl.parentElement) {
+      targetEl.parentElement.appendChild(container);
+      inserted = true;
+    }
+    
+    if (!inserted) {
+      console.warn('⚠️ Não conseguiu inserir o campo Saldo Manual');
+      return;
+    }
+    
+    // Configura eventos
+    const checkbox = document.getElementById('pcUsarSaldoManual');
+    const wrapper = document.getElementById('pcSaldoManualWrapper');
+    const input = document.getElementById('pcSaldoManual');
+    
+    if (checkbox && wrapper && input) {
+      checkbox.addEventListener('change', function() {
+        wrapper.style.display = this.checked ? 'block' : 'none';
+        window.__saldoManualAtivo = this.checked;
+        
+        if (!this.checked) {
+          input.value = '';
+          window.__saldoManualValor = undefined;
+        }
+        
+        // Recalcula
+        if (typeof pcCalcular === 'function') {
+          setTimeout(pcCalcular, 100);
+        }
+      });
+      
+      input.addEventListener('input', function() {
+        window.__saldoManualValor = parseFloat(this.value) || 0;
+        // Recalcula
+        if (typeof pcCalcular === 'function') {
+          setTimeout(pcCalcular, 100);
+        }
+      });
+      
+      console.log('✅ Campo de Saldo Manual inicializado com sucesso!');
+    }
+  }
+  
+  // Inicia após delays para garantir que a página carregou
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(initSaldoManual, 1500));
+  } else {
+    setTimeout(initSaldoManual, 1500);
+  }
+  
+  // Também tenta quando navegar para a página de prestações
+  window.addEventListener('hashchange', () => setTimeout(initSaldoManual, 1000));
+  document.addEventListener('click', function(e) {
+    const link = e.target.closest('a, button, [data-nav]');
+    if (link && (link.textContent || '').toLowerCase().includes('presta')) {
+      setTimeout(initSaldoManual, 1000);
+    }
+  });
+})();
+
+// Função auxiliar para obter o saldo (manual ou calculado)
+window.getSaldoParaUsar = function(saldoCalculado) {
+  if (window.__saldoManualAtivo && window.__saldoManualValor !== undefined) {
+    console.log('📝 Usando saldo MANUAL:', window.__saldoManualValor, '(calculado seria:', saldoCalculado, ')');
+    return window.__saldoManualValor;
+  }
+  return saldoCalculado;
+};
+
+
+});

@@ -1,0 +1,1560 @@
+/* ========================================
+   MOBILE.CSS - VERSÃO FINAL CONSOLIDADA
+   
+   Inclui:
+   - Mobile responsivo otimizado
+   - Correções específicas de páginas
+   - Alertas de despesas
+   - Histórico visível
+   - Melhorias de UX
+   
+   Data: Novembro 2025
+   ======================================== */
+
+/* ===== VARIÁVEIS CSS ===== */
+:root {
+  --touch-target: 44px;
+  --spacing-xs: 8px;
+  --spacing-sm: 12px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --header-height: 56px;
+  --sidebar-width: 260px;
+  --transition-speed: 0.2s;
+}
+
+/* ===== FUNDAMENTOS MOBILE ===== */
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  scroll-behavior: smooth;
+}
+
+a, button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+button, .btn {
+  user-select: none;
+}
+
+[hidden], .hidden {
+  display: none !important;
+}
+
+/* ===== LAYOUT PRINCIPAL (≤ 900px) ===== */
+@media (max-width: 900px) {
+  
+  /* Tipografia otimizada */
+  body {
+    font-size: 16px; /* Previne zoom automático no iOS */
+    line-height: 1.5;
+  }
+
+  /* Touch targets mínimos de 44px */
+  .btn, input, select, textarea {
+    min-height: var(--touch-target);
+    font-size: 16px; /* Previne zoom no iOS */
+    padding: 11px 14px;
+  }
+
+  /* Container responsivo */
+  .container {
+    padding: var(--spacing-sm) !important;
+  }
+
+  /* Grid sempre empilhado */
+  .grid, .form-grid {
+    grid-template-columns: 1fr !important;
+    gap: var(--spacing-sm);
+  }
+
+  /* Rows flexíveis */
+  .row {
+    gap: var(--spacing-xs);
+    flex-wrap: wrap;
+  }
+
+  .row .field {
+    min-width: 140px;
+    flex: 1 1 160px;
+  }
+
+  /* ===== HEADER/TOPBAR FIXO ===== */
+  .topbar, header {
+    display: flex !important;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    padding: 12px;
+    gap: 12px;
+    height: var(--header-height);
+    background: var(--bg);
+    border-bottom: 1px solid #1f2937;
+  }
+
+  .logo {
+    font-size: 18px;
+  }
+
+  /* ORDEM DOS ELEMENTOS NO TOPBAR:
+     1. Chat IA (order: 1)
+     2. Seletor de Empresas (order: 2)
+     3. Logo (order: 3, flex-grow para empurrar menu para direita)
+     4. Menu Toggle (order: 4, na direita)
+  */
+
+  /* 1. CHAT IA - PRIMEIRO ELEMENTO */
+  .topbar #btnChatIA,
+  .topbar .ai-chat-btn,
+  .topbar [id*="chat"]:not(#sidebar *) {
+    order: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px;
+    background: #1e293b;
+    color: #fbbf24;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    font-size: 20px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+  }
+
+  .topbar #btnChatIA:hover,
+  .topbar .ai-chat-btn:hover {
+    background: #334155;
+    transform: scale(1.05);
+  }
+
+  /* 2. SELETOR DE EMPRESAS - SEGUNDO ELEMENTO */
+  .topbar #companySelect,
+  .topbar select,
+  .topbar .company-selector {
+    order: 2;
+    min-height: 44px;
+    padding: 8px 12px;
+    background: #1e293b;
+    color: #fff;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    flex-shrink: 0;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23fff' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 36px;
+  }
+
+  /* 3. LOGO - TERCEIRO ELEMENTO (CENTRALIZADO) */
+  .topbar .logo {
+    order: 3;
+    flex-grow: 1;
+    font-size: 18px;
+    font-weight: 800;
+    color: #fbbf24;
+    text-align: center;
+  }
+
+  /* 4. MENU TOGGLE - ÚLTIMO ELEMENTO (DIREITA) */
+  .topbar .sb-open,
+  .topbar #menuToggle,
+  .topbar button[onclick*="sidebar"],
+  .topbar button[data-action="toggle-menu"] {
+    order: 4;
+    position: static !important;
+    margin-left: auto;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px;
+    background: #1e293b;
+    color: #fff;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    font-size: 24px;
+    cursor: pointer;
+    flex-shrink: 0;
+    z-index: inherit;
+    box-shadow: none;
+    transition: all 0.2s ease;
+  }
+
+  .topbar .sb-open:hover,
+  .topbar #menuToggle:hover {
+    background: #334155;
+    transform: scale(1.05);
+  }
+
+  /* ===== LAYOUT GRID CORRIGIDO ===== */
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: var(--header-height) 1fr;
+    height: 100dvh; /* Dynamic viewport height para iOS */
+    overflow: hidden;
+  }
+
+  .topbar {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  #content {
+    grid-column: 1;
+    grid-row: 2;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: var(--spacing-sm);
+  }
+
+  /* ===== SIDEBAR DRAWER ===== */
+  #sidebar {
+    position: fixed;
+    top: 0;
+    left: calc(-1 * var(--sidebar-width));
+    width: var(--sidebar-width);
+    height: 100dvh;
+    z-index: 70;
+    transition: left var(--transition-speed) ease;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: var(--sb-bg, #1a1a1a);
+    color: var(--sb-fg, #fff);
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.3);
+  }
+
+  #sidebar.open {
+    left: 0;
+  }
+
+  .sb-open {
+    display: inline-flex;
+  }
+
+  .sb-close {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    background: transparent;
+    color: #fbbf24;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    font-size: 28px;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .sb-close:hover,
+  .sb-close:active {
+    background: rgba(251, 191, 36, 0.1);
+    border-color: #fbbf24;
+    transform: rotate(90deg);
+  }
+
+  /* Topo da sidebar */
+  #sidebar .sb-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  /* Overlay com blur */
+  body.sb-open::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 65;
+    backdrop-filter: blur(2px);
+    animation: fadeIn 0.2s ease;
+  }
+
+  body.sb-open {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  /* ===== CARDS E TABELAS ===== */
+  .card {
+    padding: var(--spacing-sm) !important;
+    border-radius: 12px;
+  }
+
+  /* Tabelas responsivas */
+  .table-wrap,
+  .container table,
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+
+  table {
+    font-size: 13px;
+    min-width: 100%;
+  }
+
+  th, td {
+    padding: 8px !important;
+    text-align: left;
+  }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #111827;
+  }
+
+  /* ===== FILTROS ===== */
+  .filters {
+    gap: 10px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .filters .field {
+    min-width: 140px;
+    flex: 1 1 160px;
+  }
+
+  /* ===== CARDS DE TOTAIS ===== */
+  .cards {
+    grid-template-columns: 1fr !important;
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  .card-fin {
+    width: 100%;
+    text-align: center;
+    padding: var(--spacing-md);
+  }
+
+  .card-fin .big {
+    font-size: clamp(20px, 6vw, 26px);
+  }
+
+  /* ===== DASHBOARD (INÍCIO) ===== */
+  #pageInicio .grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #pageInicio .dash-grid {
+    grid-template-columns: 1fr !important;
+    grid-template-areas:
+      "caixa"
+      "painel"
+      "alertas"
+      "tabela";
+    gap: 14px;
+  }
+
+  #pageInicio .tool-row {
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+  }
+
+  #pageInicio .tool-row input {
+    flex: 1;
+    min-width: 160px;
+  }
+
+  /* ===== FINANCEIRO ===== */
+  #pageFinanceiro .submenu {
+    display: flex !important;
+    gap: 8px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    background: transparent !important;
+    padding: 8px 4px !important;
+    margin: 0 0 12px !important;
+  }
+
+  #pageFinanceiro .submenu .btn {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+    white-space: nowrap;
+  }
+
+  #pageFinanceiro .finance-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  #pageFinanceiro .finance-buttons .btn {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 140px;
+  }
+
+  /* ===== PRESTAÇÕES ===== */
+  .pc-layout {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .right-box {
+    margin-top: 6px;
+  }
+
+  #pagePrestacoes #pgFormN {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+
+  #pagePrestacoes #formVale.form-grid {
+    grid-template-columns: 1fr 1fr 1.2fr 1fr;
+    gap: 8px;
+  }
+
+  .pc-actions {
+    gap: 8px;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  #pcCanvas {
+    width: 100% !important;
+    height: auto !important;
+    max-width: 1200px;
+    display: block;
+  }
+
+  /* ===== DESPESAS ===== */
+  #pageDespesas .desp-table-wrap,
+  #pageDespesas .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 12px 0;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  #pageDespesas table {
+    min-width: 800px;
+    font-size: 13px;
+  }
+
+  #pageDespesas th {
+    padding: 12px 8px !important;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  #pageDespesas td {
+    padding: 10px 8px !important;
+  }
+
+  #tbodyDespesas th:nth-child(5),
+  #tbodyDespesas td:nth-child(5) {
+    white-space: normal;
+  }
+
+  /* ===== FICHAS - VENDAS ===== */
+  #vendasWrap {
+    max-height: 56vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #tblVendas {
+    font-size: 13px;
+  }
+
+  #tblVendas td:last-child .btn {
+    padding: 6px 10px;
+    min-width: 88px;
+  }
+
+  /* ===== PAINEL IA ===== */
+  #aiPanel {
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-width: none;
+    bottom: 12px;
+  }
+}
+
+/* ===== AJUSTES MÉDIOS (≤ 768px) ===== */
+@media (max-width: 768px) {
+  
+  /* Submenu com scroll horizontal */
+  .submenu {
+    gap: 10px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+    padding: 8px 4px 12px;
+    margin: 0 0 8px;
+  }
+
+  .submenu .btn {
+    flex: 0 0 auto;
+    scroll-snap-align: center;
+    white-space: nowrap;
+  }
+
+  .submenu::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .submenu::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 6px;
+  }
+
+  /* ===== DESPESAS - FILTROS E AÇÕES ===== */
+  #pageDespesas .filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  #pageDespesas .desp-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin: 12px 0;
+  }
+
+  #pageDespesas .desp-actions .btn {
+    width: 100%;
+    padding: 10px 8px;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  #pageDespesas .desp-check-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    margin: 12px 0;
+    grid-column: 1 / -1;
+  }
+
+  #pageDespesas .desp-check-wrap input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin: 0;
+  }
+
+  #pageDespesas .desp-check-wrap label {
+    margin: 0;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  /* ===== ALERTAS DE DESPESAS ===== */
+  #dashAlertBox {
+    max-height: 450px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    padding-bottom: 16px;
+    scrollbar-width: thin;
+    scrollbar-color: #f59e0b #fef3c7;
+  }
+
+  #dashAlertBox::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  #dashAlertBox::-webkit-scrollbar-track {
+    background: #fef3c7;
+    border-radius: 4px;
+  }
+
+  #dashAlertBox::-webkit-scrollbar-thumb {
+    background: #f59e0b;
+    border-radius: 4px;
+  }
+
+  #dashAlertBox::-webkit-scrollbar-thumb:hover {
+    background: #d97706;
+  }
+
+  .alert-item {
+    background: #fff;
+    border: 2px solid #f59e0b;
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
+    transition: all 0.2s ease;
+  }
+
+  .alert-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);
+  }
+
+  .alert-title {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .alert-ico {
+    font-size: 24px;
+  }
+
+  .alert-title strong {
+    font-size: 16px;
+    color: #92400e;
+    font-weight: 700;
+  }
+
+  .alert-badge {
+    background: #f59e0b;
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    align-self: flex-start;
+  }
+
+  .alert-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 12px 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .alert-ficha {
+    background: #fef3c7;
+    border: 1px solid #fbbf24;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .ficha-numero {
+    font-weight: 700;
+    color: #92400e;
+  }
+
+  .ficha-rota {
+    color: #78716c;
+    font-size: 11px;
+  }
+
+  .alert-item .btn,
+  .alert-item button {
+    width: 100%;
+    background: #f59e0b;
+    color: #fff;
+    border: none;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+    margin-top: 8px;
+  }
+
+  .alert-item .btn:active,
+  .alert-item button:active {
+    background: #d97706;
+    transform: scale(0.98);
+  }
+
+  /* Indicador de scroll */
+  #dashAlertBox.has-scroll::after {
+    content: "▼ Role para ver mais ▼";
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    background: linear-gradient(to bottom, transparent, #fef3c7 30%, #fef3c7);
+    color: #92400e;
+    font-weight: 700;
+    font-size: 12px;
+    text-align: center;
+    pointer-events: none;
+    z-index: 10;
+    animation: pulse-indicator 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-indicator {
+    0%, 100% {
+      opacity: 0.7;
+      transform: translateY(0);
+    }
+    50% {
+      opacity: 1;
+      transform: translateY(3px);
+    }
+  }
+
+  #dashAlertBox.scrolled-to-bottom::after {
+    display: none;
+  }
+
+  /* ===== PRESTAÇÕES (DASHBOARD) ===== */
+  #pageInicio input[type="search"],
+  #pageInicio input[placeholder*="Buscar"] {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 16px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    margin-bottom: 12px;
+  }
+
+  #pageInicio .dash-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-top: 12px;
+    border-radius: 8px;
+  }
+
+  #pageInicio table {
+    min-width: 700px;
+    font-size: 13px;
+  }
+
+  #pageInicio thead th {
+    padding: 10px 8px !important;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  #pageInicio tbody td {
+    padding: 10px 8px !important;
+  }
+
+  #pageInicio td:nth-child(1) {
+    font-weight: 600;
+    min-width: 120px;
+  }
+
+  #pageInicio td:nth-child(2),
+  #pageInicio td:nth-child(3),
+  #pageInicio td:nth-child(4),
+  #pageInicio td:nth-child(5) {
+    text-align: right;
+    font-family: 'Courier New', monospace;
+  }
+
+  #pageInicio tfoot {
+    background: #f9fafb;
+    font-weight: 700;
+  }
+
+  #pageInicio tfoot td {
+    padding: 12px 8px !important;
+    border-top: 2px solid #e5e7eb;
+  }
+}
+
+/* ===== COMPACTO (≤ 600px) ===== */
+@media (max-width: 600px) {
+  
+  .btn.small {
+    min-height: 36px;
+  }
+
+  .qa {
+    padding: 10px 12px !important;
+  }
+
+  .rel-menu, .desp-menu {
+    max-width: calc(100vw - 24px);
+  }
+
+  .field.inline {
+    display: block;
+  }
+
+  label {
+    display: block;
+    margin-bottom: 6px;
+  }
+}
+
+/* ===== MOBILE COMPACTO (≤ 480px) ===== */
+@media (max-width: 480px) {
+  
+  .container {
+    padding: 10px !important;
+  }
+
+  header, .topbar {
+    padding: 10px 12px !important;
+  }
+
+  .card {
+    padding: 10px !important;
+  }
+
+  /* Dashboard - Hero */
+  #pageInicio .card-caixa .hero {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  #pageInicio .card-caixa .hero .saldo {
+    font-size: clamp(20px, 6vw, 26px);
+  }
+
+  #pageInicio .card-caixa .bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  #pageInicio .card-caixa #dashMes {
+    inline-size: 100%;
+  }
+
+  #pageInicio .card-painel .kpis {
+    gap: 8px;
+  }
+
+  #pageInicio .card-painel .kpis li {
+    padding: 10px 12px;
+    border-radius: 10px;
+  }
+
+  #pageInicio .card-painel .kpis span {
+    font-size: 14px;
+  }
+
+  #pageInicio .card-painel .kpis strong {
+    font-size: clamp(16px, 5.2vw, 20px);
+  }
+
+  #pageInicio .card-alertas .alert-item {
+    padding: 10px;
+  }
+
+  #pageInicio .card-alertas .alert-title {
+    font-size: 15px;
+  }
+
+  #pageInicio .card-alertas .alert-badge {
+    font-size: 11px;
+  }
+
+  /* Despesas */
+  #pageDespesas .desp-actions {
+    grid-template-columns: 1fr;
+  }
+
+  #pageDespesas .desp-actions .btn {
+    font-size: 14px;
+    padding: 12px;
+    white-space: normal;
+    line-height: 1.3;
+  }
+
+  #pageDespesas .filters {
+    grid-template-columns: 1fr;
+  }
+
+  .alert-item {
+    padding: 10px;
+  }
+
+  .alert-title strong {
+    font-size: 15px;
+  }
+
+  .alert-ficha {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+
+  .alert-item .btn {
+    padding: 10px;
+    font-size: 13px;
+  }
+
+  /* Financeiro */
+  #pageFinanceiro .finance-buttons .btn {
+    flex: 1 1 100%;
+  }
+
+  .container, .card, #content {
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  /* ===== AJUSTES DO TOPBAR PARA TELAS PEQUENAS ===== */
+  /* Topbar mais compacto */
+  .topbar, header {
+    padding: 8px !important;
+    gap: 8px;
+  }
+
+  /* Chat IA menor */
+  .topbar #btnChatIA,
+  .topbar .ai-chat-btn {
+    min-width: 40px;
+    min-height: 40px;
+    font-size: 18px;
+    padding: 8px;
+  }
+
+  /* Seletor menor */
+  .topbar #companySelect,
+  .topbar select {
+    font-size: 13px;
+    padding: 8px 32px 8px 10px;
+    min-height: 40px;
+  }
+
+  /* Logo menor */
+  .topbar .logo {
+    font-size: 16px;
+  }
+
+  /* Menu toggle menor */
+  .topbar .sb-open,
+  .topbar #menuToggle {
+    min-width: 40px;
+    min-height: 40px;
+    font-size: 20px;
+    padding: 8px;
+  }
+
+  /* ===== SIDEBAR AJUSTES PARA TELAS PEQUENAS ===== */
+  /* Sidebar menos larga */
+  #sidebar {
+    width: 240px;
+    left: -240px;
+  }
+
+  /* Botões do rodapé empilhados */
+  #sidebar .sb-bottom .sb-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== MICRO (≤ 400px) ===== */
+@media (max-width: 400px) {
+  
+  .logo {
+    font-size: 16px !important;
+  }
+
+  .btn {
+    padding: 10px 12px !important;
+  }
+
+  #pageInicio .card-painel .kpis li {
+    padding: 8px 10px;
+  }
+
+  #pageFinanceiro .card-fin .big {
+    font-size: 18px;
+  }
+}
+
+/* ===== MODO PAISAGEM (LANDSCAPE) ===== */
+@media (max-width: 900px) and (orientation: landscape) {
+  
+  .topbar, header {
+    height: 48px;
+    padding: 8px 12px;
+  }
+
+  #pageInicio .dash-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    grid-template-areas:
+      "caixa painel"
+      "alertas tabela";
+  }
+
+  .cards {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  #pageFinanceiro .finance-buttons .btn {
+    flex: 1 1 calc(33.333% - 6px);
+  }
+}
+
+/* ===== MELHORIAS DE UX E ACESSIBILIDADE ===== */
+
+.btn:active,
+button:active {
+  transform: translateY(1px);
+  filter: brightness(0.98);
+}
+
+tr:nth-child(even) {
+  background: #f7f8fb;
+}
+
+@supports (-webkit-touch-callout: none) {
+  thead th {
+    position: -webkit-sticky;
+    position: sticky;
+  }
+}
+
+* {
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-wrap,
+#vendasWrap,
+.submenu {
+  scroll-behavior: smooth;
+}
+
+img, video, iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Indicadores de scroll horizontal */
+@media (max-width: 768px) {
+  .desp-table-wrap::after,
+  .dash-table-wrap::after {
+    content: "← Deslize para ver mais →";
+    display: block;
+    text-align: center;
+    padding: 8px;
+    background: #f3f4f6;
+    color: #6b7280;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 0 0 8px 8px;
+    position: sticky;
+    left: 0;
+  }
+
+  .desp-table-wrap:not([scrollable])::after,
+  .dash-table-wrap:not([scrollable])::after {
+    display: none;
+  }
+
+  .desp-table-wrap::-webkit-scrollbar,
+  .dash-table-wrap::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .desp-table-wrap::-webkit-scrollbar-track,
+  .dash-table-wrap::-webkit-scrollbar-track {
+    background: #f3f4f6;
+  }
+
+  .desp-table-wrap::-webkit-scrollbar-thumb,
+  .dash-table-wrap::-webkit-scrollbar-thumb {
+    background: #9ca3af;
+    border-radius: 3px;
+  }
+
+  /* Valores coloridos */
+  .valor-positivo,
+  td[style*="color: green"],
+  td[style*="color:#4caf50"] {
+    color: #059669 !important;
+    font-weight: 600;
+  }
+
+  .valor-negativo,
+  td[style*="color: red"],
+  td[style*="color:#b91c1c"] {
+    color: #dc2626 !important;
+    font-weight: 600;
+  }
+
+  .status-pago {
+    background: #d1fae5;
+    color: #065f46;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .status-parcial {
+    background: #fef3c7;
+    color: #92400e;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  /* Checkboxes e inputs acessíveis */
+  input[type="checkbox"] {
+    min-width: 20px;
+    min-height: 20px;
+    cursor: pointer;
+  }
+
+  label[for] {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  input[type="date"] {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  select {
+    min-height: 44px;
+    font-size: 16px;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 36px;
+  }
+
+  input:focus,
+  select:focus,
+  button:focus,
+  .btn:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+  }
+}
+@media (max-width: 900px) {
+  
+  /* Overlay independente */
+  #overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 65;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--transition-speed) ease;
+    backdrop-filter: blur(2px);
+  }
+
+  #overlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Itens da sidebar */
+  .sb-item {
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    transition: all var(--transition-speed) ease;
+    position: relative;
+    border-left: 3px solid transparent;
+    min-height: var(--touch-target);
+  }
+
+  .sb-item:hover,
+  .sb-item:active {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+  }
+
+  .sb-item.active {
+    background: rgba(251, 191, 36, 0.2);
+    border-left-color: #fbbf24;
+    color: #fbbf24;
+  }
+
+  /* ===== GRUPOS (CADASTROS, PRESTAÇÕES) ===== */
+  .sb-item.sb-group {
+    font-weight: 600;
+    user-select: none;
+  }
+
+  /* Seta indicadora de submenu */
+  .sb-item.sb-group::after {
+    content: '▼';
+    position: absolute;
+    right: 20px;
+    font-size: 10px;
+    transition: transform 0.3s ease;
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  /* Seta rotacionada quando aberto */
+  .sb-item.sb-group[aria-expanded="true"]::after {
+    transform: rotate(180deg);
+    color: #fbbf24;
+  }
+
+  /* Destaque quando grupo está aberto */
+  .sb-item.sb-group[aria-expanded="true"] {
+    background: rgba(255, 255, 255, 0.05);
+    color: #fbbf24;
+  }
+
+  /* ===== SUBMENUS ===== */
+  .sb-sub {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.3s ease;
+    opacity: 0;
+    background: rgba(0, 0, 0, 0.2);
+  }
+
+  /* Submenu visível */
+  .sb-sub:not([hidden]) {
+    max-height: 500px;
+    opacity: 1;
+  }
+
+  /* ===== SUBITENS ===== */
+  .sb-subitem {
+    padding: 12px 20px 12px 50px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 14px;
+    cursor: pointer;
+    transition: all var(--transition-speed) ease;
+    border-left: 3px solid transparent;
+    min-height: var(--touch-target);
+  }
+
+  .sb-subitem:hover,
+  .sb-subitem:active {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    border-left-color: rgba(251, 191, 36, 0.5);
+  }
+
+  .sb-subitem.active {
+    background: rgba(251, 191, 36, 0.15);
+    border-left-color: #fbbf24;
+    color: #fbbf24;
+    font-weight: 600;
+  }
+
+  /* Ícone dos subitens */
+  .sb-subitem::before {
+    content: '›';
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  /* ===== RODAPÉ DA SIDEBAR COM BOTÕES ALINHADOS ===== */
+  #sidebar .sb-bottom {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: auto;
+    padding: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  /* Badge do usuário */
+  #sidebar .user-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 12px;
+    background: #1e293b;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  /* Container dos botões - APENAS NO MOBILE */
+  #sidebar .sb-bottom .sb-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    width: 100%;
+  }
+
+  /* Botões Compactar e Sair */
+  #sidebar .sb-bottom .btn,
+  #sidebar .sb-bottom button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 12px 16px;
+    background: #fbbf24;
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Botão Compactar - cor alternativa */
+  #sidebar .sb-bottom #btnToggleSidebar,
+  #sidebar .sb-bottom button[onclick*="compact"] {
+    background: #334155;
+    color: #fbbf24;
+  }
+
+  /* Hover/Active states */
+  #sidebar .sb-bottom .btn:hover,
+  #sidebar .sb-bottom button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  }
+
+  #sidebar .sb-bottom .btn:active,
+  #sidebar .sb-bottom button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Ícones dentro dos botões */
+  #sidebar .sb-bottom .btn .ico,
+  #sidebar .sb-bottom button .ico {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  /* ===== BOTÃO MENU TOGGLE ===== */
+  /* Remove position fixed - já definido na seção do topbar */
+  #menuToggle {
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+  }
+
+  /* ===== BOTÃO MENU TOGGLE (mantido para retrocompatibilidade) ===== */
+  /* ===== BOTÃO MENU TOGGLE (mantido para retrocompatibilidade) ===== */
+  /* A posição é controlada pela seção do topbar acima */
+  /* Ícone já está no HTML, não precisa de ::before */
+
+  /* ===== SCROLLBAR CUSTOMIZADA ===== */
+  #sidebar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  #sidebar::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+  }
+
+  #sidebar::-webkit-scrollbar-thumb {
+    background: rgba(251, 191, 36, 0.5);
+    border-radius: 3px;
+  }
+
+  #sidebar::-webkit-scrollbar-thumb:hover {
+    background: rgba(251, 191, 36, 0.7);
+  }
+
+  /* ===== SEPARADOR ENTRE GRUPOS ===== */
+  .sb-item.sb-group + .sb-item.sb-group {
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    margin-top: 8px;
+    padding-top: 20px;
+  }
+}
+
+/* ===== CORREÇÕES ESPECÍFICAS PARA iOS ===== */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 900px) {
+    
+    /* Previne bounce no scroll da sidebar */
+    #sidebar {
+      overscroll-behavior-y: contain;
+    }
+
+    /* Melhora a responsividade do toque */
+    .sb-item,
+    .sb-subitem {
+      -webkit-tap-highlight-color: rgba(251, 191, 36, 0.2);
+    }
+
+    /* Fix para safe area (notch) */
+    #sidebar {
+      padding-top: max(16px, env(safe-area-inset-top));
+      padding-bottom: max(16px, env(safe-area-inset-bottom));
+    }
+
+    /* Safe area para topbar */
+    .topbar, header {
+      padding-top: max(12px, env(safe-area-inset-top)) !important;
+      padding-left: max(12px, env(safe-area-inset-left)) !important;
+      padding-right: max(12px, env(safe-area-inset-right)) !important;
+    }
+
+    /* Previne zoom ao focar inputs */
+    .topbar select,
+    .topbar input {
+      font-size: 16px !important;
+    }
+  }
+}
+
+/* ===== MODO PAISAGEM (LANDSCAPE) ===== */
+@media (max-width: 900px) and (orientation: landscape) {
+  
+  #sidebar {
+    width: 240px; /* Sidebar mais estreita no landscape */
+    left: -240px;
+  }
+
+  .sb-item,
+  .sb-subitem {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    min-height: 40px;
+  }
+
+  .sb-subitem {
+    padding-left: 40px;
+    font-size: 13px;
+  }
+}
+
+/* ===== ACESSIBILIDADE ===== */
+@media (max-width: 900px) {
+  
+  /* Focus visível para navegação por teclado */
+  .sb-item:focus,
+  .sb-subitem:focus,
+  #menuToggle:focus,
+  .sb-close:focus,
+  .topbar button:focus,
+  .topbar select:focus {
+    outline: 2px solid #fbbf24;
+    outline-offset: -2px;
+  }
+
+  /* Modo de alto contraste */
+  @media (prefers-contrast: high) {
+    .sb-item,
+    .sb-subitem {
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    .sb-item.active,
+    .sb-subitem.active {
+      border-color: #fbbf24;
+    }
+
+    .topbar button,
+    .topbar select {
+      border-width: 2px;
+    }
+
+    #sidebar .sb-close {
+      border-width: 2px;
+    }
+  }
+
+  /* Reduz movimento para quem prefere */
+  @media (prefers-reduced-motion: reduce) {
+    #sidebar,
+    .topbar button,
+    #sidebar .sb-close,
+    #sidebar .sb-bottom button,
+    body.sb-open::after {
+      transition: none;
+    }
+  }
+}
+/* ===== FIM DO ARQUIVO ===== */
+
+/* ===== CORREÇÕES PARA DESKTOP (> 900px) ===== */
+@media (min-width: 901px) {
+  
+  /* Rodapé da sidebar no desktop - botões empilhados */
+  #sidebar .sb-bottom .sb-actions {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px;
+    grid-template-columns: none !important;
+  }
+
+  /* Botões ocupam 100% da largura no desktop */
+  #sidebar .sb-bottom .btn,
+  #sidebar .sb-bottom button {
+    width: 100%;
+  }
+
+  /* Remove position do menu toggle no desktop */
+  .topbar .sb-open,
+  .topbar #menuToggle {
+    display: none !important;
+  }
+
+  /* Remove backdrop no desktop */
+  #overlay {
+    display: none !important;
+  }
+
+  /* Sidebar sempre visível no desktop */
+  #sidebar {
+    position: relative !important;
+    left: 0 !important;
+    transform: none !important;
+  }
+}

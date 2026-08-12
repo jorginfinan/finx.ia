@@ -1,0 +1,404 @@
+/* ========================================
+   CORREÇÃO DASHBOARD MOBILE
+   Fix para painel e informações cortadas
+   ======================================== */
+
+/* ===== CORREÇÃO DO GRID DO DASHBOARD ===== */
+@media (max-width: 768px) {
+  
+    /* Grid principal do dashboard - empilhamento correto */
+    #pageInicio .dash-grid {
+      display: flex !important;
+      flex-direction: column;
+      gap: 16px;
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+  
+    /* Todos os cards ocupam 100% da largura */
+    #pageInicio .card-caixa,
+    #pageInicio .card-painel,
+    #pageInicio .card-alertas,
+    #pageInicio .card-tabela {
+      width: 100% !important;
+      max-width: 100% !important;
+      grid-area: unset !important;
+    }
+  
+    /* ===== CARD CAIXA ===== */
+    #pageInicio .card-caixa {
+      order: 1;
+    }
+  
+    #pageInicio .card-caixa .hero {
+      padding: 20px;
+    }
+  
+    #pageInicio .card-caixa .title {
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+  
+    #pageInicio .card-caixa .saldo {
+      font-size: 32px;
+      font-weight: 800;
+    }
+  
+    #pageInicio .card-caixa .bar {
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+  
+    #pageInicio .card-caixa .badge {
+      font-size: 13px;
+    }
+  
+    #pageInicio .card-caixa input[type="month"] {
+      min-height: 36px;
+      font-size: 14px;
+      padding: 6px 10px;
+    }
+  
+    /* ===== CARD PAINEL (O PROBLEMÁTICO) ===== */
+    #pageInicio .card-painel {
+      order: 2;
+      padding: 16px !important;
+    }
+  
+    #pageInicio .card-painel .card-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: #111827;
+    }
+  
+    /* Lista de KPIs */
+    #pageInicio .card-painel .kpis {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+  
+    #pageInicio .card-painel .kpis li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      background: #f9fafb;
+      border-radius: 8px;
+      gap: 12px;
+    }
+  
+    #pageInicio .card-painel .kpis span {
+      color: #6b7280;
+      font-size: 14px;
+      font-weight: 600;
+    }
+  
+    #pageInicio .card-painel .kpis strong {
+      color: #111827;
+      font-size: 15px;
+      font-weight: 800;
+      text-align: right;
+      white-space: nowrap;
+    }
+  
+    /* Linha divisória */
+    #pageInicio .card-painel hr {
+      border: none;
+      border-top: 1px solid #e5e7eb;
+      margin: 16px 0;
+    }
+  
+    /* Maior inadimplência - estilo discreto como no desktop */
+    #pageInicio .card-painel .maior {
+      padding: 0;
+      background: transparent;
+      border: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 8px;
+    }
+  
+    #pageInicio .card-painel .maior span {
+      color: #6b7280;
+      font-size: 14px;
+      font-weight: 600;
+    }
+  
+    #pageInicio .card-painel .maior strong {
+      color: #111827;
+      font-size: 15px;
+      font-weight: 800;
+    }
+  
+    /* ===== CARD ALERTAS ===== */
+    #pageInicio .card-alertas {
+      order: 3;
+      padding: 16px !important;
+    }
+  
+    #pageInicio .card-alertas .card-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+  
+    /* ===== CARD TABELA ===== */
+    #pageInicio .card-tabela {
+      order: 4;
+      padding: 16px !important;
+    }
+  
+    #pageInicio .card-tabela .card-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+  
+    /* Barra de ferramentas da tabela */
+    #pageInicio .tool-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+  
+    #pageInicio .tool-row input {
+      flex: 1;
+      min-width: 150px;
+      padding: 10px 12px;
+      font-size: 14px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+    }
+  
+    #pageInicio .tool-row .btn {
+      padding: 10px 16px;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+  
+    /* Wrapper da tabela com scroll */
+    #pageInicio .table-wrap {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin: 0 -16px; /* Compensa o padding do card */
+      padding: 0 16px;
+    }
+  
+    /* Tabela */
+    #pageInicio table {
+      width: 100%;
+      min-width: 700px; /* Garante scroll horizontal se necessário */
+      font-size: 13px;
+    }
+  
+    #pageInicio thead th {
+      padding: 10px 8px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+      background: #f9fafb;
+      border-bottom: 2px solid #e5e7eb;
+    }
+  
+    #pageInicio tbody td {
+      padding: 10px 8px;
+      border-bottom: 1px solid #f3f4f6;
+    }
+  
+    /* Nome do gerente */
+    #pageInicio tbody td:nth-child(1) {
+      font-weight: 600;
+      min-width: 120px;
+      position: sticky;
+      left: 0;
+      background: #fff;
+      z-index: 1;
+    }
+  
+    /* Colunas de valores */
+    #pageInicio tbody td:nth-child(2),
+    #pageInicio tbody td:nth-child(4),
+    #pageInicio tbody td:nth-child(5),
+    #pageInicio tbody td:nth-child(6) {
+      text-align: right;
+      font-family: 'Courier New', monospace;
+      white-space: nowrap;
+    }
+  
+    /* Coluna de situação */
+    #pageInicio tbody td:nth-child(3) {
+      text-align: center;
+    }
+  
+    /* Rodapé (totais) */
+    #pageInicio tfoot {
+      background: #f9fafb;
+      font-weight: 700;
+      border-top: 2px solid #e5e7eb;
+    }
+  
+    #pageInicio tfoot td {
+      padding: 12px 8px;
+    }
+  
+    #pageInicio tfoot td:first-child {
+      position: sticky;
+      left: 0;
+      background: #f9fafb;
+      z-index: 1;
+    }
+  }
+  
+  /* ===== AJUSTES PARA TELAS MUITO PEQUENAS ===== */
+  @media (max-width: 480px) {
+    
+    /* Caixa mais compacta */
+    #pageInicio .card-caixa .saldo {
+      font-size: 28px;
+    }
+  
+    /* Painel mais compacto */
+    #pageInicio .card-painel {
+      padding: 12px !important;
+    }
+  
+    #pageInicio .card-painel .kpis li {
+      padding: 8px 10px;
+    }
+  
+    #pageInicio .card-painel .kpis span {
+      font-size: 13px;
+    }
+  
+    #pageInicio .card-painel .kpis strong {
+      font-size: 14px;
+    }
+  
+    /* Botões empilhados */
+    #pageInicio .tool-row {
+      flex-direction: column;
+    }
+  
+    #pageInicio .tool-row input,
+    #pageInicio .tool-row .btn {
+      width: 100%;
+    }
+  }
+  
+  /* ===== INDICADOR DE SCROLL HORIZONTAL ===== */
+  @media (max-width: 768px) {
+    
+    /* Adiciona sombra nas bordas quando há scroll */
+    #pageInicio .table-wrap {
+      background: 
+        linear-gradient(90deg, #fff 30%, transparent),
+        linear-gradient(90deg, transparent, #fff 70%) 100% 0,
+        radial-gradient(farthest-side at 0 50%, rgba(0,0,0,.2), transparent),
+        radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,.2), transparent) 100% 0;
+      background-repeat: no-repeat;
+      background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
+      background-attachment: local, local, scroll, scroll;
+    }
+  
+    /* Scrollbar customizada */
+    #pageInicio .table-wrap::-webkit-scrollbar {
+      height: 6px;
+    }
+  
+    #pageInicio .table-wrap::-webkit-scrollbar-track {
+      background: #f3f4f6;
+      border-radius: 3px;
+    }
+  
+    #pageInicio .table-wrap::-webkit-scrollbar-thumb {
+      background: #9ca3af;
+      border-radius: 3px;
+    }
+  
+    #pageInicio .table-wrap::-webkit-scrollbar-thumb:hover {
+      background: #6b7280;
+    }
+  }
+  
+  /* ===== CORREÇÃO DE OVERFLOW ===== */
+  @media (max-width: 768px) {
+    
+    /* Garante que nada seja cortado */
+    #pageInicio {
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+  
+    #pageInicio .container {
+      padding: 12px;
+      max-width: 100%;
+      overflow-x: hidden;
+    }
+  
+    /* Todos os cards devem respeitar a largura da tela */
+    #pageInicio .card {
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+  }
+  
+  /* ===== MELHORIAS DE LEGIBILIDADE ===== */
+  @media (max-width: 768px) {
+    
+    /* Valores positivos */
+    #pageInicio .valor-positivo,
+    #pageInicio td[style*="color: green"],
+    #pageInicio td[style*="color:#16a34a"] {
+      color: #059669 !important;
+      font-weight: 700;
+    }
+  
+    /* Valores negativos */
+    #pageInicio .valor-negativo,
+    #pageInicio td[style*="color: red"],
+    #pageInicio td[style*="color:#b91c1c"] {
+      color: #dc2626 !important;
+      font-weight: 700;
+    }
+  
+    /* Badge de situação */
+    #pageInicio .status-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+  
+    #pageInicio .status-pago {
+      background: #d1fae5;
+      color: #065f46;
+    }
+  
+    #pageInicio .status-parcial {
+      background: #fef3c7;
+      color: #92400e;
+    }
+  
+    #pageInicio .status-aberto {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+  }
+  
+  /* ===== FIM DO ARQUIVO ===== */

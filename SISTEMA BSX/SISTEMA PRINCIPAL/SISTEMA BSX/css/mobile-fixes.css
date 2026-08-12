@@ -1,0 +1,508 @@
+/* ========================================
+   CORREÇÕES ESPECÍFICAS MOBILE
+   Para páginas de Despesas e Alertas
+   ======================================== */
+
+/* ===== DESPESAS - CORREÇÕES ===== */
+@media (max-width: 768px) {
+  
+  /* Filtros de despesas - melhor organização */
+  #pageDespesas .filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  /* Gerente e Rota lado a lado */
+  #pageDespesas .filters .field:nth-child(1),
+  #pageDespesas .filters .field:nth-child(2) {
+    grid-column: span 1;
+  }
+
+  /* Ficha e Data lado a lado */
+  #pageDespesas .filters .field:nth-child(3),
+  #pageDespesas .filters .field:nth-child(4) {
+    grid-column: span 1;
+  }
+
+  /* Botões de ação em grid 2 colunas */
+  #pageDespesas .desp-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin: 12px 0;
+  }
+
+  #pageDespesas .desp-actions .btn {
+    width: 100%;
+    padding: 10px 8px;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Checkbox "Mostrar ocultas" - melhor posicionamento */
+  #pageDespesas .desp-check-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    margin: 12px 0;
+    grid-column: 1 / -1; /* Ocupa toda a largura */
+  }
+
+  #pageDespesas .desp-check-wrap input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin: 0;
+  }
+
+  #pageDespesas .desp-check-wrap label {
+    margin: 0;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  /* Campo "Até" ocupa linha inteira */
+  #pageDespesas .field-ate {
+    grid-column: 1 / -1;
+  }
+
+  /* Tabela de despesas com scroll melhorado */
+  #pageDespesas .desp-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 12px 0;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  #pageDespesas table {
+    min-width: 800px;
+    font-size: 13px;
+  }
+
+  #pageDespesas th {
+    padding: 12px 8px !important;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  #pageDespesas td {
+    padding: 10px 8px !important;
+  }
+
+  /* Coluna de informações pode quebrar linha */
+  #pageDespesas td:nth-child(4),
+  #pageDespesas th:nth-child(4) {
+    white-space: normal;
+    min-width: 150px;
+  }
+
+  /* Valores alinhados à direita */
+  #pageDespesas td:nth-child(5) {
+    text-align: right;
+    font-weight: 600;
+  }
+}
+
+/* ===== ALERTAS DE DESPESAS - CORREÇÕES ===== */
+@media (max-width: 768px) {
+  
+  /* Container de alertas */
+  .card-alertas {
+    padding: 12px !important;
+  }
+
+  /* Título dos alertas */
+  .card-alertas h3 {
+    font-size: 18px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Item de alerta individual */
+  .alert-item {
+    background: #fff;
+    border: 2px solid #f59e0b;
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
+  }
+
+  /* Cabeçalho do alerta */
+  .alert-title {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .alert-ico {
+    font-size: 24px;
+  }
+
+  .alert-title strong {
+    font-size: 16px;
+    color: #92400e;
+    font-weight: 700;
+  }
+
+  .alert-badge {
+    background: #f59e0b;
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    align-self: flex-start;
+  }
+
+  /* Lista de fichas no alerta */
+  .alert-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 12px 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .alert-ficha {
+    background: #fef3c7;
+    border: 1px solid #fbbf24;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .ficha-numero {
+    font-weight: 700;
+    color: #92400e;
+  }
+
+  .ficha-rota {
+    color: #78716c;
+    font-size: 11px;
+  }
+
+  /* Botão "Mostrar detalhes" */
+  .alert-item .btn,
+  .alert-item button {
+    width: 100%;
+    background: #f59e0b;
+    color: #fff;
+    border: none;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+    margin-top: 8px;
+  }
+
+  .alert-item .btn:active,
+  .alert-item button:active {
+    background: #d97706;
+    transform: scale(0.98);
+  }
+
+  /* Container de scroll dos alertas */
+  #dashAlertBox {
+    max-height: 450px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    padding-bottom: 16px;
+  }
+
+  /* Indicador de "mais conteúdo abaixo" */
+  #dashAlertBox.has-scroll::after {
+    content: "▼ Role para ver mais ▼";
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    background: linear-gradient(to bottom, transparent, #fef3c7 30%, #fef3c7);
+    color: #92400e;
+    font-weight: 700;
+    font-size: 12px;
+    text-align: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+}
+
+/* ===== PRESTAÇÕES (DASHBOARD) - CORREÇÕES ===== */
+@media (max-width: 768px) {
+  
+  /* Campo de busca */
+  #pageInicio input[type="search"],
+  #pageInicio input[placeholder*="Buscar"] {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 16px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    margin-bottom: 12px;
+  }
+
+  /* Tabela de prestações */
+  #pageInicio .dash-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-top: 12px;
+    border-radius: 8px;
+  }
+
+  #pageInicio table {
+    min-width: 700px;
+    font-size: 13px;
+  }
+
+  #pageInicio thead th {
+    padding: 10px 8px !important;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  #pageInicio tbody td {
+    padding: 10px 8px !important;
+  }
+
+  /* Coluna de nome */
+  #pageInicio td:nth-child(1) {
+    font-weight: 600;
+    min-width: 120px;
+  }
+
+  /* Colunas de valores alinhadas à direita */
+  #pageInicio td:nth-child(2),
+  #pageInicio td:nth-child(3),
+  #pageInicio td:nth-child(4),
+  #pageInicio td:nth-child(5) {
+    text-align: right;
+    font-family: 'Courier New', monospace;
+  }
+
+  /* Rodapé da tabela (totais) */
+  #pageInicio tfoot {
+    background: #f9fafb;
+    font-weight: 700;
+  }
+
+  #pageInicio tfoot td {
+    padding: 12px 8px !important;
+    border-top: 2px solid #e5e7eb;
+  }
+
+  /* Indicador de maior inadimplência */
+  .maior-inadimplencia {
+    background: #fef3c7;
+    border: 2px solid #f59e0b;
+    border-radius: 8px;
+    padding: 10px;
+    margin-top: 12px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .maior-inadimplencia strong {
+    color: #92400e;
+    font-size: 14px;
+  }
+}
+
+/* ===== BOTÕES EM GRID COMPACTO (≤ 480px) ===== */
+@media (max-width: 480px) {
+  
+  /* Botões de ação ficam empilhados */
+  #pageDespesas .desp-actions {
+    grid-template-columns: 1fr;
+  }
+
+  #pageDespesas .desp-actions .btn {
+    font-size: 14px;
+    padding: 12px;
+    white-space: normal;
+    line-height: 1.3;
+  }
+
+  /* Filtros também empilham em telas muito pequenas */
+  #pageDespesas .filters {
+    grid-template-columns: 1fr;
+  }
+
+  /* Alertas mais compactos */
+  .alert-item {
+    padding: 10px;
+  }
+
+  .alert-title strong {
+    font-size: 15px;
+  }
+
+  .alert-ficha {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+
+  /* Botão "Mostrar detalhes" um pouco menor */
+  .alert-item .btn {
+    padding: 10px;
+    font-size: 13px;
+  }
+}
+
+/* ===== MELHORIAS DE SCROLL HORIZONTAL ===== */
+@media (max-width: 768px) {
+  
+  /* Indicador visual de scroll horizontal */
+  .desp-table-wrap::after,
+  .dash-table-wrap::after {
+    content: "← Deslize para ver mais →";
+    display: block;
+    text-align: center;
+    padding: 8px;
+    background: #f3f4f6;
+    color: #6b7280;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 0 0 8px 8px;
+    position: sticky;
+    left: 0;
+  }
+
+  /* Remove indicador quando não há scroll */
+  .desp-table-wrap:not([scrollable])::after,
+  .dash-table-wrap:not([scrollable])::after {
+    display: none;
+  }
+
+  /* Scrollbar customizada para tabelas */
+  .desp-table-wrap::-webkit-scrollbar,
+  .dash-table-wrap::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .desp-table-wrap::-webkit-scrollbar-track,
+  .dash-table-wrap::-webkit-scrollbar-track {
+    background: #f3f4f6;
+  }
+
+  .desp-table-wrap::-webkit-scrollbar-thumb,
+  .dash-table-wrap::-webkit-scrollbar-thumb {
+    background: #9ca3af;
+    border-radius: 3px;
+  }
+
+  .desp-table-wrap::-webkit-scrollbar-thumb:hover,
+  .dash-table-wrap::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+  }
+}
+
+/* ===== ESTADOS DE VALORES (CORES) ===== */
+@media (max-width: 768px) {
+  
+  /* Valores positivos/negativos */
+  .valor-positivo,
+  td[style*="color: green"],
+  td[style*="color:#4caf50"] {
+    color: #059669 !important;
+    font-weight: 600;
+  }
+
+  .valor-negativo,
+  td[style*="color: red"],
+  td[style*="color:#b91c1c"] {
+    color: #dc2626 !important;
+    font-weight: 600;
+  }
+
+  /* Status PAGO, PG PARCIAL, etc */
+  .status-pago {
+    background: #d1fae5;
+    color: #065f46;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .status-parcial {
+    background: #fef3c7;
+    color: #92400e;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+}
+
+/* ===== ACESSIBILIDADE E UX ===== */
+@media (max-width: 768px) {
+  
+  /* Aumenta área de toque dos checkboxes */
+  input[type="checkbox"] {
+    min-width: 20px;
+    min-height: 20px;
+    cursor: pointer;
+  }
+
+  /* Label associado ao checkbox */
+  label[for] {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  /* Inputs de data no iOS */
+  input[type="date"] {
+    min-height: 44px;
+    font-size: 16px; /* Previne zoom */
+  }
+
+  /* Selects no iOS */
+  select {
+    min-height: 44px;
+    font-size: 16px; /* Previne zoom */
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 36px;
+  }
+
+  /* Focus visível para acessibilidade */
+  input:focus,
+  select:focus,
+  button:focus,
+  .btn:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+  }
+}
+
+/* ===== FIM DO ARQUIVO ===== */

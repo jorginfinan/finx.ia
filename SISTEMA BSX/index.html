@@ -248,6 +248,13 @@
     </span>
     <span class="label">Peças</span>
   </button>
+  <button class="sb-subitem" data-tab="maquinas-mapa" data-perm="maquinas_view" title="Mapa">
+    <span class="ico" aria-hidden="true">
+      <!-- mapa/pin -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 22s-8-7.58-8-13a8 8 0 0 1 16 0c0 5.42-8 13-8 13z"/><circle cx="12" cy="9" r="2.5"/></svg>
+    </span>
+    <span class="label">Mapa</span>
+  </button>
 </nav>
 
 <!-- Despesas -->
@@ -2529,6 +2536,114 @@ function pgDivAddFromForm(){
 </section>
 
 
+<!-- ============================================================
+     PÁGINA: MAPA DE USO — Máquinas + Bobinas por gerente
+     ============================================================ -->
+<section id="pageMapa" class="container hidden" data-perm="maquinas_view">
+  <h2>🗺️ Mapa de Uso — Máquinas e Bobinas</h2>
+  <div style="color:#6b7280; font-size:13px; margin-bottom:20px;">
+    Visão compacta por gerente. Máquinas mostram situação atual; bobinas do período (padrão = mês atual).
+  </div>
+
+  <!-- Filtros -->
+  <div class="card" style="margin-bottom:16px;">
+    <div style="display:grid; grid-template-columns: 1fr auto; gap:12px; align-items:end;">
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
+        <label style="display:flex; flex-direction:column; font-size:11px; color:#6b7280; font-weight:600; text-transform:uppercase; letter-spacing:0.3px;">
+          Período das bobinas
+          <select id="mapaPeriodo" style="padding:8px 10px; margin-top:4px; border:1px solid #e5e7eb; border-radius:8px; text-transform:none; font-weight:400; font-size:14px;"></select>
+        </label>
+        <label style="display:flex; flex-direction:column; font-size:11px; color:#6b7280; font-weight:600; text-transform:uppercase; letter-spacing:0.3px;">
+          Empresa
+          <select id="mapaEmpresa" style="padding:8px 10px; margin-top:4px; border:1px solid #e5e7eb; border-radius:8px; text-transform:none; font-weight:400; font-size:14px;">
+            <option value="">Todas</option>
+          </select>
+        </label>
+        <label style="display:flex; flex-direction:column; font-size:11px; color:#6b7280; font-weight:600; text-transform:uppercase; letter-spacing:0.3px;">
+          Rota
+          <select id="mapaRota" style="padding:8px 10px; margin-top:4px; border:1px solid #e5e7eb; border-radius:8px; text-transform:none; font-weight:400; font-size:14px;">
+            <option value="">Todas as rotas</option>
+          </select>
+        </label>
+      </div>
+      <button type="button" id="btnMapaAplicar" class="btn">🔍 Aplicar</button>
+    </div>
+  </div>
+
+  <!-- Resumo Geral -->
+  <div id="mapaResumo" style="background:linear-gradient(135deg,#1e40af,#3b82f6); color:white; padding:20px; border-radius:14px; margin-bottom:20px;">
+    <h3 id="mapaResumoTitulo" style="color:white; margin:0 0 14px; font-size:16px;">📊 Resumo Geral</h3>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:14px;">
+      <div style="background:rgba(255,255,255,0.12); padding:12px 14px; border-radius:10px;">
+        <div style="font-size:11px; opacity:0.85; text-transform:uppercase; letter-spacing:0.3px;">Gerentes</div>
+        <div id="rGerentes" style="font-size:22px; font-weight:700; margin-top:2px;">—</div>
+        <div id="rGerentesSub" style="font-size:11px; opacity:0.85;">semanais + mensais</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.12); padding:12px 14px; border-radius:10px;">
+        <div style="font-size:11px; opacity:0.85; text-transform:uppercase; letter-spacing:0.3px;">Máquinas em uso</div>
+        <div id="rMaquinas" style="font-size:22px; font-weight:700; margin-top:2px;">—</div>
+        <div id="rMaquinasSub" style="font-size:11px; opacity:0.85;">com vendedor + manut.</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.12); padding:12px 14px; border-radius:10px;">
+        <div style="font-size:11px; opacity:0.85; text-transform:uppercase; letter-spacing:0.3px;">Bobinas no período</div>
+        <div id="rBobinas" style="font-size:22px; font-weight:700; margin-top:2px;">—</div>
+        <div id="rBobinasSub" style="font-size:11px; opacity:0.85;">valor total</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.12); padding:12px 14px; border-radius:10px;">
+        <div style="font-size:11px; opacity:0.85; text-transform:uppercase; letter-spacing:0.3px;">Peças (assistência)</div>
+        <div id="rPecas" style="font-size:22px; font-weight:700; margin-top:2px;">—</div>
+        <div id="rPecasSub" style="font-size:11px; opacity:0.85;">no período</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.12); padding:12px 14px; border-radius:10px;">
+        <div style="font-size:11px; opacity:0.85; text-transform:uppercase; letter-spacing:0.3px;">Custo total</div>
+        <div id="rCusto" style="font-size:22px; font-weight:700; margin-top:2px;">R$ 0,00</div>
+        <div style="font-size:11px; opacity:0.85;">bobinas + peças</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toolbar da grid -->
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+    <h3 style="margin:0;">👥 Gerentes <span id="mapaCountGer" style="color:#6b7280; font-weight:400; font-size:14px;">(—)</span></h3>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <input id="mapaBusca" placeholder="🔍 Buscar gerente..." style="padding:8px 12px; border:1px solid #e5e7eb; border-radius:8px; font-size:14px; min-width:220px;">
+      <select id="mapaOrdem" style="padding:8px 12px; border:1px solid #e5e7eb; border-radius:8px; font-size:14px;">
+        <option value="bobinas">Ordenar: mais bobinas</option>
+        <option value="maquinas">Ordenar: mais máquinas</option>
+        <option value="nome">Ordenar: nome A-Z</option>
+        <option value="rota">Ordenar: rota</option>
+      </select>
+      <button type="button" id="btnMapaCSV" class="btn ghost" style="padding:8px 12px;">📥 CSV</button>
+    </div>
+  </div>
+
+  <!-- Grid de cards -->
+  <div id="mapaGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:12px;">
+    <div style="grid-column:1/-1; color:#6b7280; padding:30px; text-align:center;">Carregando...</div>
+  </div>
+</section>
+
+
+<!-- =========================================================================
+     DIALOG: DETALHES DE UM GERENTE (chamado pelo Mapa)
+     ========================================================================= -->
+<dialog id="dlgMapaDetalhes" style="max-width:780px; width:95%; border:none; border-radius:14px; padding:0;">
+  <div style="padding:20px 24px; max-height:85vh; overflow-y:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:12px; border-bottom:1px solid #e5e7eb; margin-bottom:16px;">
+      <div>
+        <h3 id="dlgMapaNome" style="margin:0; font-size:18px;">—</h3>
+        <div id="dlgMapaMeta" style="color:#6b7280; font-size:12px; margin-top:4px;"></div>
+      </div>
+      <button type="button" class="btn ghost" data-close-dlg="dlgMapaDetalhes" style="font-size:22px; padding:0 10px;">✕</button>
+    </div>
+    <div id="dlgMapaConteudo">Carregando...</div>
+    <div style="margin-top:16px; display:flex; justify-content:flex-end; gap:10px;">
+      <button type="button" class="btn" data-close-dlg="dlgMapaDetalhes">Fechar</button>
+    </div>
+  </div>
+</dialog>
+
+
 <!-- =========================================================================
      DIALOG: ENTRADA / SAÍDA / AJUSTE DE ESTOQUE DE PEÇA
      ========================================================================= -->
@@ -2924,6 +3039,7 @@ function pgDivAddFromForm(){
 <script src="js/pecas.js" defer></script>
 <script src="js/bobinas.js" defer></script>
 <script src="js/empresas-page.js" defer></script>
+<script src="js/mapa.js" defer></script>
 <script src="js/tooltips.js" defer></script>
 <script src="js/saldo-acumulado.js"></script>
 <script src="js/saldo-acumulado-ui.js"></script>

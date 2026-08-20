@@ -2002,8 +2002,20 @@
       }
     }
 
+    // ⛔ Sanity check: escrita só para admin.
+    // (A UI já bloqueia via data-perm e via init(), mas quem chamar
+    // pelo console também vai bater aqui e falhar cedo. Proteção real
+    // do banco deve ser feita via RLS no Supabase.)
+    _requireAdmin() {
+      const ok = (() => {
+        try { return window.UserAuth?.isAdmin?.() === true; } catch(_) { return false; }
+      })();
+      if (!ok) throw new Error('Somente administradores podem alterar empresas.');
+    }
+
     async create({ nome, emoji, ativo = true }) {
       try {
+        this._requireAdmin();
         const nomeLimpo = String(nome || '').trim();
         if (!nomeLimpo) throw new Error('Informe o nome da empresa.');
 
@@ -2034,6 +2046,7 @@
 
     async update(id, patch) {
       try {
+        this._requireAdmin();
         const p = {};
         if (patch.nome !== undefined) p.nome = String(patch.nome).trim();
         if (patch.emoji !== undefined) p.emoji = String(patch.emoji || '🏢').slice(0, 8);
@@ -2148,6 +2161,7 @@
 
     async delete(id) {
       try {
+        this._requireAdmin();
         // Checa dependências antes de deletar
         const checks = [
           { tabela: 'gerentes', label: 'gerentes' },

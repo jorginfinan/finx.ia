@@ -282,6 +282,28 @@
   }
 
   async function init() {
+    // ⛔ Bloqueio duro: só admin. Se qualquer usuário comum conseguir
+    // navegar para esta página (ex.: por hash direto), a UI mostra
+    // mensagem de acesso negado em vez de carregar dados.
+    if (!isAdmin()) {
+      const wrap = document.getElementById('empresasResumoCards');
+      if (wrap) {
+        wrap.innerHTML = `
+          <div style="grid-column:1/-1; padding:24px; text-align:center; background:#fef2f2; border:1px solid #fca5a5; border-radius:12px;">
+            <div style="font-size:36px; margin-bottom:8px;">🔒</div>
+            <strong style="color:#991b1b;">Acesso restrito a administradores</strong>
+            <div style="font-size:12px; color:#7f1d1d; margin-top:6px;">
+              Esta área é exclusiva para admin. Se precisa de acesso, fale com um administrador do sistema.
+            </div>
+          </div>`;
+      }
+      // Esconde form e KPIs também (o guard() do RBAC já faz, mas garantia extra)
+      const form = document.getElementById('formEmpresa');
+      if (form) form.closest('.card').style.display = 'none';
+      const kpis = document.getElementById('empresasKPIs');
+      if (kpis) kpis.style.display = 'none';
+      return;
+    }
     bindEvents();
     await render();
   }

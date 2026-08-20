@@ -18,6 +18,7 @@
     'maquinas-bobinas-ctrl': 'pageBobinasCtrl',
     // alias retro-compatível
     'maquinas-bobinas':      'pageBobinasLanc',
+    'maquinas-mapa':         'pageMapa',
     'empresas':              'pageEmpresas'
   };
 
@@ -87,6 +88,10 @@
     // ✅ Inicializa página de Empresas (submenu próprio)
     if (key === 'empresas' || id === 'pageEmpresas') {
       try { window.EmpresasPage?.init?.(); } catch(_) {}
+    }
+    // ✅ Inicializa Mapa de uso (submenu Máquinas → Mapa)
+    if (key === 'maquinas-mapa' || id === 'pageMapa') {
+      try { window.MapaPage?.init?.(); } catch(_) {}
     }
   };
 

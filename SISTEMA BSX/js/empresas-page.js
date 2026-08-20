@@ -1,5 +1,5 @@
 // ============================================
-// CADASTRO DE EMPRESAS
+// PÁGINA DE EMPRESAS (submenu próprio, só admin)
 // ============================================
 (function () {
   'use strict';
@@ -7,9 +7,13 @@
   if (window.__EMPRESAS_PAGE_LOADED__) return;
   window.__EMPRESAS_PAGE_LOADED__ = true;
 
-  let __cache = [];
+  let __cache = [];       // { id, nome, emoji, ativo }
+  let __stats = [];       // stats por empresa
   let __editingId = null;
 
+  // ============================================
+  // HELPERS
+  // ============================================
   function esc(s) {
     const map = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' };
     return String(s ?? '').replace(/[&<>"']/g, m => map[m] || m);
@@ -24,45 +28,127 @@
     try { return window.UserAuth?.isAdmin?.() === true; } catch(_) { return false; }
   }
 
+  // ============================================
+  // LOADS
+  // ============================================
   async function loadEmpresas() {
     try {
       if (!window.SupabaseAPI?.empresas) return [];
       __cache = await window.SupabaseAPI.empresas.getAll();
       return __cache;
-    } catch (e) {
-      console.error('[Empresas] load:', e);
-      return [];
-    }
+    } catch (e) { console.error('[Empresas] load:', e); return []; }
   }
 
-  function renderTabela() {
-    const tb = document.getElementById('tbodyEmpresas');
-    if (!tb) return;
-    if (!__cache.length) {
-      tb.innerHTML = '<tr><td colspan="4" style="padding:14px; text-align:center; color:#6b7280;">Nenhuma empresa cadastrada.</td></tr>';
+  async function loadStats() {
+    try {
+      if (!window.SupabaseAPI?.empresas?.getEstatisticas) return [];
+      __stats = await window.SupabaseAPI.empresas.getEstatisticas();
+      return __stats;
+    } catch (e) { console.error('[Empresas] stats:', e); return []; }
+  }
+
+  // ============================================
+  // RENDERS
+  // ============================================
+  function setTxt(id, v) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = v;
+  }
+
+  function renderKPIs() {
+    const ativas   = __stats.filter(s => s.ativo).length;
+    const total    = __stats.length;
+    const gerTotal = __stats.reduce((a, s) => a + (s.gerentes_ativos || 0), 0);
+    const prestSem = __stats.reduce((a, s) => a + (s.prest_semana_aberta || 0) + (s.prest_semana_fechada || 0), 0);
+    const prestMes = __stats.reduce((a, s) => a + (s.prest_mes_aberta || 0) + (s.prest_mes_fechada || 0), 0);
+    setTxt('kpiEmpAtivas', ativas);
+    setTxt('kpiEmpTotal', total + ' no total');
+    setTxt('kpiEmpGerentes', gerTotal);
+    setTxt('kpiEmpPrestSem', prestSem);
+    setTxt('kpiEmpPrestMes', prestMes);
+  }
+
+  function renderResumoCards() {
+    const wrap = document.getElementById('empresasResumoCards');
+    if (!wrap) return;
+    if (!__stats.length) {
+      wrap.innerHTML = '<div style="color:#6b7280; padding:20px; text-align:center;">Nenhuma empresa cadastrada.</div>';
       return;
     }
-    tb.innerHTML = __cache.map(e => {
-      const statusBadge = e.ativo
+
+    // Ordena: ativas primeiro, depois alfabético
+    const ordenados = __stats.slice().sort((a, b) => {
+      if (a.ativo !== b.ativo) return b.ativo - a.ativo;
+      return String(a.nome).localeCompare(String(b.nome));
+    });
+
+    wrap.innerHTML = ordenados.map(s => {
+      const statusBadge = s.ativo
         ? '<span style="background:#d1fae5; color:#065f46; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600;">ATIVA</span>'
         : '<span style="background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600;">INATIVA</span>';
+
+      const bg = s.ativo ? '#ffffff' : '#f9fafb';
+      const opacity = s.ativo ? '1' : '0.7';
+
       return `
-        <tr data-emp-id="${esc(e.id)}">
-          <td style="padding:8px; font-size:22px;">${esc(e.emoji || '🏢')}</td>
-          <td style="padding:8px;"><strong>${esc(e.nome)}</strong></td>
-          <td style="padding:8px;">${statusBadge}</td>
-          <td style="padding:8px; text-align:right; white-space:nowrap;">
-            <button class="btn ghost" data-emp-act="editar" data-tip="Editar dados">✏️</button>
-            <button class="btn ${e.ativo ? '' : 'ghost'}" data-emp-act="${e.ativo ? 'inativar' : 'ativar'}" data-tip="${e.ativo ? 'Inativar' : 'Reativar'}">
-              ${e.ativo ? '🚫' : '↩️'}
-            </button>
-            <button class="btn danger" data-emp-act="excluir" data-tip="Excluir permanentemente">🗑️</button>
-          </td>
-        </tr>
+        <div style="border:1px solid #e5e7eb; border-radius:12px; padding:16px; background:${bg}; opacity:${opacity};" data-emp-id="${esc(s.id)}">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:28px;">${esc(s.emoji || '🏢')}</span>
+              <strong style="font-size:16px;">${esc(s.nome)}</strong>
+            </div>
+            ${statusBadge}
+          </div>
+
+          <!-- Grid de mini KPIs -->
+          <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-top:12px;">
+
+            <!-- Gerentes -->
+            <div style="background:#f0f9ff; padding:10px; border-radius:8px;">
+              <div style="font-size:11px; color:#075985; font-weight:600;">GERENTES</div>
+              <div style="font-size:20px; font-weight:700; color:#0369a1;">${s.gerentes_ativos}</div>
+              <div style="font-size:10px; color:#0284c7;">${s.gerentes_semanais} sem • ${s.gerentes_mensais} mês</div>
+            </div>
+
+            <!-- Máquinas -->
+            <div style="background:#f0fdf4; padding:10px; border-radius:8px;">
+              <div style="font-size:11px; color:#166534; font-weight:600;">MÁQUINAS</div>
+              <div style="font-size:20px; font-weight:700; color:#15803d;">${s.maquinas_total}</div>
+              <div style="font-size:10px; color:#22c55e;">${s.maquinas_com_vendedor} c/ vendedor</div>
+            </div>
+
+            <!-- Prestações semana -->
+            <div style="background:#fef3c7; padding:10px; border-radius:8px;">
+              <div style="font-size:11px; color:#92400e; font-weight:600;">📅 SEMANA</div>
+              <div style="font-size:20px; font-weight:700; color:#b45309;">${s.prest_semana_aberta + s.prest_semana_fechada}</div>
+              <div style="font-size:10px; color:#a16207;">${s.prest_semana_aberta} aberta(s) • ${s.prest_semana_fechada} fechada(s)</div>
+            </div>
+
+            <!-- Prestações mês -->
+            <div style="background:#ede9fe; padding:10px; border-radius:8px;">
+              <div style="font-size:11px; color:#5b21b6; font-weight:600;">🗓️ MÊS</div>
+              <div style="font-size:20px; font-weight:700; color:#6d28d9;">${s.prest_mes_aberta + s.prest_mes_fechada}</div>
+              <div style="font-size:10px; color:#7c3aed;">${s.prest_mes_aberta} aberta(s) • ${s.prest_mes_fechada} fechada(s)</div>
+            </div>
+          </div>
+
+          <!-- Ações -->
+          <div style="display:flex; gap:6px; margin-top:14px; justify-content:flex-end;">
+            <button class="btn ghost" data-emp-act="editar" data-tip="Editar dados">✏️ Editar</button>
+            ${s.ativo
+              ? '<button class="btn ghost" data-emp-act="inativar" data-tip="Inativar (não aparece no seletor)">🚫 Inativar</button>'
+              : '<button class="btn" data-emp-act="ativar" data-tip="Reativar">↩️ Ativar</button>'
+            }
+            <button class="btn danger" data-emp-act="excluir" data-tip="Excluir permanentemente (só se sem dados)">🗑️</button>
+          </div>
+        </div>
       `;
     }).join('');
   }
 
+  // ============================================
+  // FORM CADASTRO
+  // ============================================
   function resetForm() {
     const f = document.getElementById('formEmpresa');
     if (!f) return;
@@ -85,7 +171,7 @@
 
   async function onSubmit(e) {
     e.preventDefault();
-    if (!isAdmin()) { notify('Apenas admin pode cadastrar empresas.', 'error'); return; }
+    if (!isAdmin()) { notify('Apenas admin.', 'error'); return; }
     const f = e.currentTarget;
     const fd = new FormData(f);
     const nome  = String(fd.get('nome') || '').trim();
@@ -103,38 +189,37 @@
       }
       resetForm();
       await render();
-      // Atualiza dropdown do topo
       try { window.__reloadEmpresaSelector?.(); } catch(_){}
     } catch (err) {
-      notify(err.message || 'Erro ao salvar', 'error');
+      alert('⚠️ ' + (err.message || 'Erro ao salvar'));
     }
   }
 
   async function inativarEmp(emp) {
-    if (!isAdmin()) return notify('Sem permissão.', 'error');
-    if (!confirm(`Inativar a empresa "${emp.nome}"?\n\nEla deixa de aparecer no seletor. Você pode reativar depois.`)) return;
+    if (!isAdmin()) return;
+    if (!confirm(`Inativar "${emp.nome}"?\n\nEla deixa de aparecer no seletor. Você pode reativar depois.`)) return;
     try {
       await window.SupabaseAPI.empresas.update(emp.id, { ativo: false });
       notify('Empresa inativada.', 'success');
       await render();
       try { window.__reloadEmpresaSelector?.(); } catch(_){}
-    } catch (err) { notify(err.message || 'Erro', 'error'); }
+    } catch (err) { alert('⚠️ ' + (err.message || 'Erro')); }
   }
 
   async function ativarEmp(emp) {
-    if (!isAdmin()) return notify('Sem permissão.', 'error');
+    if (!isAdmin()) return;
     try {
       await window.SupabaseAPI.empresas.update(emp.id, { ativo: true });
       notify('Empresa reativada.', 'success');
       await render();
       try { window.__reloadEmpresaSelector?.(); } catch(_){}
-    } catch (err) { notify(err.message || 'Erro', 'error'); }
+    } catch (err) { alert('⚠️ ' + (err.message || 'Erro')); }
   }
 
   async function excluirEmp(emp) {
-    if (!isAdmin()) return notify('Sem permissão.', 'error');
-    if (!confirm(`Excluir PERMANENTEMENTE a empresa "${emp.nome}"?\n\nSó é possível se não houver gerentes, prestações, despesas ou fichas vinculadas. Se houver, use a opção Inativar.`)) return;
-    if (!confirm(`Tem certeza absoluta? Esta ação NÃO pode ser desfeita.`)) return;
+    if (!isAdmin()) return;
+    if (!confirm(`Excluir PERMANENTEMENTE "${emp.nome}"?\n\nSó é possível se não houver gerentes, prestações, despesas ou fichas vinculadas.`)) return;
+    if (!confirm('Tem certeza absoluta? Esta ação NÃO pode ser desfeita.')) return;
     try {
       await window.SupabaseAPI.empresas.delete(emp.id);
       notify('Empresa excluída.', 'success');
@@ -145,25 +230,40 @@
     }
   }
 
+  // ============================================
+  // EVENTS
+  // ============================================
   function bindEvents() {
     const f = document.getElementById('formEmpresa');
     if (f && !f.__wired) {
       f.__wired = true;
       f.addEventListener('submit', onSubmit);
     }
-    const btnLimpar = document.getElementById('btnLimparEmpresa');
-    if (btnLimpar && !btnLimpar.__wired) {
-      btnLimpar.__wired = true;
-      btnLimpar.addEventListener('click', resetForm);
+    const btnL = document.getElementById('btnLimparEmpresa');
+    if (btnL && !btnL.__wired) {
+      btnL.__wired = true;
+      btnL.addEventListener('click', resetForm);
     }
-    const tb = document.getElementById('tbodyEmpresas');
-    if (tb && !tb.__wired) {
-      tb.__wired = true;
-      tb.addEventListener('click', (e) => {
+    const btnA = document.getElementById('btnAtualizarEmpresas');
+    if (btnA && !btnA.__wired) {
+      btnA.__wired = true;
+      btnA.addEventListener('click', async () => {
+        btnA.disabled = true;
+        await render();
+        btnA.disabled = false;
+        notify('Atualizado!', 'success');
+      });
+    }
+
+    // Delegation nos cards
+    const wrap = document.getElementById('empresasResumoCards');
+    if (wrap && !wrap.__wired) {
+      wrap.__wired = true;
+      wrap.addEventListener('click', (e) => {
         const btn = e.target.closest('button[data-emp-act]');
         if (!btn) return;
-        const tr = btn.closest('tr[data-emp-id]');
-        const id = tr?.getAttribute('data-emp-id');
+        const card = btn.closest('[data-emp-id]');
+        const id = card?.getAttribute('data-emp-id');
         const emp = __cache.find(x => String(x.id) === String(id));
         if (!emp) return;
         const act = btn.getAttribute('data-emp-act');
@@ -176,8 +276,9 @@
   }
 
   async function render() {
-    await loadEmpresas();
-    renderTabela();
+    await Promise.all([ loadEmpresas(), loadStats() ]);
+    renderKPIs();
+    renderResumoCards();
   }
 
   async function init() {
@@ -188,7 +289,7 @@
   window.EmpresasPage = { init, render };
   window.renderEmpresasPage = render;
 
-  console.log('[Empresas] ✅ Módulo de cadastro carregado');
+  console.log('[Empresas] ✅ Página carregada');
 })();
 
 
@@ -202,7 +303,6 @@
     const sel = document.getElementById('empresaSelect');
     if (!sel) return;
     if (!window.SupabaseAPI?.empresas) {
-      // Aguarda API estar pronta
       return setTimeout(reloadSelector, 500);
     }
     try {
@@ -217,13 +317,12 @@
         return `<option value="${nome}" ${selected}>${emoji} ${nome}</option>`;
       }).join('');
     } catch (e) {
-      console.warn('[EmpresasSelector] Falha ao popular:', e);
+      console.warn('[EmpresasSelector] Falha:', e);
     }
   }
 
   window.__reloadEmpresaSelector = reloadSelector;
 
-  // Popula ao carregar (aguarda API + DOM)
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => setTimeout(reloadSelector, 1000));
   } else {

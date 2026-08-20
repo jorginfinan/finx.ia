@@ -101,6 +101,14 @@
     </span>
     <span class="label">Fichas</span>
   </button>
+
+  <button class="sb-subitem" data-tab="empresas" data-perm="admin_only" title="Empresas">
+    <span class="ico" aria-hidden="true">
+      <!-- prédio -->
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 21V7l6-4 6 4v14"/><path d="M15 21V11h6v10"/><path d="M7 8h.01M11 8h.01M7 12h.01M11 12h.01M7 16h.01M11 16h.01M18 14h.01M18 17h.01"/></svg>
+    </span>
+    <span class="label">Empresas</span>
+  </button>
 </nav>
 
 
@@ -587,51 +595,75 @@
 </section>
 
     <!-- ====== PÁGINA: CADASTROS ====== -->
-    <section id="pageCadastros" class="container hidden" data-perm="cad_gerentes_view">
+<!-- ============================================================
+     PÁGINA: EMPRESAS (só admin)
+     ============================================================ -->
+<section id="pageEmpresas" class="container hidden" data-perm="admin_only">
+  <h2>🏢 Empresas</h2>
 
-      <!-- ================================================================
-           CARD: Cadastro de Empresas (só admin)
-           ================================================================ -->
-      <div class="card" data-perm="admin_only" style="margin-bottom:20px;">
-        <h3>🏢 Cadastro de Empresas</h3>
-        <p style="font-size:12px; color:#6b7280; margin-top:-6px; margin-bottom:12px;">
-          Empresas cadastradas aqui aparecem no seletor de empresa no topo.
-          Cada empresa tem seu próprio caixa, gerentes, prestações e histórico.
-        </p>
+  <!-- KPIs GLOBAIS -->
+  <div class="cards" id="empresasKPIs" style="margin-bottom:20px;">
+    <div class="card-fin" data-tip="Empresas cadastradas ativas" data-tip-pos="below" style="background:linear-gradient(135deg,#0ea5e9,#0369a1); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Empresas ativas</div>
+      <div class="big" id="kpiEmpAtivas">—</div>
+      <div style="font-size:11px; opacity:0.8;" id="kpiEmpTotal">— no total</div>
+    </div>
+    <div class="card-fin" data-tip="Total de gerentes ativos em todas as empresas" data-tip-pos="below" style="background:linear-gradient(135deg,#10b981,#059669); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Gerentes (total)</div>
+      <div class="big" id="kpiEmpGerentes">—</div>
+      <div style="font-size:11px; opacity:0.8;">somando todas empresas</div>
+    </div>
+    <div class="card-fin" data-tip="Prestações abertas na semana atual" data-tip-pos="below" style="background:linear-gradient(135deg,#f59e0b,#d97706); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Prestações na semana</div>
+      <div class="big" id="kpiEmpPrestSem">—</div>
+      <div style="font-size:11px; opacity:0.8;">período seg→dom atual</div>
+    </div>
+    <div class="card-fin" data-tip="Prestações abertas no mês atual" data-tip-pos="below" style="background:linear-gradient(135deg,#6366f1,#4338ca); padding:18px; border-radius:12px;">
+      <div style="font-size:13px; opacity:0.9;">Prestações no mês</div>
+      <div class="big" id="kpiEmpPrestMes">—</div>
+      <div style="font-size:11px; opacity:0.8;">mês atual</div>
+    </div>
+  </div>
 
-        <form id="formEmpresa" class="form-grid">
-          <label>Nome <span style="color:#dc2626">*</span>
-            <input name="nome" required placeholder="Ex.: Nova Empresa" />
-          </label>
-          <label>Emoji / Ícone
-            <input name="emoji" placeholder="🏢" maxlength="8" />
-          </label>
-          <label style="display:flex; align-items:center; gap:8px;">
-            <input type="checkbox" name="ativo" id="empAtivo" checked>
-            <span>Ativa (aparece no seletor)</span>
-          </label>
-          <div style="grid-column:1/-1; display:flex; gap:10px; justify-content:flex-end;">
-            <button type="button" id="btnLimparEmpresa" class="btn ghost">Limpar</button>
-            <button type="submit" id="btnSalvarEmpresa" class="btn">Salvar Empresa</button>
-          </div>
-        </form>
+  <!-- CADASTRO -->
+  <div class="card" style="margin-bottom:20px;">
+    <h3>➕ Cadastrar / Editar Empresa</h3>
+    <p style="font-size:12px; color:#6b7280; margin-top:-6px; margin-bottom:12px;">
+      Empresas cadastradas aqui aparecem no seletor do topo. Cada empresa tem seu próprio caixa, gerentes, prestações e histórico.
+    </p>
 
-        <div style="margin-top:16px; overflow:auto; border:1px solid #e5e7eb; border-radius:10px;">
-          <table style="width:100%;">
-            <thead style="background:#f9fafb;">
-              <tr>
-                <th style="padding:8px; text-align:left;">Ícone</th>
-                <th style="padding:8px; text-align:left;">Nome</th>
-                <th style="padding:8px; text-align:left;">Status</th>
-                <th style="padding:8px; text-align:right;">Ações</th>
-              </tr>
-            </thead>
-            <tbody id="tbodyEmpresas">
-              <tr><td colspan="4" style="padding:14px; text-align:center; color:#6b7280;">Carregando...</td></tr>
-            </tbody>
-          </table>
-        </div>
+    <form id="formEmpresa" class="form-grid">
+      <label>Nome <span style="color:#dc2626">*</span>
+        <input name="nome" required placeholder="Ex.: Nova Empresa" />
+      </label>
+      <label>Emoji / Ícone
+        <input name="emoji" placeholder="🏢" maxlength="8" />
+      </label>
+      <label style="display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" name="ativo" id="empAtivo" checked>
+        <span>Ativa (aparece no seletor)</span>
+      </label>
+      <div style="grid-column:1/-1; display:flex; gap:10px; justify-content:flex-end;">
+        <button type="button" id="btnLimparEmpresa" class="btn ghost">Limpar</button>
+        <button type="submit" id="btnSalvarEmpresa" class="btn">Salvar Empresa</button>
       </div>
+    </form>
+  </div>
+
+  <!-- RESUMO POR EMPRESA (cards) -->
+  <div class="card">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+      <h3 style="margin:0;">📊 Resumo por Empresa</h3>
+      <button type="button" id="btnAtualizarEmpresas" class="btn ghost" data-tip="Recarregar dados">🔄 Atualizar</button>
+    </div>
+    <div id="empresasResumoCards" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:14px;">
+      <div style="color:#6b7280; padding:20px; text-align:center;">Carregando...</div>
+    </div>
+  </div>
+</section>
+
+
+    <section id="pageCadastros" class="container hidden" data-perm="cad_gerentes_view">
 
       <div class="grid">
         <div class="card">

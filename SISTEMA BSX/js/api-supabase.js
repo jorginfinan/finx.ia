@@ -2050,6 +2050,102 @@
       }
     }
 
+    // Retorna estatísticas para cada empresa
+    // { id, nome, emoji, ativo, gerentes_total, gerentes_ativos, gerentes_mensais,
+    //   prest_semana_aberta, prest_semana_fechada, prest_mes_aberta, prest_mes_fechada,
+    //   maquinas_ativas, maquinas_estoque, maquinas_com_vendedor }
+    async getEstatisticas({ semanaIni, semanaFim, mesIni, mesFim } = {}) {
+      const client = this.client;
+      const hoje = new Date();
+      // Semana atual (seg → dom)
+      const dow = hoje.getDay() || 7;  // domingo = 7
+      const seg = new Date(hoje);  seg.setDate(hoje.getDate() - (dow - 1));
+      const dom = new Date(seg);   dom.setDate(seg.getDate() + 6);
+      const iso = (d) => d.toISOString().slice(0,10);
+      const semIni = semanaIni || iso(seg);
+      const semFim = semanaFim || iso(dom);
+      // Mês atual
+      const y = hoje.getFullYear(), m = hoje.getMonth();
+      const primeiro = new Date(y, m, 1);
+      const ultimo   = new Date(y, m + 1, 0);
+      const mIni = mesIni || iso(primeiro);
+      const mFim = mesFim || iso(ultimo);
+
+      try {
+        // Carrega todas empresas
+        const { data: empresas } = await client
+          .from('empresas').select('*').order('nome');
+        if (!empresas || !empresas.length) return [];
+
+        const stats = [];
+        for (const emp of empresas) {
+          const st = {
+            id: emp.id, nome: emp.nome,
+            emoji: emp.emoji || '🏢', ativo: !!emp.ativo,
+            gerentes_total: 0, gerentes_ativos: 0, gerentes_mensais: 0, gerentes_semanais: 0,
+            prest_semana_aberta: 0, prest_semana_fechada: 0,
+            prest_mes_aberta: 0,    prest_mes_fechada: 0,
+            maquinas_total: 0, maquinas_estoque: 0, maquinas_com_vendedor: 0, maquinas_manutencao: 0
+          };
+
+          // Gerentes
+          try {
+            const { data: gers } = await client
+              .from('gerentes').select('id, ativo, mensal').eq('empresa_id', emp.id);
+            (gers || []).forEach(g => {
+              st.gerentes_total++;
+              if (g.ativo !== false) st.gerentes_ativos++;
+              if (g.mensal) st.gerentes_mensais++;
+              else st.gerentes_semanais++;
+            });
+          } catch(_){}
+
+          // Prestações da semana (por período_ini dentro do intervalo)
+          try {
+            const { data: pw } = await client
+              .from('prestacoes').select('fechada, periodo_ini')
+              .eq('empresa_id', emp.id)
+              .gte('periodo_ini', semIni).lte('periodo_ini', semFim);
+            (pw || []).forEach(p => {
+              if (p.fechada) st.prest_semana_fechada++;
+              else st.prest_semana_aberta++;
+            });
+          } catch(_){}
+
+          // Prestações do mês
+          try {
+            const { data: pm } = await client
+              .from('prestacoes').select('fechada, periodo_ini')
+              .eq('empresa_id', emp.id)
+              .gte('periodo_ini', mIni).lte('periodo_ini', mFim);
+            (pm || []).forEach(p => {
+              if (p.fechada) st.prest_mes_fechada++;
+              else st.prest_mes_aberta++;
+            });
+          } catch(_){}
+
+          // Máquinas (não crítico se a tabela não existir)
+          try {
+            const { data: maqs } = await client
+              .from('maquinas').select('status, ativo').eq('empresa_id', emp.id);
+            (maqs || []).forEach(mq => {
+              if (mq.ativo === false) return;
+              st.maquinas_total++;
+              if (mq.status === 'estoque')      st.maquinas_estoque++;
+              if (mq.status === 'com_vendedor') st.maquinas_com_vendedor++;
+              if (mq.status === 'manutencao')   st.maquinas_manutencao++;
+            });
+          } catch(_){}
+
+          stats.push(st);
+        }
+        return stats;
+      } catch (e) {
+        console.error('[EmpresasAPI] getEstatisticas:', e);
+        return [];
+      }
+    }
+
     async delete(id) {
       try {
         // Checa dependências antes de deletar

@@ -17,7 +17,8 @@
     'maquinas-bobinas-lanc': 'pageBobinasLanc',
     'maquinas-bobinas-ctrl': 'pageBobinasCtrl',
     // alias retro-compatível
-    'maquinas-bobinas':      'pageBobinasLanc'
+    'maquinas-bobinas':      'pageBobinasLanc',
+    'empresas':              'pageEmpresas'
   };
 
   function pageIdFor(key){
@@ -83,8 +84,8 @@
     if (key === 'maquinas-bobinas-ctrl' || id === 'pageBobinasCtrl') {
       try { window.Bobinas?.initCtrl?.(); } catch(_) {}
     }
-    // ✅ Inicializa Cadastro de Empresas (dentro de Cadastros)
-    if (key === 'cad' || id === 'pageCadastros') {
+    // ✅ Inicializa página de Empresas (submenu próprio)
+    if (key === 'empresas' || id === 'pageEmpresas') {
       try { window.EmpresasPage?.init?.(); } catch(_) {}
     }
   };

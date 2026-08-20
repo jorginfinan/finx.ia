@@ -2751,9 +2751,31 @@ async function criarPendenciaPagamento(prestacao) {
       return;
     }
     
-    // Busca dados do gerente
-    const g = (window.gerentes || []).find(x => x.uid === prestacao.gerenteId);
-    const gerenteNome = g?.nome || 'Gerente desconhecido';
+    // Busca dados do gerente (pode ser por id ou uid)
+    const g = (window.gerentes || []).find(x =>
+      x.uid === prestacao.gerenteId || x.id === prestacao.gerenteId
+    );
+    const gerenteNome = g?.nome || prestacao.gerenteNome || 'Gerente desconhecido';
+
+    // ✅ Descobre a EMPRESA da prestação (via gerente) — evita gravar no caixa errado
+    // quando o usuário está logado em outra empresa no momento do save/close.
+    let empresaNome = null;
+    try {
+      const empId = g?.empresa_id;
+      if (empId && window.SupabaseAPI?.client) {
+        const { data } = await window.SupabaseAPI.client
+          .from('empresas')
+          .select('nome')
+          .eq('id', empId)
+          .maybeSingle();
+        empresaNome = data?.nome || null;
+      }
+    } catch(e) {
+      console.warn('[criarPendenciaPagamento] Não conseguiu resolver empresa do gerente:', e);
+    }
+    // Fallback: se nao achou pelo gerente, usa a empresa ativa
+    if (!empresaNome) empresaNome = window.getCompany?.() || 'BSX';
+    console.log('[criarPendenciaPagamento] Empresa da prestação:', empresaNome, 'gerente:', gerenteNome);
     
     // Cria uma pendência para CADA pagamento de dívida
     const pendencias = __getPendencias();
@@ -2789,17 +2811,20 @@ const novaPendencia = {
   data: pag.data || prestacao.fim || prestacao.ini || new Date().toISOString().slice(0,10),
   valorOriginal: valorPagamento,
   valorConfirm: valorPagamento,
-  info: 'Dívida Prest. ' + (prestacao.ini||'').slice(5).split('-').reverse().join('/') + 
+  info: 'Dívida Prest. ' + (prestacao.ini||'').slice(5).split('-').reverse().join('/') +
         '–' + (prestacao.fim||'').slice(5).split('-').reverse().join('/') +
         (pag.obs ? ' - ' + pag.obs : ''),
   forma: 'PIX',
   status: 'PENDENTE',
   edited: false,
   createdAt: new Date().toISOString(),
-  
+
   // ✅ CRÍTICO: Estes dois campos determinam onde aparece!
   tipoCaixa: 'PAGO',    // ← Define que é PAGAMENTO
-  tipo: 'PAGAR'         // ← Confirma que é PAGAMENTO
+  tipo: 'PAGAR',        // ← Confirma que é PAGAMENTO
+
+  // ✅ CRÍTICO: Empresa da prestação (via gerente), não da empresa ativa
+  company: empresaNome
 };
       
 // ✅ SALVA NO SUPABASE

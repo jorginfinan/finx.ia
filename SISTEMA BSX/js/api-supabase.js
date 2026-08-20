@@ -1978,6 +1978,112 @@
   // EXPORTAR API
   // ============================================
 
+  // ============================================
+  // API DE EMPRESAS — cadastro/edição das empresas
+  // ============================================
+  class EmpresasAPI {
+    constructor() {
+      this.table = 'empresas';
+      this.client = supabaseClient;
+    }
+
+    async getAll({ ativasApenas = false } = {}) {
+      try {
+        let q = this.client.from(this.table).select('*').order('nome');
+        if (ativasApenas) q = q.eq('ativo', true);
+        const { data, error } = await q;
+        if (error) throw error;
+        // Atualiza cache global de empresas usado pelos helpers da API
+        empresasCache = (data || []).map(e => ({ id: e.id, nome: e.nome }));
+        return data || [];
+      } catch (e) {
+        console.error('[EmpresasAPI] getAll:', e);
+        return [];
+      }
+    }
+
+    async create({ nome, emoji, ativo = true }) {
+      try {
+        const nomeLimpo = String(nome || '').trim();
+        if (!nomeLimpo) throw new Error('Informe o nome da empresa.');
+
+        // Checa duplicidade (case-insensitive)
+        const { data: existing } = await this.client
+          .from(this.table).select('id, nome').ilike('nome', nomeLimpo);
+        if (existing && existing.length > 0) {
+          throw new Error(`Já existe uma empresa com o nome "${existing[0].nome}".`);
+        }
+
+        const payload = {
+          nome: nomeLimpo,
+          emoji: String(emoji || '🏢').slice(0, 8),
+          ativo: !!ativo
+        };
+        const { data, error } = await this.client
+          .from(this.table).insert([payload]).select().single();
+        if (error) throw error;
+        // Invalida cache global
+        empresasCache = null;
+        console.log('[EmpresasAPI] ✅ Criada:', data.nome);
+        return data;
+      } catch (e) {
+        console.error('[EmpresasAPI] create:', e);
+        throw e;
+      }
+    }
+
+    async update(id, patch) {
+      try {
+        const p = {};
+        if (patch.nome !== undefined) p.nome = String(patch.nome).trim();
+        if (patch.emoji !== undefined) p.emoji = String(patch.emoji || '🏢').slice(0, 8);
+        if (patch.ativo !== undefined) p.ativo = !!patch.ativo;
+
+        const { data, error } = await this.client
+          .from(this.table).update(p).eq('id', id).select().single();
+        if (error) throw error;
+        empresasCache = null;
+        return data;
+      } catch (e) {
+        console.error('[EmpresasAPI] update:', e);
+        throw e;
+      }
+    }
+
+    async delete(id) {
+      try {
+        // Checa dependências antes de deletar
+        const checks = [
+          { tabela: 'gerentes', label: 'gerentes' },
+          { tabela: 'prestacoes', label: 'prestações' },
+          { tabela: 'despesas', label: 'despesas' },
+          { tabela: 'fichas', label: 'fichas' }
+        ];
+        for (const c of checks) {
+          try {
+            const { count } = await this.client
+              .from(c.tabela).select('*', { count: 'exact', head: true })
+              .eq('empresa_id', id);
+            if ((count || 0) > 0) {
+              throw new Error(`Não é possível excluir: existem ${count} ${c.label} vinculadas a esta empresa. Inative-a em vez de excluir.`);
+            }
+          } catch (e) {
+            if (e.message?.startsWith('Não é possível excluir')) throw e;
+            // se der erro na consulta, ignora e prossegue
+          }
+        }
+        const { error } = await this.client.from(this.table).delete().eq('id', id);
+        if (error) throw error;
+        empresasCache = null;
+        return true;
+      } catch (e) {
+        console.error('[EmpresasAPI] delete:', e);
+        throw e;
+      }
+    }
+  }
+
+
   window.SupabaseAPI = {
     usuarios: new UsuariosAPI(),
     gerentes: new GerentesAPI(),
@@ -1993,6 +2099,7 @@
     maquinasPecas: new MaquinasPecasAPI(),
     bobinas: new BobinasAPI(),                                 // ⬅️ NOVA
     bobinasMovimentacoes: new BobinasMovimentacoesAPI(),       // ⬅️ NOVA
+    empresas: new EmpresasAPI(),                               // ⬅️ NOVA
     client: supabaseClient
   };
 

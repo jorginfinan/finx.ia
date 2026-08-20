@@ -83,6 +83,10 @@
     if (key === 'maquinas-bobinas-ctrl' || id === 'pageBobinasCtrl') {
       try { window.Bobinas?.initCtrl?.(); } catch(_) {}
     }
+    // ✅ Inicializa Cadastro de Empresas (dentro de Cadastros)
+    if (key === 'cad' || id === 'pageCadastros') {
+      try { window.EmpresasPage?.init?.(); } catch(_) {}
+    }
   };
 
   function showPage(key){

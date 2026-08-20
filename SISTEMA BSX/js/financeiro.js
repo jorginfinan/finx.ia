@@ -799,7 +799,8 @@ function formatDate(date) {
           forma: r.forma || 'PIX', data: r.data || '',
           info: r.info || '', prestId: r.prestacao_id,
           tipoCaixa: r.tipo_caixa || 'RECEBIDO',
-          status: r.status || 'PENDENTE', edited: r.edited || false
+          status: r.status || 'PENDENTE', edited: r.edited || false,
+          company: r.company || null   // ✅ Necessário p/ propagar ao lançamento
         }));
       } catch(e) { console.error('[Pendencias] Erro:', e); return []; }
     },
@@ -813,9 +814,11 @@ function formatDate(date) {
           localStorage.setItem('DB_CAIXA_PEND', JSON.stringify(arr));
           return item.uid;
         }
-        const company = window.getCompany?.() || 'BSX';
+        // ✅ Prioriza a empresa do item (vem da prestação/gerente).
+        // Só cai no getCompany() se o item não tiver company definida.
+        const company = item.company || window.getCompany?.() || 'BSX';
         const uid = item.uid || window.uid?.() || crypto.randomUUID();
-        
+
         await this.client.from('pendencias').insert([{
           uid, alt_uid: item.altUID || null,
           gerente: item.gerenteNome || '', gerente_id: item.gerenteId || null,
@@ -1400,6 +1403,8 @@ function renderFinPendencias(){
           forma: p.forma || (ehSaida ? 'PIX' : 'PRESTAÇÃO'),
           categoria: ehSaida ? 'Prestação de contas (SAÍDA)' : 'Prestação de contas (ENTRADA)',
           data: p.data || (new Date()).toISOString().slice(0,10),
+          // ✅ CRÍTICO: herda a company da pendência para não gravar no caixa errado
+          company: p.company || (window.getCompany?.() || 'BSX'),
           meta: {
             from: 'prestacao',
             fromUID: p.uid,
@@ -1519,17 +1524,19 @@ if (pendenciaDescartada) {
   // Usa o uid ou id para deletar
   const uidToDelete = pendenciaDescartada.uid || pendenciaDescartada.id;
   await window.__removePendencia(uidToDelete);
-  
-  // ✅ CORREÇÃO: Marca como "processada" para não recriar
-  // Adiciona em pendencias_confirmadas para evitar que seja recriada
+
+  // ✅ Marca como "processada" para não recriar automaticamente.
+  // Trava intencional: protege o caixa contra duplicações se o mesmo
+  // pagamento for salvo de novo na prestação sem intenção.
+  // Para "desfazer" uma trava específica (recuperar em outra empresa,
+  // por exemplo), use db/destravar-pendencias-descartadas.sql.
   if (window.PendenciasAPI?.confirm) {
     await window.PendenciasAPI.confirm(uidToDelete);
   }
-  // Se tiver altUID, marca também
   if (pendenciaDescartada.altUID) {
     await window.PendenciasAPI?.confirm(pendenciaDescartada.altUID);
   }
-  
+
   console.log('[Pendencias] ✅ Descartada e marcada como processada:', uidToDelete);
 }
       // ✅ AUDITORIA - Registra descarte

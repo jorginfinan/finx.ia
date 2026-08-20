@@ -588,7 +588,51 @@
 
     <!-- ====== PÁGINA: CADASTROS ====== -->
     <section id="pageCadastros" class="container hidden" data-perm="cad_gerentes_view">
-      
+
+      <!-- ================================================================
+           CARD: Cadastro de Empresas (só admin)
+           ================================================================ -->
+      <div class="card" data-perm="admin_only" style="margin-bottom:20px;">
+        <h3>🏢 Cadastro de Empresas</h3>
+        <p style="font-size:12px; color:#6b7280; margin-top:-6px; margin-bottom:12px;">
+          Empresas cadastradas aqui aparecem no seletor de empresa no topo.
+          Cada empresa tem seu próprio caixa, gerentes, prestações e histórico.
+        </p>
+
+        <form id="formEmpresa" class="form-grid">
+          <label>Nome <span style="color:#dc2626">*</span>
+            <input name="nome" required placeholder="Ex.: Nova Empresa" />
+          </label>
+          <label>Emoji / Ícone
+            <input name="emoji" placeholder="🏢" maxlength="8" />
+          </label>
+          <label style="display:flex; align-items:center; gap:8px;">
+            <input type="checkbox" name="ativo" id="empAtivo" checked>
+            <span>Ativa (aparece no seletor)</span>
+          </label>
+          <div style="grid-column:1/-1; display:flex; gap:10px; justify-content:flex-end;">
+            <button type="button" id="btnLimparEmpresa" class="btn ghost">Limpar</button>
+            <button type="submit" id="btnSalvarEmpresa" class="btn">Salvar Empresa</button>
+          </div>
+        </form>
+
+        <div style="margin-top:16px; overflow:auto; border:1px solid #e5e7eb; border-radius:10px;">
+          <table style="width:100%;">
+            <thead style="background:#f9fafb;">
+              <tr>
+                <th style="padding:8px; text-align:left;">Ícone</th>
+                <th style="padding:8px; text-align:left;">Nome</th>
+                <th style="padding:8px; text-align:left;">Status</th>
+                <th style="padding:8px; text-align:right;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyEmpresas">
+              <tr><td colspan="4" style="padding:14px; text-align:center; color:#6b7280;">Carregando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="grid">
         <div class="card">
           <h3>Cadastro de Gerentes</h3>
@@ -2847,6 +2891,7 @@ function pgDivAddFromForm(){
 <script src="js/estoque.js" defer></script>
 <script src="js/pecas.js" defer></script>
 <script src="js/bobinas.js" defer></script>
+<script src="js/empresas-page.js" defer></script>
 <script src="js/tooltips.js" defer></script>
 <script src="js/saldo-acumulado.js"></script>
 <script src="js/saldo-acumulado-ui.js"></script>

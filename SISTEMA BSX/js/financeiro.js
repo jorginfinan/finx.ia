@@ -1754,29 +1754,246 @@ function imprimirFinanceiroA4(){
 
 // ===== Helpers de ações gerais (usados pela delegação única) =====
 function __fin_printCaixa(){
-  const get = id => document.getElementById(id)?.textContent || 'R$ 0,00';
+  // ✅ Usa os MESMOS filtros aplicados na tela (mês, ano, status, forma, busca, período)
+  const rows = (typeof sortRows === 'function' && typeof applyFilters === 'function')
+    ? sortRows(applyFilters(window.lanc || []))
+    : (window.lanc || []);
+
+  const empresa = window.getCompany?.() || 'BSX';
+  const dataAtual = new Date().toLocaleString('pt-BR');
+
+  // Rótulo do período (para o cabeçalho)
+  const mes  = document.getElementById('mes')?.value || '';
+  const ano  = document.getElementById('ano')?.value || '';
+  const de   = document.getElementById('dataDe')?.value || '';
+  const ate  = document.getElementById('dataAte')?.value || '';
+  const busca = document.getElementById('busca')?.value || '';
+  const forma = document.getElementById('forma')?.value || '';
+  const mesesNome = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  let periodoTxt = '';
+  if (de || ate) {
+    periodoTxt = `${de ? de.split('-').reverse().join('/') : '…'} a ${ate ? ate.split('-').reverse().join('/') : '…'}`;
+  } else if (mes || ano) {
+    periodoTxt = `${mes ? mesesNome[Number(mes)] + '/' : ''}${ano || ''}`;
+  } else {
+    periodoTxt = 'Todos os lançamentos';
+  }
+  const filtrosExtras = [];
+  if (forma) filtrosExtras.push(`Forma: ${forma}`);
+  if (busca) filtrosExtras.push(`Busca: "${busca}"`);
+
+  // Separa recebidos e pagos
+  const recebidos = rows.filter(r => String(r.status || '').toUpperCase() === 'RECEBIDO');
+  const pagos     = rows.filter(r => String(r.status || '').toUpperCase() === 'PAGO');
+
+  const num = (v) => Number(v) || 0;
+  const totalRec = recebidos.reduce((a, r) => a + num(r.valor), 0);
+  const totalPag = pagos.reduce((a, r) => a + num(r.valor), 0);
+  const saldo    = totalRec - totalPag;
+
+  const linhas = (lista) => lista.map(r => `
+    <tr>
+      <td>${esc(r.gerente || '—')}</td>
+      <td>${esc(r.forma || '—')}</td>
+      <td>${esc(r.categoria || '—')}</td>
+      <td class="data">${(r.data || '').split('-').reverse().join('/')}</td>
+      <td class="num">${fmtBRL(num(r.valor))}</td>
+    </tr>`).join('') || `<tr><td colspan="5" class="vazio">Nenhum lançamento nesta categoria.</td></tr>`;
 
   const html = `
 <!doctype html><html>
 <head>
 <meta charset="utf-8">
-<title>Resumo do Caixa</title>
+<title>Caixa - ${empresa}</title>
 <style>
-  body{font-family:Arial;padding:20px}
-  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-  .card{padding:16px;border-radius:10px;color:#fff;font-weight:700}
-  .r{background:#0b3d0b}.p{background:#212121}.s{background:#4caf50}
-  .big{font-size:24px;margin-top:6px}
+  @page { size: A4 portrait; margin: 10mm 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; color: #111; margin: 0; padding: 0; font-size: 11px; }
+  .header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0 10px; border-bottom: 2px solid #111; margin-bottom: 14px;
+  }
+  .header-title { font-size: 18px; font-weight: 700; }
+  .header-sub { font-size: 10px; color: #555; margin-top: 2px; }
+  .header-right { font-size: 10px; color: #666; text-align: right; }
+
+  .totais {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+    margin-bottom: 18px;
+  }
+  .card {
+    padding: 12px 14px; border-radius: 8px;
+    color: #fff; text-align: left;
+    print-color-adjust: exact; -webkit-print-color-adjust: exact;
+  }
+  .card .lbl { font-size: 10px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.4px; }
+  .card .val { font-size: 20px; font-weight: 700; margin-top: 4px; }
+  .card.rec { background: #16a34a; }
+  .card.pag { background: #dc2626; }
+  .card.sal { background: ${saldo >= 0 ? '#2563eb' : '#7c2d12'}; }
+  .card .sub { font-size: 10px; opacity: 0.85; margin-top: 2px; }
+
+  .secao {
+    margin-bottom: 18px;
+    page-break-inside: avoid;
+  }
+  .secao h3 {
+    font-size: 12px; margin: 0 0 6px; padding: 6px 10px;
+    color: #fff; border-radius: 4px 4px 0 0;
+    print-color-adjust: exact; -webkit-print-color-adjust: exact;
+  }
+  .secao.rec h3 { background: #16a34a; }
+  .secao.pag h3 { background: #dc2626; }
+  .secao .count { font-size: 10px; opacity: 0.9; font-weight: 400; margin-left: 6px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  th, td { padding: 5px 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+  th {
+    background: #f3f4f6; color: #333;
+    text-transform: uppercase; font-size: 9px; letter-spacing: 0.3px;
+  }
+  td.num { text-align: right; font-family: ui-monospace, monospace; font-weight: 600; }
+  td.data { white-space: nowrap; }
+  tfoot td {
+    background: #f9fafb; font-weight: 700; font-size: 11px;
+    border-top: 2px solid #333; border-bottom: none;
+  }
+  .vazio {
+    text-align: center; color: #6b7280; font-style: italic; padding: 12px !important;
+  }
+
+  .rodape {
+    margin-top: 20px; padding-top: 10px; border-top: 1px solid #e5e7eb;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    font-size: 11px;
+  }
+  .rodape .box {
+    background: #f9fafb; padding: 10px 12px; border-radius: 6px;
+    border-left: 4px solid #333;
+  }
+  .rodape .box.saldo { border-left-color: ${saldo >= 0 ? '#2563eb' : '#dc2626'}; background: ${saldo >= 0 ? '#eff6ff' : '#fef2f2'}; }
+  .rodape .box .lbl { font-size: 10px; text-transform: uppercase; color: #555; letter-spacing: 0.4px; }
+  .rodape .box .val { font-size: 18px; font-weight: 700; margin-top: 3px; color: ${saldo >= 0 ? '#1e40af' : '#991b1b'}; }
+
+  .assinaturas {
+    margin-top: 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 60px;
+    padding-top: 10px;
+  }
+  .assinaturas .linha {
+    border-top: 1px solid #333; padding-top: 4px;
+    text-align: center; font-size: 10px; color: #555;
+  }
+  .print-btn {
+    position: fixed; top: 16px; right: 16px;
+    padding: 10px 18px; background: #2563eb; color: white;
+    border: none; border-radius: 8px; font-weight: 700; cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  @media print { .print-btn { display: none; } }
 </style>
 </head>
 <body>
-  <h2>BSX LOTERIAS · Resumo do Caixa</h2>
-  <div class="grid">
-    <div class="card r"><div>TOTAL RECEBIMENTOS</div><div class="big">${get('totalRecebimentos')}</div></div>
-    <div class="card p"><div>TOTAL PAGAMENTOS</div><div class="big">${get('totalPagamentos')}</div></div>
-    <div class="card s"><div>SALDO</div><div class="big">${get('saldo')}</div></div>
+  <button class="print-btn" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+
+  <div class="header">
+    <div>
+      <div class="header-title">📒 ${empresa} — Resumo do Caixa</div>
+      <div class="header-sub">
+        Período: <strong>${periodoTxt}</strong>
+        ${filtrosExtras.length ? '• ' + filtrosExtras.join(' • ') : ''}
+      </div>
+    </div>
+    <div class="header-right">
+      Emitido em: <strong>${dataAtual}</strong>
+    </div>
   </div>
-  <script>window.print(); setTimeout(()=>window.close(), 300);<\/script>
+
+  <!-- CARDS DE TOTAIS -->
+  <div class="totais">
+    <div class="card rec">
+      <div class="lbl">Total Recebimentos</div>
+      <div class="val">${fmtBRL(totalRec)}</div>
+      <div class="sub">${recebidos.length} lançamento(s)</div>
+    </div>
+    <div class="card pag">
+      <div class="lbl">Total Pagamentos</div>
+      <div class="val">${fmtBRL(totalPag)}</div>
+      <div class="sub">${pagos.length} lançamento(s)</div>
+    </div>
+    <div class="card sal">
+      <div class="lbl">Saldo do Caixa</div>
+      <div class="val">${fmtBRL(saldo)}</div>
+      <div class="sub">${saldo >= 0 ? 'positivo' : 'negativo'}</div>
+    </div>
+  </div>
+
+  <!-- SEÇÃO RECEBIDOS -->
+  <div class="secao rec">
+    <h3>💰 RECEBIDOS <span class="count">(${recebidos.length} lançamento(s) — ${fmtBRL(totalRec)})</span></h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Gerente / Rota</th>
+          <th>Forma</th>
+          <th>Categoria</th>
+          <th>Data</th>
+          <th style="text-align:right;">Valor</th>
+        </tr>
+      </thead>
+      <tbody>${linhas(recebidos)}</tbody>
+      ${recebidos.length ? `
+      <tfoot>
+        <tr>
+          <td colspan="4" style="text-align:right;">TOTAL RECEBIDOS:</td>
+          <td class="num">${fmtBRL(totalRec)}</td>
+        </tr>
+      </tfoot>` : ''}
+    </table>
+  </div>
+
+  <!-- SEÇÃO PAGOS -->
+  <div class="secao pag">
+    <h3>💸 PAGOS <span class="count">(${pagos.length} lançamento(s) — ${fmtBRL(totalPag)})</span></h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Gerente / Rota</th>
+          <th>Forma</th>
+          <th>Categoria</th>
+          <th>Data</th>
+          <th style="text-align:right;">Valor</th>
+        </tr>
+      </thead>
+      <tbody>${linhas(pagos)}</tbody>
+      ${pagos.length ? `
+      <tfoot>
+        <tr>
+          <td colspan="4" style="text-align:right;">TOTAL PAGOS:</td>
+          <td class="num">${fmtBRL(totalPag)}</td>
+        </tr>
+      </tfoot>` : ''}
+    </table>
+  </div>
+
+  <!-- RODAPÉ COM SALDO FINAL -->
+  <div class="rodape">
+    <div class="box">
+      <div class="lbl">Recebimentos − Pagamentos</div>
+      <div class="val" style="color:#111;">${fmtBRL(totalRec)} − ${fmtBRL(totalPag)}</div>
+    </div>
+    <div class="box saldo">
+      <div class="lbl">Saldo Final do Caixa</div>
+      <div class="val">${fmtBRL(saldo)}</div>
+    </div>
+  </div>
+
+  <!-- ASSINATURAS -->
+  <div class="assinaturas">
+    <div class="linha">Responsável pela emissão</div>
+    <div class="linha">Confere / Visto</div>
+  </div>
+
+  <script>setTimeout(() => window.print(), 300);<\/script>
 </body></html>`.trim();
 
   // tenta abrir janela
@@ -1791,15 +2008,14 @@ function __fin_printCaixa(){
     return;
   }
 
-  // Fallback: abre via Blob/URL (contorna bloqueio)
+  // Fallback: abre via Blob/URL (contorna bloqueio de popup)
   const blob = new Blob([html], { type: 'text/html' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.target = '_blank';
-  // precisa ser “clickado” no mesmo gesto do usuário:
   a.click();
-  setTimeout(()=> URL.revokeObjectURL(url), 30000);
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
 // === Delegação ÚNICA de cliques do Financeiro ===

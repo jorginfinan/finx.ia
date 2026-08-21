@@ -643,8 +643,10 @@
       <label>Nome <span style="color:#dc2626">*</span>
         <input name="nome" required placeholder="Ex.: Nova Empresa" />
       </label>
-      <label>Emoji / Ícone
-        <input name="emoji" placeholder="🏢" maxlength="8" />
+      <label>Ícone
+        <select name="emoji" id="empEmojiSelect" style="font-size:18px;">
+          <!-- Populado por empresas-page.js a partir de EMPRESA_EMOJI_OPTIONS -->
+        </select>
       </label>
       <label style="display:flex; align-items:center; gap:8px;">
         <input type="checkbox" name="ativo" id="empAtivo" checked>

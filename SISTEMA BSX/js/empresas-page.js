@@ -94,7 +94,7 @@
         <div style="border:1px solid #e5e7eb; border-radius:12px; padding:16px; background:${bg}; opacity:${opacity};" data-emp-id="${esc(s.id)}">
           <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
             <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:28px;">${esc(s.emoji || '🏢')}</span>
+              <span style="font-size:28px;">${esc(s.emoji || (window.EMPRESA_EMOJI_FALLBACK||{})[String(s.nome).toUpperCase()] || '🏢')}</span>
               <strong style="font-size:16px;">${esc(s.nome)}</strong>
             </div>
             ${statusBadge}
@@ -149,12 +149,33 @@
   // ============================================
   // FORM CADASTRO
   // ============================================
+  // Popula o <select> de emojis com as opções padrão
+  function popularSelectEmoji(valorSelecionado) {
+    const sel = document.getElementById('empEmojiSelect');
+    if (!sel) return;
+    const opts = window.EMPRESA_EMOJI_OPTIONS || [{ emoji: '🏢', label: 'Prédio' }];
+    sel.innerHTML = opts.map(o =>
+      `<option value="${esc(o.emoji)}">${esc(o.emoji)}  ${esc(o.label)}</option>`
+    ).join('');
+    if (valorSelecionado) {
+      // Se o emoji atual não estiver nas opções, adiciona no topo
+      if (!opts.some(o => o.emoji === valorSelecionado)) {
+        const opt = document.createElement('option');
+        opt.value = valorSelecionado;
+        opt.textContent = valorSelecionado + '  (personalizado)';
+        sel.insertBefore(opt, sel.firstChild);
+      }
+      sel.value = valorSelecionado;
+    }
+  }
+
   function resetForm() {
     const f = document.getElementById('formEmpresa');
     if (!f) return;
     f.reset();
     __editingId = null;
     f.querySelector('#empAtivo').checked = true;
+    popularSelectEmoji('🏢');   // reseta para o padrão
     document.getElementById('btnSalvarEmpresa').textContent = 'Salvar Empresa';
   }
 
@@ -163,7 +184,7 @@
     if (!f) return;
     __editingId = emp.id;
     f.nome.value = emp.nome || '';
-    f.emoji.value = emp.emoji || '🏢';
+    popularSelectEmoji(emp.emoji || '🏢');
     f.querySelector('#empAtivo').checked = !!emp.ativo;
     document.getElementById('btnSalvarEmpresa').textContent = 'Atualizar Empresa';
     f.scrollIntoView({ behavior:'smooth', block:'center' });
@@ -305,6 +326,7 @@
       return;
     }
     bindEvents();
+    popularSelectEmoji('🏢');   // popula o select de ícones do form
     await render();
   }
 
@@ -318,8 +340,49 @@
 // ============================================
 // SELETOR DE EMPRESA (TOPO) — populado dinamicamente
 // ============================================
+//
+// ✅ Fallback de ícones — preserva os emojis históricos do HTML
+// para empresas antigas que possam não ter emoji definido no banco.
+// Se o banco tem emoji, usa o do banco; senão, usa o fallback.
+window.EMPRESA_EMOJI_FALLBACK = {
+  'BSX':     '🏢',
+  'BSXTV':   '📺',
+  'BETPLAY': '🎮',
+  'EMANUEL': '👤'
+};
+
+// ✅ Opções padrão para o cadastro escolher (usadas pelo formulário)
+window.EMPRESA_EMOJI_OPTIONS = [
+  { emoji: '🏢', label: 'Prédio' },
+  { emoji: '📺', label: 'TV' },
+  { emoji: '🎮', label: 'Game' },
+  { emoji: '👤', label: 'Pessoa' },
+  { emoji: '🏬', label: 'Loja' },
+  { emoji: '🏭', label: 'Fábrica' },
+  { emoji: '🏦', label: 'Banco' },
+  { emoji: '🏛️', label: 'Institucional' },
+  { emoji: '💼', label: 'Executivo' },
+  { emoji: '🛍️', label: 'Sacola' },
+  { emoji: '📱', label: 'Celular' },
+  { emoji: '💳', label: 'Cartão' },
+  { emoji: '⚙️', label: 'Engrenagem' },
+  { emoji: '🚀', label: 'Foguete' }
+];
+
 (function () {
   'use strict';
+
+  // Retorna a lista de empresas (em UPPERCASE) que o usuário tem acesso.
+  // Array vazio = SEM restrição (admin ou usuário legado sem limitação).
+  function empresasPermitidas() {
+    try {
+      const cu = window.UserAuth?.currentUser?.();
+      if (!cu) return [];
+      if (cu.role === 'admin') return [];  // admin vê tudo
+      const arr = Array.isArray(cu.companies) ? cu.companies : [];
+      return arr.map(c => String(c).toUpperCase());
+    } catch (_) { return []; }
+  }
 
   async function reloadSelector() {
     const sel = document.getElementById('empresaSelect');
@@ -331,13 +394,38 @@
       const empresas = await window.SupabaseAPI.empresas.getAll({ ativasApenas: true });
       if (!empresas.length) return;
 
+      // ✅ Filtra pelas empresas que o usuário tem acesso
+      const permitidas = empresasPermitidas();
+      let visiveis = empresas;
+      if (permitidas.length > 0) {
+        visiveis = empresas.filter(e =>
+          permitidas.includes(String(e.nome || '').toUpperCase())
+        );
+      }
+      if (!visiveis.length) {
+        // Fallback: mesmo sem match, mantém a atual pra não quebrar tela
+        visiveis = empresas.filter(e =>
+          String(e.nome || '').toUpperCase() === (window.getCompany?.() || 'BSX').toUpperCase()
+        );
+        if (!visiveis.length) return;
+      }
+
       const atual = (window.getCompany?.() || 'BSX').toUpperCase();
-      sel.innerHTML = empresas.map(e => {
+      const fallback = window.EMPRESA_EMOJI_FALLBACK || {};
+      sel.innerHTML = visiveis.map(e => {
         const nome = e.nome || '';
-        const emoji = e.emoji || '🏢';
+        const emoji = e.emoji || fallback[nome.toUpperCase()] || '🏢';
         const selected = nome.toUpperCase() === atual ? 'selected' : '';
         return `<option value="${nome}" ${selected}>${emoji} ${nome}</option>`;
       }).join('');
+
+      // Se a empresa atualmente selecionada NÃO está na lista permitida,
+      // troca automaticamente para a primeira permitida
+      const currentIsVisible = visiveis.some(e => String(e.nome).toUpperCase() === atual);
+      if (!currentIsVisible && visiveis[0]) {
+        // Não recarrega — só ajusta valor visual do select
+        sel.value = visiveis[0].nome;
+      }
     } catch (e) {
       console.warn('[EmpresasSelector] Falha:', e);
     }

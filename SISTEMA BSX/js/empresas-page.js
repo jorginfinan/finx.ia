@@ -25,7 +25,18 @@
   }
 
   function isAdmin() {
-    try { return window.UserAuth?.isAdmin?.() === true; } catch(_) { return false; }
+    try {
+      // ✅ UserAuth NÃO expõe isAdmin() — é preciso ler currentUser().role
+      // Fallbacks:
+      //   1) currentUser().role === 'admin' (via auth-rbac.js)
+      //   2) window.currentUser?.role === 'admin' (auth.js legado)
+      //   3) window.currentUser?.isAdmin === true (compat toCompat)
+      const cu = window.UserAuth?.currentUser?.() || window.currentUser || null;
+      if (!cu) return false;
+      if (cu.role === 'admin') return true;
+      if (cu.isAdmin === true) return true;
+      return false;
+    } catch(_) { return false; }
   }
 
   // ============================================

@@ -2008,7 +2008,13 @@
     // do banco deve ser feita via RLS no Supabase.)
     _requireAdmin() {
       const ok = (() => {
-        try { return window.UserAuth?.isAdmin?.() === true; } catch(_) { return false; }
+        try {
+          // UserAuth.currentUser().role é a fonte principal;
+          // window.currentUser (legado) como fallback.
+          const cu = window.UserAuth?.currentUser?.() || window.currentUser || null;
+          if (!cu) return false;
+          return cu.role === 'admin' || cu.isAdmin === true;
+        } catch(_) { return false; }
       })();
       if (!ok) throw new Error('Somente administradores podem alterar empresas.');
     }

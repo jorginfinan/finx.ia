@@ -1806,45 +1806,48 @@ function __fin_printCaixa(){
 <meta charset="utf-8">
 <title>Caixa - ${empresa}</title>
 <style>
-  @page { size: A4 portrait; margin: 10mm 12mm; }
+  @page { size: A4 portrait; margin: 8mm 10mm; }
   * { box-sizing: border-box; }
   body { font-family: Arial, sans-serif; color: #111; margin: 0; padding: 0; font-size: 11px; }
   .header {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 6px 0 10px; border-bottom: 2px solid #111; margin-bottom: 14px;
+    padding: 4px 0 6px; border-bottom: 2px solid #111; margin-bottom: 8px;
   }
   .header-title { font-size: 18px; font-weight: 700; }
   .header-sub { font-size: 10px; color: #555; margin-top: 2px; }
   .header-right { font-size: 10px; color: #666; text-align: right; }
 
   .totais {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
-    margin-bottom: 18px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    margin-bottom: 10px;
   }
   .card {
-    padding: 12px 14px; border-radius: 8px;
+    padding: 10px 12px; border-radius: 8px;
     color: #fff; text-align: left;
     print-color-adjust: exact; -webkit-print-color-adjust: exact;
   }
   .card .lbl { font-size: 10px; opacity: 0.9; text-transform: uppercase; letter-spacing: 0.4px; }
-  .card .val { font-size: 20px; font-weight: 700; margin-top: 4px; }
+  .card .val { font-size: 18px; font-weight: 700; margin-top: 3px; }
   .card.rec { background: #16a34a; }
   .card.pag { background: #dc2626; }
   .card.sal { background: ${saldo >= 0 ? '#2563eb' : '#7c2d12'}; }
   .card .sub { font-size: 10px; opacity: 0.85; margin-top: 2px; }
 
-  .secao {
-    margin-bottom: 18px;
-    page-break-inside: avoid;
-  }
+  /* Seções: NÃO usar page-break-inside: avoid porque com listas longas
+     isso força quebra da página inteira para não cortar a seção.
+     Deixamos a impressão fluir naturalmente. */
+  .secao { margin-bottom: 10px; }
   .secao h3 {
-    font-size: 12px; margin: 0 0 6px; padding: 6px 10px;
+    font-size: 12px; margin: 0 0 4px; padding: 5px 10px;
     color: #fff; border-radius: 4px 4px 0 0;
     print-color-adjust: exact; -webkit-print-color-adjust: exact;
   }
   .secao.rec h3 { background: #16a34a; }
   .secao.pag h3 { background: #dc2626; }
   .secao .count { font-size: 10px; opacity: 0.9; font-weight: 400; margin-left: 6px; }
+  /* Cabeçalho da tabela repete em todas as páginas */
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
 
   table { width: 100%; border-collapse: collapse; font-size: 10px; }
   th, td { padding: 5px 8px; border-bottom: 1px solid #e5e7eb; text-align: left; }

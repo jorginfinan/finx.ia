@@ -5926,7 +5926,41 @@ function vlsFillFiltro(){
     list.map(g=>`<option value="${g.uid}">${esc(g.nome||'(sem nome)')}</option>`).join('');
 }
 
+// Cache: valeId -> valor original (saldoAntes do primeiro evento no log)
+// Reconstruído sob demanda via valesLog.list({}).
+let __vlsOrigMap = null;
+
+async function __vlsCarregarOriginais(force = false) {
+  if (__vlsOrigMap && !force) return __vlsOrigMap;
+  __vlsOrigMap = new Map();
+  try {
+    if (window.SupabaseAPI?.valesLog?.list) {
+      const logs = await window.SupabaseAPI.valesLog.list({});
+      // logs vêm ordenados DESC por created_at — agrupa por vale e pega o mais antigo
+      const porVale = new Map();
+      logs.forEach(ev => {
+        const prev = porVale.get(ev.valeId);
+        // Queremos o log com createdAt MENOR (mais antigo)
+        if (!prev || String(ev.createdAt) < String(prev.createdAt)) {
+          porVale.set(ev.valeId, ev);
+        }
+      });
+      porVale.forEach((ev, valeId) => {
+        __vlsOrigMap.set(valeId, Number(ev.saldoAntes) || 0);
+      });
+    }
+  } catch (e) {
+    console.warn('[Vales] Falha ao carregar valores originais:', e);
+  }
+  return __vlsOrigMap;
+}
+
 function vlsRenderTabela(){
+  // Recarrega o mapa em segundo plano e rerenderiza quando terminar
+  // (não bloqueia primeira renderização)
+  if (!__vlsOrigMap) {
+    __vlsCarregarOriginais().then(() => vlsRenderTabela());
+  }
   const tbAberto = document.getElementById('vlsTBodyAberto');
   const tbFinal  = document.getElementById('vlsTBodyFinal');
   if (!tbAberto || !tbFinal) {
@@ -5969,19 +6003,30 @@ function vlsRenderTabela(){
   setTxt('vlsCountFinal', `(${finais.length})`);
 
   // ============= HELPERS =============
-  // Barra de progresso mostrando "consumido / original" — precisa buscar valor original do log
+  // Barra de progresso mostrando "consumido / original".
+  // Valor original vem do cache __vlsOrigMap (primeiro evento do log).
+  // Se não temos original (vale sem movimentação ainda), original = saldoAtual.
   function barraProgressoHTML(v) {
-    // Sem async aqui — usa v.valor como saldo atual e tenta inferir original do log em cache
     const saldoAtual = Number(v.saldo ?? v.valor) || 0;
-    // Se não conseguimos saber o original, mostramos só o saldo atual sem barra
-    // (o original é reconstituído no dialog de histórico)
+    const original = (__vlsOrigMap && __vlsOrigMap.get(v.id)) || saldoAtual;
+    const consumido = Math.max(0, original - saldoAtual);
+    const pctConsumido = original > 0
+      ? Math.min(100, Math.round((consumido / original) * 100))
+      : 0;
+    const pctRestante = 100 - pctConsumido;
+
+    // Cor da barra: verde se consumiu bastante, laranja se pouco
+    const corConsumido = pctConsumido >= 75 ? '#059669' : (pctConsumido >= 25 ? '#d97706' : '#dc2626');
+
     return `
-      <div style="min-width:140px;">
-        <div style="height:8px; background:#e5e7eb; border-radius:4px; overflow:hidden; position:relative;">
-          <div style="height:100%; background:#f59e0b; width:${saldoAtual>0 ? 100 : 0}%;"></div>
+      <div style="min-width:160px;">
+        <div style="height:10px; background:#e5e7eb; border-radius:5px; overflow:hidden; position:relative; display:flex;">
+          <div style="height:100%; background:${corConsumido}; width:${pctConsumido}%;" title="Pago: ${pctConsumido}%"></div>
+          <div style="height:100%; background:#fef3c7; width:${pctRestante}%;" title="Em aberto"></div>
         </div>
-        <div style="font-size:10px; color:#6b7280; margin-top:3px;">
-          restam <strong>${fmtBRL(saldoAtual)}</strong>
+        <div style="font-size:10px; color:#6b7280; margin-top:3px; display:flex; justify-content:space-between;">
+          <span>orig. <strong>${fmtBRL(original)}</strong></span>
+          <span style="color:${corConsumido};">pago ${pctConsumido}%</span>
         </div>
       </div>`;
   }
@@ -6382,12 +6427,16 @@ async function vlsInit(){
   }
 
 
-  // reagir a mudanças externas
-  window.addEventListener('vales:updated', vlsRenderTabela);
-  document.addEventListener('empresa:change', async ()=>{ 
-    await window.__valesReloadAsync?.(); 
-    vlsFillFiltro(); 
-    vlsRenderTabela(); 
+  // reagir a mudanças externas — invalida cache dos originais
+  window.addEventListener('vales:updated', () => {
+    __vlsOrigMap = null;
+    vlsRenderTabela();
+  });
+  document.addEventListener('empresa:change', async ()=>{
+    __vlsOrigMap = null;
+    await window.__valesReloadAsync?.();
+    vlsFillFiltro();
+    vlsRenderTabela();
   });
 }
 

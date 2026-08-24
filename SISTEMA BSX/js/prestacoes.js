@@ -5926,8 +5926,38 @@ function vlsFillFiltro(){
     list.map(g=>`<option value="${g.uid}">${esc(g.nome||'(sem nome)')}</option>`).join('');
 }
 
-// Cache: valeId -> valor original (saldoAntes do primeiro evento no log)
-// Reconstruído sob demanda via valesLog.list({}).
+// Helper: formata timestamp ISO ("2026-04-01T15:26:02.669+00:00") em "01/04/2026 às 15:26"
+function __vlsFmtDataHora(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mi = String(d.getMinutes()).padStart(2, '0');
+    return `${dd}/${mm}/${yy} às ${hh}:${mi}`;
+  } catch (_) { return String(iso); }
+}
+// Só a data (sem hora)
+function __vlsFmtDataSo(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yy = d.getFullYear();
+    return `${dd}/${mm}/${yy}`;
+  } catch (_) { return String(iso); }
+}
+
+// Cache: valeId -> valor original (MÁXIMO saldo já registrado)
+// Usa MAX porque:
+//   - Primeiro log pode ser um estorno de reversão (saldoAntes=0, saldoDepois=X)
+//   - Nesse caso o valor original é o saldoDepois, não o saldoAntes.
+//   - Pegar o máximo cobre todos os cenários de reversão/reabertura.
 let __vlsOrigMap = null;
 
 async function __vlsCarregarOriginais(force = false) {
@@ -5936,18 +5966,15 @@ async function __vlsCarregarOriginais(force = false) {
   try {
     if (window.SupabaseAPI?.valesLog?.list) {
       const logs = await window.SupabaseAPI.valesLog.list({});
-      // logs vêm ordenados DESC por created_at — agrupa por vale e pega o mais antigo
-      const porVale = new Map();
+      const maxPorVale = new Map();
       logs.forEach(ev => {
-        const prev = porVale.get(ev.valeId);
-        // Queremos o log com createdAt MENOR (mais antigo)
-        if (!prev || String(ev.createdAt) < String(prev.createdAt)) {
-          porVale.set(ev.valeId, ev);
-        }
+        const antes = Number(ev.saldoAntes) || 0;
+        const depois = Number(ev.saldoDepois) || 0;
+        const localMax = Math.max(antes, depois);
+        const prev = maxPorVale.get(ev.valeId) || 0;
+        if (localMax > prev) maxPorVale.set(ev.valeId, localMax);
       });
-      porVale.forEach((ev, valeId) => {
-        __vlsOrigMap.set(valeId, Number(ev.saldoAntes) || 0);
-      });
+      maxPorVale.forEach((val, valeId) => __vlsOrigMap.set(valeId, val));
     }
   } catch (e) {
     console.warn('[Vales] Falha ao carregar valores originais:', e);
@@ -6003,41 +6030,50 @@ function vlsRenderTabela(){
   setTxt('vlsCountFinal', `(${finais.length})`);
 
   // ============= HELPERS =============
-  // Barra de progresso mostrando "consumido / original".
-  // Valor original vem do cache __vlsOrigMap (primeiro evento do log).
-  // Se não temos original (vale sem movimentação ainda), original = saldoAtual.
+  // Retorna o valor ORIGINAL do vale (para uso nas colunas e barra)
+  function valorOriginalDe(v) {
+    const saldoAtual = Number(v.saldo ?? v.valor) || 0;
+    const doCache = __vlsOrigMap && __vlsOrigMap.get(v.id);
+    // Se nunca teve log, o original é o próprio saldo atual
+    // Se tem, usa o maior entre o cache e o saldo atual (proteção)
+    return Math.max(doCache || 0, saldoAtual);
+  }
+
+  // Barra de progresso: mostra quanto RESTA no vale e % QUITADA
   function barraProgressoHTML(v) {
     const saldoAtual = Number(v.saldo ?? v.valor) || 0;
-    const original = (__vlsOrigMap && __vlsOrigMap.get(v.id)) || saldoAtual;
+    const original = valorOriginalDe(v);
     const consumido = Math.max(0, original - saldoAtual);
     const pctConsumido = original > 0
       ? Math.min(100, Math.round((consumido / original) * 100))
       : 0;
     const pctRestante = 100 - pctConsumido;
 
-    // Cor da barra: verde se consumiu bastante, laranja se pouco
+    // Cor da barra por progresso de quitação
     const corConsumido = pctConsumido >= 75 ? '#059669' : (pctConsumido >= 25 ? '#d97706' : '#dc2626');
 
     return `
-      <div style="min-width:160px;">
+      <div style="min-width:180px;">
         <div style="height:10px; background:#e5e7eb; border-radius:5px; overflow:hidden; position:relative; display:flex;">
-          <div style="height:100%; background:${corConsumido}; width:${pctConsumido}%;" title="Pago: ${pctConsumido}%"></div>
-          <div style="height:100%; background:#fef3c7; width:${pctRestante}%;" title="Em aberto"></div>
+          <div style="height:100%; background:${corConsumido}; width:${pctConsumido}%;" title="Quitado: ${pctConsumido}%"></div>
+          <div style="height:100%; background:#fef3c7; width:${pctRestante}%;" title="Restante"></div>
         </div>
-        <div style="font-size:10px; color:#6b7280; margin-top:3px; display:flex; justify-content:space-between;">
-          <span>orig. <strong>${fmtBRL(original)}</strong></span>
-          <span style="color:${corConsumido};">pago ${pctConsumido}%</span>
+        <div style="font-size:10px; color:#6b7280; margin-top:3px; display:flex; justify-content:space-between; gap:6px;">
+          <span>restam <strong style="color:#dc2626;">${fmtBRL(saldoAtual)}</strong></span>
+          <span style="color:${corConsumido}; font-weight:600;">${pctConsumido}% quitado</span>
         </div>
       </div>`;
   }
 
   // ============= TABELA "EM ABERTO" =============
   if (tbAberto) {
-    tbAberto.innerHTML = abertos.map(v => `
+    tbAberto.innerHTML = abertos.map(v => {
+      const original = valorOriginalDe(v);
+      return `
       <tr data-id="${v.id}">
         <td style="padding:10px;"><strong>${esc(gname(v.gerenteId))}</strong></td>
         <td style="padding:10px; font-family:monospace;">${esc(v.cod||'')}</td>
-        <td style="padding:10px; text-align:right; font-weight:700; color:#dc2626;">${fmtBRL(v.valor||v.saldo||0)}</td>
+        <td style="padding:10px; text-align:right; font-weight:700; color:#0f172a;">${fmtBRL(original)}</td>
         <td style="padding:10px;">${barraProgressoHTML(v)}</td>
         <td style="padding:10px; color:#6b7280;">${esc(v.obs||'—')}</td>
         <td style="padding:10px; color:#6b7280;">${esc(v.periodo||'—')}</td>
@@ -6046,8 +6082,8 @@ function vlsRenderTabela(){
           <button class="btn" data-vls-quitar="${v.id}" ${!can?'disabled':''} data-tip="Marcar como quitado (zera saldo)">✅ Quitar</button>
           <button class="btn danger" data-vls-del="${v.id}" ${!can?'disabled':''} data-tip="Excluir permanentemente">🗑️</button>
         </td>
-      </tr>
-    `).join('') || '<tr><td colspan="7" style="padding:20px; text-align:center; color:#6b7280;">🎉 Nenhum vale em aberto.</td></tr>';
+      </tr>`;
+    }).join('') || '<tr><td colspan="7" style="padding:20px; text-align:center; color:#6b7280;">🎉 Nenhum vale em aberto.</td></tr>';
     vlsBindTableActions(tbAberto);
   }
 
@@ -6059,7 +6095,7 @@ function vlsRenderTabela(){
         <td style="padding:10px; font-family:monospace;">${esc(v.cod||'')}</td>
         <td style="padding:10px; color:#6b7280;">${esc(v.obs||'—')}</td>
         <td style="padding:10px; color:#6b7280;">${esc(v.periodo||'—')}</td>
-        <td style="padding:10px; color:#6b7280; font-size:12px;">${v.quitadoEm ? fmtData(v.quitadoEm) : '—'}</td>
+        <td style="padding:10px; color:#6b7280; font-size:12px;">${v.quitadoEm ? __vlsFmtDataSo(v.quitadoEm) : '—'}</td>
         <td style="padding:10px; text-align:right; white-space:nowrap;">
           <button class="btn ghost" data-vls-hist="${v.id}" data-tip="Ver histórico completo">📜 Histórico</button>
           <button class="btn danger" data-vls-del="${v.id}" ${!can?'disabled':''} data-tip="Excluir permanentemente">🗑️</button>
@@ -6248,11 +6284,12 @@ async function vlsOpenHist(id){
   // Ordena cronologicamente (mais antigo primeiro — a história do vale)
   logs.sort((a,b)=> String(a.createdAt||'').localeCompare(String(b.createdAt||'')));
 
-  // Descobre valor original (saldo do 1º evento, se houver)
-  const valorOriginal = logs.length
-    ? Number(logs[0].saldoAntes) || 0
-    : (Number(v.valor) || Number(v.saldo) || 0);
+  // Valor original = MAX de todos os saldos vistos (cobre reversões/reaberturas)
   const saldoAtual = Number(v.saldo ?? v.valor) || 0;
+  let valorOriginal = saldoAtual;
+  logs.forEach(l => {
+    valorOriginal = Math.max(valorOriginal, Number(l.saldoAntes) || 0, Number(l.saldoDepois) || 0);
+  });
   const consumido = Math.max(0, valorOriginal - saldoAtual);
   const pctConsumido = valorOriginal > 0 ? Math.min(100, Math.round((consumido/valorOriginal)*100)) : 0;
 
@@ -6281,13 +6318,13 @@ async function vlsOpenHist(id){
   // ============= TIMELINE DIDÁTICA =============
   const partes = [];
 
-  // 1º item — CRIAÇÃO (inferida)
+  // 1º item — CRIAÇÃO (inferida do primeiro evento)
   partes.push(`
     <div style="display:flex; gap:12px; padding:14px; background:#f0f9ff; border-left:4px solid #0ea5e9; border-radius:0 8px 8px 0; margin-bottom:10px;">
       <div style="font-size:24px;">🆕</div>
       <div style="flex:1;">
         <div style="font-weight:700; color:#0369a1;">Vale criado</div>
-        <div style="font-size:12px; color:#6b7280; margin-top:2px;">${fmtData(logs[0].createdAt)}</div>
+        <div style="font-size:12px; color:#6b7280; margin-top:2px;">${__vlsFmtDataSo(logs[0].createdAt)}</div>
         <div style="margin-top:6px; font-size:14px;">
           Valor inicial: <strong style="color:#0369a1;">${fmtBRL(valorOriginal)}</strong>
         </div>
@@ -6301,7 +6338,7 @@ async function vlsOpenHist(id){
     const saldoAntes = Number(ev.saldoAntes) || 0;
     const saldoDepois = Number(ev.saldoDepois) || 0;
     const per = (ev.periodoIni && ev.periodoFim)
-      ? `${fmtData(ev.periodoIni)} a ${fmtData(ev.periodoFim)}`
+      ? `${__vlsFmtDataSo(ev.periodoIni)} a ${__vlsFmtDataSo(ev.periodoFim)}`
       : (ev.prestacaoId ? 'Prestação vinculada' : '');
 
     // Delta positivo = SAIU do vale (desconto/quitação = consumo)
@@ -6337,7 +6374,7 @@ async function vlsOpenHist(id){
         <div style="flex:1;">
           <div style="font-weight:700; color:${cor};">${titulo}</div>
           <div style="font-size:12px; color:#6b7280; margin-top:2px;">
-            ${fmtData(ev.createdAt)}${typeof fmtHora === 'function' ? ' às ' + fmtHora(ev.createdAt) : ''}
+            ${__vlsFmtDataHora(ev.createdAt)}
           </div>
           <div style="margin-top:6px; font-size:14px;">
             ${descr}

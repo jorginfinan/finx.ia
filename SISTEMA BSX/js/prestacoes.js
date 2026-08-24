@@ -5927,16 +5927,24 @@ function vlsFillFiltro(){
 }
 
 function vlsRenderTabela(){
-  const tb = document.getElementById('vlsTBody'); if (!tb) return;
+  const tbAberto = document.getElementById('vlsTBodyAberto');
+  const tbFinal  = document.getElementById('vlsTBodyFinal');
+  if (!tbAberto || !tbFinal) {
+    // fallback para HTML antigo (compat retro)
+    const legacy = document.getElementById('vlsTBody');
+    if (!legacy) return;
+  }
+
   const gid = document.getElementById('vlsFiltroGerente')?.value || '';
   const q   = (document.getElementById('vlsBusca')?.value || '').trim().toLowerCase();
 
   const gname = (id)=> (window.gerentes||[]).find(x=>String(x.uid)===String(id))?.nome || '—';
 
+  // Todos os vales após filtros
   const arr = __valesReload().filter(v=>{
     if (gid && String(v.gerenteId) !== String(gid)) return false;
     if (q){
-      const hay = `${v.cod||''} ${v.obs||''}`.toLowerCase();
+      const hay = `${v.cod||''} ${v.obs||''} ${gname(v.gerenteId)}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -5946,27 +5954,81 @@ function vlsRenderTabela(){
     return String(a.cod||'').localeCompare(String(b.cod||''));
   });
 
-  tb.innerHTML = arr.map(v=>{
-    const st = v.quitado ? 'Quitado' : 'Em aberto';
-    const can = vlsCanEdit();
-    return `
-      <tr data-id="${v.id}">
-        <td style="padding:10px">${esc(gname(v.gerenteId))}</td>
-        <td style="padding:10px">${esc(v.cod||'')}</td>
-        <td style="padding:10px;text-align:right" class="${v.quitado?'':'tv-red'}">${vlsFmt(v.valor||0)}</td>
-        <td style="padding:10px">${esc(v.obs||'')}</td>
-        <td style="padding:10px">${esc(v.periodo||'')}</td>
-        <td style="padding:10px">${st}</td>
-        <td style="padding:10px;text-align:right">
-          <button class="btn" data-vls-hist="${v.id}">Histórico</button>
-          <button class="btn ghost" data-vls-quitar="${v.id}" ${(!can || v.quitado)?'disabled':''}>Quitar</button>
-          <button class="btn danger" data-vls-del="${v.id}" ${!can?'disabled':''}>Excluir</button>
-        </td>
-      </tr>`;
-  }).join('') || '<tr><td colspan="7" style="padding:12px">Nenhum vale encontrado.</td></tr>';
+  const abertos = arr.filter(v => !v.quitado);
+  const finais  = arr.filter(v =>  v.quitado);
+  const can = vlsCanEdit();
 
-  // ações
+  // ============= KPIs =============
+  const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const totAbertoValor = abertos.reduce((a, v) => a + (Number(v.valor) || Number(v.saldo) || 0), 0);
+  setTxt('vlsKpiAberto', abertos.length);
+  setTxt('vlsKpiAbertoValor', fmtBRL(totAbertoValor));
+  setTxt('vlsKpiFinal', finais.length);
+  setTxt('vlsKpiTotal', arr.length);
+  setTxt('vlsCountAberto', `(${abertos.length})`);
+  setTxt('vlsCountFinal', `(${finais.length})`);
+
+  // ============= HELPERS =============
+  // Barra de progresso mostrando "consumido / original" — precisa buscar valor original do log
+  function barraProgressoHTML(v) {
+    // Sem async aqui — usa v.valor como saldo atual e tenta inferir original do log em cache
+    const saldoAtual = Number(v.saldo ?? v.valor) || 0;
+    // Se não conseguimos saber o original, mostramos só o saldo atual sem barra
+    // (o original é reconstituído no dialog de histórico)
+    return `
+      <div style="min-width:140px;">
+        <div style="height:8px; background:#e5e7eb; border-radius:4px; overflow:hidden; position:relative;">
+          <div style="height:100%; background:#f59e0b; width:${saldoAtual>0 ? 100 : 0}%;"></div>
+        </div>
+        <div style="font-size:10px; color:#6b7280; margin-top:3px;">
+          restam <strong>${fmtBRL(saldoAtual)}</strong>
+        </div>
+      </div>`;
+  }
+
+  // ============= TABELA "EM ABERTO" =============
+  if (tbAberto) {
+    tbAberto.innerHTML = abertos.map(v => `
+      <tr data-id="${v.id}">
+        <td style="padding:10px;"><strong>${esc(gname(v.gerenteId))}</strong></td>
+        <td style="padding:10px; font-family:monospace;">${esc(v.cod||'')}</td>
+        <td style="padding:10px; text-align:right; font-weight:700; color:#dc2626;">${fmtBRL(v.valor||v.saldo||0)}</td>
+        <td style="padding:10px;">${barraProgressoHTML(v)}</td>
+        <td style="padding:10px; color:#6b7280;">${esc(v.obs||'—')}</td>
+        <td style="padding:10px; color:#6b7280;">${esc(v.periodo||'—')}</td>
+        <td style="padding:10px; text-align:right; white-space:nowrap;">
+          <button class="btn ghost" data-vls-hist="${v.id}" data-tip="Ver histórico completo">📜 Histórico</button>
+          <button class="btn" data-vls-quitar="${v.id}" ${!can?'disabled':''} data-tip="Marcar como quitado (zera saldo)">✅ Quitar</button>
+          <button class="btn danger" data-vls-del="${v.id}" ${!can?'disabled':''} data-tip="Excluir permanentemente">🗑️</button>
+        </td>
+      </tr>
+    `).join('') || '<tr><td colspan="7" style="padding:20px; text-align:center; color:#6b7280;">🎉 Nenhum vale em aberto.</td></tr>';
+    vlsBindTableActions(tbAberto);
+  }
+
+  // ============= TABELA "FINALIZADOS" =============
+  if (tbFinal) {
+    tbFinal.innerHTML = finais.map(v => `
+      <tr data-id="${v.id}">
+        <td style="padding:10px;"><strong>${esc(gname(v.gerenteId))}</strong></td>
+        <td style="padding:10px; font-family:monospace;">${esc(v.cod||'')}</td>
+        <td style="padding:10px; color:#6b7280;">${esc(v.obs||'—')}</td>
+        <td style="padding:10px; color:#6b7280;">${esc(v.periodo||'—')}</td>
+        <td style="padding:10px; color:#6b7280; font-size:12px;">${v.quitadoEm ? fmtData(v.quitadoEm) : '—'}</td>
+        <td style="padding:10px; text-align:right; white-space:nowrap;">
+          <button class="btn ghost" data-vls-hist="${v.id}" data-tip="Ver histórico completo">📜 Histórico</button>
+          <button class="btn danger" data-vls-del="${v.id}" ${!can?'disabled':''} data-tip="Excluir permanentemente">🗑️</button>
+        </td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" style="padding:20px; text-align:center; color:#6b7280;">Nenhum vale finalizado ainda.</td></tr>';
+    vlsBindTableActions(tbFinal);
+  }
+}
+
+// Helper único para conectar ações em qualquer tbody (Aberto/Finalizado)
+function vlsBindTableActions(tb) {
   tb.querySelectorAll('[data-vls-del]').forEach(b=>{
+    if (b.__wiredDel) return; b.__wiredDel = true;
     b.addEventListener('click', ()=>{
       if (!vlsCanEdit()) return;
       const id = b.getAttribute('data-vls-del');
@@ -5978,24 +6040,21 @@ function vlsRenderTabela(){
   });
 
   tb.querySelectorAll('[data-vls-quitar]').forEach(b=>{
+    if (b.__wiredQ) return; b.__wiredQ = true;
     b.addEventListener('click', async ()=>{
       if (!vlsCanEdit()) return;
       const id = b.getAttribute('data-vls-quitar');
       const v  = (__valesReload()||[]).find(x=>x.id===id);
       if (!v || v.quitado) return;
       const saldoAntes = Number(v.saldo) || Number(v.valor) || 0;
-      if (!confirm(`Quitar este vale? Isso zera o saldo de ${fmtBRL(saldoAntes)}.`)) return;
+      if (!confirm(`Quitar este vale?\n\nSaldo atual: ${fmtBRL(saldoAntes)}\nSerá zerado e o vale vai para "Finalizados".`)) return;
 
-      v.valor = 0;
-      v.saldo = 0;
-      v.quitado = true;
-      
-      // Atualiza no Supabase
+      v.valor = 0; v.saldo = 0; v.quitado = true;
+      v.quitadoEm = new Date().toISOString();
+
       if (window.SupabaseAPI?.vales) {
         await window.SupabaseAPI.vales.update(id, { saldo: 0, quitado: true });
       }
-      
-      // Log
       window.valesLog?.add({
         id: (typeof uid==='function'? uid(): 'vl_'+Math.random().toString(36).slice(2,9)),
         valeId: v.id, cod: v.cod||'', gerenteId: v.gerenteId,
@@ -6003,7 +6062,6 @@ function vlsRenderTabela(){
         prestacaoId: null, periodoIni: null, periodoFim: null,
         createdAt: new Date().toISOString()
       });
-      
       vlsRenderTabela();
       try { renderValesPrestacao?.(); } catch {}
       try { window.dispatchEvent(new Event('vales:updated')); } catch {}
@@ -6101,25 +6159,25 @@ function ensureHistDialog(){
   const dlg = document.createElement('dialog');
   dlg.id = 'dlgVlsHist';
   dlg.className = 'tv';
+  dlg.style.cssText = 'max-width:720px; width:95%; border:none; border-radius:14px; padding:0;';
   dlg.innerHTML = `
-    <div class="tv-head" id="vlsHistTitulo">Histórico</div>
-    <div class="tv-box" style="max-height:70vh;overflow:auto;border:1px solid #eee;border-radius:12px">
-      <table class="tv-table">
-        <thead>
-          <tr>
-            <th>Data/Hora</th>
-            <th class="tv-right">Δ (R$)</th>
-            <th class="tv-right">Saldo (antes → depois)</th>
-            <th>Período / Prestação</th>
-          </tr>
-        </thead>
-        <tbody id="vlsHistBody"><tr><td colspan="4">—</td></tr></tbody>
-      </table>
-    </div>
-    <div class="tv-actions"><button class="btn ghost" id="vlsHistFechar">Fechar</button></div>`;
+    <div style="padding:20px 24px; max-height:85vh; overflow-y:auto;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:12px; border-bottom:1px solid #e5e7eb; margin-bottom:16px;">
+        <div>
+          <h3 id="vlsHistTitulo" style="margin:0; font-size:18px;">Histórico do Vale</h3>
+          <div id="vlsHistSub" style="color:#6b7280; font-size:12px; margin-top:4px;"></div>
+        </div>
+        <button class="btn ghost" id="vlsHistFechar" style="font-size:22px; padding:0 10px;">✕</button>
+      </div>
+      <div id="vlsHistBody">Carregando…</div>
+      <div style="margin-top:16px; display:flex; justify-content:flex-end;">
+        <button class="btn" id="vlsHistFecharBtn">Fechar</button>
+      </div>
+    </div>`;
   document.body.appendChild(dlg);
 
   dlg.querySelector('#vlsHistFechar').addEventListener('click', ()=> dlg.close());
+  dlg.querySelector('#vlsHistFecharBtn').addEventListener('click', ()=> dlg.close());
   dlg.addEventListener('click', (e)=>{ if (e.target===dlg) dlg.close(); });
 }
 
@@ -6131,10 +6189,10 @@ async function vlsOpenHist(id){
   ensureHistDialog();
   const dlg = document.getElementById('dlgVlsHist');
   dlg.querySelector('#vlsHistTitulo').textContent =
-    `Histórico — Vale ${v.cod||''} (${gname(v.gerenteId)})`;
+    `📜 Vale ${v.cod || ''} — ${gname(v.gerenteId)}`;
 
-  const tb  = dlg.querySelector('#vlsHistBody');
-  tb.innerHTML = '<tr><td colspan="4">Carregando...</td></tr>';
+  const body = dlg.querySelector('#vlsHistBody');
+  body.innerHTML = '<div style="color:#6b7280; padding:20px; text-align:center;">Carregando histórico…</div>';
   dlg.showModal();
 
   // Carrega logs do Supabase
@@ -6142,19 +6200,137 @@ async function vlsOpenHist(id){
   if (window.SupabaseAPI?.valesLog?.list) {
     logs = await window.SupabaseAPI.valesLog.list({valeId: id});
   }
-  logs.sort((a,b)=> String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
+  // Ordena cronologicamente (mais antigo primeiro — a história do vale)
+  logs.sort((a,b)=> String(a.createdAt||'').localeCompare(String(b.createdAt||'')));
 
-  tb.innerHTML = logs.length ? logs.map(ev=>{
-    const delta = Number(ev.delta)||0;
-    const dstr  = `${fmtData(ev.createdAt)} ${fmtHora?.(ev.createdAt) || ''}`;
-    const per   = (ev.periodoIni && ev.periodoFim) ? `${fmtData(ev.periodoIni)} a ${fmtData(ev.periodoFim)}` : (ev.prestacaoId ? 'Prestação' : '');
-    return `<tr>
-      <td class="tv-mono">${dstr}</td>
-      <td class="tv-right tv-mono ${delta>=0?'tv-red':'tv-green'}">${delta>=0?'-':'+'}${fmtBRL(Math.abs(delta))}</td>
-      <td class="tv-right tv-mono">${fmtBRL(Number(ev.saldoAntes)||0)} → ${fmtBRL(Number(ev.saldoDepois)||0)}</td>
-      <td>${per}</td>
-    </tr>`;
-  }).join('') : '<tr><td colspan="4">Nenhum evento registrado para este vale.</td></tr>';
+  // Descobre valor original (saldo do 1º evento, se houver)
+  const valorOriginal = logs.length
+    ? Number(logs[0].saldoAntes) || 0
+    : (Number(v.valor) || Number(v.saldo) || 0);
+  const saldoAtual = Number(v.saldo ?? v.valor) || 0;
+  const consumido = Math.max(0, valorOriginal - saldoAtual);
+  const pctConsumido = valorOriginal > 0 ? Math.min(100, Math.round((consumido/valorOriginal)*100)) : 0;
+
+  // Subtítulo com dados-chave
+  const sub = dlg.querySelector('#vlsHistSub');
+  const statusChip = v.quitado
+    ? '<span style="background:#d1fae5; color:#065f46; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600;">QUITADO</span>'
+    : '<span style="background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600;">EM ABERTO</span>';
+  sub.innerHTML = `
+    Valor original: <strong>${fmtBRL(valorOriginal)}</strong> •
+    Saldo atual: <strong>${fmtBRL(saldoAtual)}</strong> •
+    Consumido: <strong>${fmtBRL(consumido)}</strong> (${pctConsumido}%) ${statusChip}
+    ${v.obs ? '<div style="margin-top:4px;">Obs: <em>' + esc(v.obs) + '</em></div>' : ''}
+  `;
+
+  if (!logs.length) {
+    body.innerHTML = `
+      <div style="text-align:center; padding:30px; color:#6b7280;">
+        <div style="font-size:36px; margin-bottom:8px;">📭</div>
+        <div>Nenhum evento registrado ainda.</div>
+        <div style="font-size:12px; margin-top:6px;">Assim que este vale receber um desconto ou for quitado, aparecerão os eventos aqui.</div>
+      </div>`;
+    return;
+  }
+
+  // ============= TIMELINE DIDÁTICA =============
+  const partes = [];
+
+  // 1º item — CRIAÇÃO (inferida)
+  partes.push(`
+    <div style="display:flex; gap:12px; padding:14px; background:#f0f9ff; border-left:4px solid #0ea5e9; border-radius:0 8px 8px 0; margin-bottom:10px;">
+      <div style="font-size:24px;">🆕</div>
+      <div style="flex:1;">
+        <div style="font-weight:700; color:#0369a1;">Vale criado</div>
+        <div style="font-size:12px; color:#6b7280; margin-top:2px;">${fmtData(logs[0].createdAt)}</div>
+        <div style="margin-top:6px; font-size:14px;">
+          Valor inicial: <strong style="color:#0369a1;">${fmtBRL(valorOriginal)}</strong>
+        </div>
+      </div>
+    </div>
+  `);
+
+  // Eventos em ordem cronológica
+  logs.forEach((ev, idx) => {
+    const delta = Number(ev.delta) || 0;
+    const saldoAntes = Number(ev.saldoAntes) || 0;
+    const saldoDepois = Number(ev.saldoDepois) || 0;
+    const per = (ev.periodoIni && ev.periodoFim)
+      ? `${fmtData(ev.periodoIni)} a ${fmtData(ev.periodoFim)}`
+      : (ev.prestacaoId ? 'Prestação vinculada' : '');
+
+    // Delta positivo = SAIU do vale (desconto/quitação = consumo)
+    // Delta negativo = VOLTOU pro vale (estorno)
+    const eDesconto = delta > 0;
+    const eEstorno  = delta < 0;
+    const eQuitacao = eDesconto && saldoDepois === 0 && idx === logs.length - 1;
+
+    let ico, cor, corBg, corBorda, titulo, descr;
+    if (eQuitacao) {
+      ico = '✅'; cor = '#065f46'; corBg = '#d1fae5'; corBorda = '#10b981';
+      titulo = 'Vale quitado';
+      descr = `Saldo restante de <strong>${fmtBRL(saldoAntes)}</strong> foi zerado.`;
+    } else if (eDesconto) {
+      ico = '💸'; cor = '#92400e'; corBg = '#fef3c7'; corBorda = '#f59e0b';
+      titulo = 'Desconto aplicado';
+      descr = `Foram descontados <strong>${fmtBRL(Math.abs(delta))}</strong> do saldo.` +
+              (per ? `<br><small style="color:#6b7280;">Período: ${per}</small>` : '');
+    } else if (eEstorno) {
+      ico = '↩️'; cor = '#3730a3'; corBg = '#e0e7ff'; corBorda = '#6366f1';
+      titulo = 'Estorno / Reversão';
+      descr = `Foram devolvidos <strong>${fmtBRL(Math.abs(delta))}</strong> ao saldo.` +
+              (per ? `<br><small style="color:#6b7280;">Reabertura de prestação: ${per}</small>` : '');
+    } else {
+      ico = '➖'; cor = '#374151'; corBg = '#f3f4f6'; corBorda = '#9ca3af';
+      titulo = 'Ajuste';
+      descr = `Sem alteração de saldo.`;
+    }
+
+    partes.push(`
+      <div style="display:flex; gap:12px; padding:14px; background:${corBg}; border-left:4px solid ${corBorda}; border-radius:0 8px 8px 0; margin-bottom:10px;">
+        <div style="font-size:24px;">${ico}</div>
+        <div style="flex:1;">
+          <div style="font-weight:700; color:${cor};">${titulo}</div>
+          <div style="font-size:12px; color:#6b7280; margin-top:2px;">
+            ${fmtData(ev.createdAt)}${typeof fmtHora === 'function' ? ' às ' + fmtHora(ev.createdAt) : ''}
+          </div>
+          <div style="margin-top:6px; font-size:14px;">
+            ${descr}
+          </div>
+          <div style="margin-top:6px; font-size:12px; color:#4b5563; background:rgba(255,255,255,0.5); padding:6px 10px; border-radius:6px; display:inline-block;">
+            Saldo: <strong>${fmtBRL(saldoAntes)}</strong> → <strong>${fmtBRL(saldoDepois)}</strong>
+          </div>
+        </div>
+      </div>
+    `);
+  });
+
+  // Estado final
+  if (v.quitado && !logs.some(ev => Number(ev.saldoDepois) === 0)) {
+    partes.push(`
+      <div style="display:flex; gap:12px; padding:14px; background:#d1fae5; border-left:4px solid #10b981; border-radius:0 8px 8px 0;">
+        <div style="font-size:24px;">✅</div>
+        <div style="flex:1;">
+          <div style="font-weight:700; color:#065f46;">Status atual: QUITADO</div>
+          <div style="font-size:12px; color:#6b7280; margin-top:2px;">Este vale não tem mais saldo em aberto.</div>
+        </div>
+      </div>
+    `);
+  } else if (!v.quitado) {
+    partes.push(`
+      <div style="display:flex; gap:12px; padding:14px; background:#fef3c7; border-left:4px solid #f59e0b; border-radius:0 8px 8px 0;">
+        <div style="font-size:24px;">📌</div>
+        <div style="flex:1;">
+          <div style="font-weight:700; color:#92400e;">Status atual: EM ABERTO</div>
+          <div style="font-size:12px; color:#6b7280; margin-top:2px;">
+            Saldo a consumir: <strong>${fmtBRL(saldoAtual)}</strong>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  body.innerHTML = partes.join('');
 }
 
 
@@ -6180,18 +6356,30 @@ async function vlsInit(){
   document.getElementById('vlsBtnNovo')?.addEventListener('click', vlsOpenNovo);
   document.getElementById('vlsSalvar')?.addEventListener('click', vlsSalvarNovo);
 
-  // Delegação única: capta cliques no botão "Histórico" mesmo após re-render
-const tbHist = document.getElementById('vlsTBody');
-if (tbHist && !tbHist.__histWired){
-  tbHist.__histWired = true;
-  tbHist.addEventListener('click', (e)=>{
-    const b = e.target.closest('[data-vls-hist]');
-    if (!b) return;
-    e.preventDefault();
-    const id = b.getAttribute('data-vls-hist');
-    if (window.vlsOpenHist) window.vlsOpenHist(id);
-  }, true);
-}
+  // Delegação global: captura cliques em Histórico em qualquer tabela
+  // (Aberto ou Finalizado). Usa a section como container.
+  const secPrest = document.getElementById('pagePrestVales');
+  if (secPrest && !secPrest.__histWired) {
+    secPrest.__histWired = true;
+    secPrest.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-vls-hist]');
+      if (!b) return;
+      e.preventDefault();
+      const id = b.getAttribute('data-vls-hist');
+      if (window.vlsOpenHist) window.vlsOpenHist(id);
+    }, true);
+  }
+
+  // Toggle "Mostrar/Ocultar" seção de Finalizados
+  const btnToggle = document.getElementById('vlsToggleFinal');
+  if (btnToggle && !btnToggle.__wiredTog) {
+    btnToggle.__wiredTog = true;
+    btnToggle.addEventListener('click', () => {
+      const wrap = document.getElementById('vlsFinalWrap');
+      if (!wrap) return;
+      wrap.style.display = (wrap.style.display === 'none') ? '' : 'none';
+    });
+  }
 
 
   // reagir a mudanças externas

@@ -381,6 +381,11 @@ function init(){
       .forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     try { renderDashboardResultado(); } catch(_) {}
+    // ✅ Também recalcula alertas de despesas conforme aba ativa
+    try {
+      const ym = document.getElementById('dashMes')?.value || ymNow();
+      renderAlerts(ym);
+    } catch(_) {}
   });
 
   refresh();
@@ -422,14 +427,25 @@ function buildAlertsForMonth(ym){
   const fichasCad = getFichas();
   const exigirFichaCadastrada = Array.isArray(fichasCad) && fichasCad.length > 0;
 
+  // ✅ Aba ativa do dashboard (semanal/mensal) — filtra despesas cujo gerente
+  // seja da periodicidade correspondente. Se o helper não existir, mostra tudo.
+  const aba = (typeof __dashAbaAtiva === 'function') ? __dashAbaAtiva() : null;
+
   const base = getDespesas().filter(d=>{
     const dt = String(d.data||'').slice(0,10); if (!dt) return false;
     if (dt < de || dt > ate) return false;
     if (eid && d.empresaId && String(d.empresaId)!==eid) return false;
     if (d.isHidden || d.oculta) return false;
-    
+
     // ✅ REQUERIDO: Só aceita despesas com FICHA preenchida
     if (!String(d.ficha||'').trim()) return false;
+
+    // ✅ Filtra por periodicidade do gerente (semanal / mensal)
+    if (aba && d.gerenteId && typeof __dashIsMensal === 'function') {
+      const isMensal = __dashIsMensal(d.gerenteId);
+      if (aba === 'mensal'  && !isMensal) return false;
+      if (aba === 'semanal' &&  isMensal) return false;
+    }
 
     if (exigirFichaCadastrada){
       return fichasCad.some(f => String(f.ficha)===String(d.ficha));

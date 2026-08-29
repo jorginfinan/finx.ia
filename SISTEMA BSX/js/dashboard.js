@@ -187,6 +187,43 @@ function __dashIsMensal(gerenteId) {
   } catch(_) { return false; }
 }
 
+// ✅ Versão tolerante: aceita tanto id/uid quanto nome do gerente.
+// Muitas despesas antigas só têm `gerente_nome` (sem id), então precisamos
+// procurar em window.gerentes por nome também.
+function __dashIsMensalPorNomeOuId(gerenteId, gerenteNome) {
+  // 1) Tenta por id/uid
+  if (gerenteId && __dashIsMensal(gerenteId)) return true;
+  // 2) Tenta por nome (case-insensitive, normalizado)
+  if (gerenteNome) {
+    const nomeNorm = String(gerenteNome).trim().toLowerCase();
+    const pools = [ (window.gerentes || []), (window.GerentesLoader?.getCache?.() || []) ];
+    for (const pool of pools) {
+      const g = pool.find(x => String(x.nome || '').trim().toLowerCase() === nomeNorm);
+      if (g && !!g.mensal) return true;
+    }
+  }
+  return false;
+}
+
+// Retorna se conseguimos determinar o gerente (por id OU nome)
+function __dashConheceGerente(gerenteId, gerenteNome) {
+  if (gerenteId) {
+    const idStr = String(gerenteId);
+    const g = (window.gerentes || []).find(x =>
+      String(x.id || x.uid) === idStr || String(x.uid || '') === idStr
+    );
+    if (g) return true;
+  }
+  if (gerenteNome) {
+    const nomeNorm = String(gerenteNome).trim().toLowerCase();
+    const g = (window.gerentes || []).find(x =>
+      String(x.nome || '').trim().toLowerCase() === nomeNorm
+    );
+    if (g) return true;
+  }
+  return false;
+}
+
 /* -------------------- 2) Resultado – prestações Abertas -------------------- */
 /* ========= Resultado – prestações ABERTAS (detalhado, 1 linha por gerente) ========= */
 async function renderDashboardResultado(){
@@ -441,10 +478,15 @@ function buildAlertsForMonth(ym){
     if (!String(d.ficha||'').trim()) return false;
 
     // ✅ Filtra por periodicidade do gerente (semanal / mensal)
-    if (aba && d.gerenteId && typeof __dashIsMensal === 'function') {
-      const isMensal = __dashIsMensal(d.gerenteId);
+    // Usa versão TOLERANTE que aceita match por id ou por nome, porque
+    // muitas despesas antigas só têm gerente_nome (sem gerente_id).
+    if (aba && typeof __dashIsMensalPorNomeOuId === 'function') {
+      const conhece = __dashConheceGerente(d.gerenteId, d.gerenteNome);
+      // Se não conhecemos o gerente (não está no cache), mostra em SEMANAL como fallback
+      // pra não sumir da tela — e no MENSAL só mostra confirmados como mensal.
+      const isMensal = __dashIsMensalPorNomeOuId(d.gerenteId, d.gerenteNome);
       if (aba === 'mensal'  && !isMensal) return false;
-      if (aba === 'semanal' &&  isMensal) return false;
+      if (aba === 'semanal' &&  isMensal && conhece) return false;
     }
 
     if (exigirFichaCadastrada){

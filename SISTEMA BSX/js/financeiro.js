@@ -599,14 +599,19 @@ function renderFin() {
     
     // Renderiza linhas
     if (!filtered.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px">Nenhum lançamento encontrado.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px">Nenhum lançamento encontrado.</td></tr>';
       return;
     }
-    
+
     const rows = filtered.map(function(item) {
       const uid = item.uid || item.id || item.key || '';
       const data = (item.data || '').split('-').reverse().join('/');
-      
+
+      // 🆔 Transaction ID (curto e legível); usa uid como fallback pra lançamentos antigos
+      const txn = item.transaction_id
+        || item.meta?.transaction_id
+        || ('TXN' + String(uid).replace(/[^A-Z0-9]/gi,'').slice(0,8).toUpperCase());
+
       // Ícone de edição se o item foi editado
       let editIcon = '';
       if (item.editedAt) {
@@ -616,8 +621,9 @@ function renderFin() {
         const tooltip = 'Editado por: ' + (item.editedBy || 'Usuário') + '\\nEm: ' + dateStr + ' às ' + timeStr;
         editIcon = ' <span class="edit-icon" title="' + esc(tooltip) + '" style="cursor:help;font-size:0.85em;opacity:0.7;">✏️</span>';
       }
-      
+
       return '<tr data-uid="' + uid + '" data-context="financeiro">' +
+        '<td><code style="font-size:11px; background:#f3f4f6; padding:2px 6px; border-radius:4px; color:#374151;">' + esc(txn) + '</code></td>' +
         '<td>' + esc(item.gerente || '') + '</td>' +
         '<td style="text-align:right">' + fmtBRL(item.valor) + editIcon + '</td>' +
         '<td>' + esc(item.status || '') + '</td>' +
@@ -630,12 +636,12 @@ function renderFin() {
         '</td>' +
       '</tr>';
     }).join('');
-    
+
     tbody.innerHTML = rows;
-    
+
   } catch(error) {
     console.error('Erro em renderFin:', error);
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:red">Erro ao carregar dados</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:red">Erro ao carregar dados</td></tr>';
   }
 }
 
@@ -1354,49 +1360,102 @@ function renderFinPendencias(){
     if (btnC) {
       e.preventDefault();
       e.stopPropagation();
-      
+
+      // ⚡ IMEDIATO: bloqueia o botão AO PRIMEIRO click (antes de qualquer await)
+      // Isso é o que resolve o problema de double-tap no mobile.
+      if (btnC.disabled || btnC.dataset.processing === '1') {
+        console.log('[Fin] Confirm já em processamento — ignorando clique duplicado.');
+        return;
+      }
+      btnC.dataset.processing = '1';
+      btnC.disabled = true;
+      const textoOriginal = btnC.textContent;
+      btnC.textContent = '⏳ Processando...';
+
       const tr = btnC.closest('tr[data-pend-id]');
       const id = tr?.getAttribute('data-pend-id');
-      
+
       if (!id) {
         console.error('ID não encontrado');
+        btnC.disabled = false;
+        btnC.dataset.processing = '';
+        btnC.textContent = textoOriginal;
         return;
       }
-      
+
+      // ⚡ LOCK global por UID da pendência
+      // (evita 2 handlers concorrentes com mesma pendência processando em paralelo)
+      window.__pendConfirmLock = window.__pendConfirmLock || new Set();
+      if (window.__pendConfirmLock.has(id)) {
+        console.log('[Fin] Pendência já em processamento (lock global) — abortando.');
+        return;
+      }
+      window.__pendConfirmLock.add(id);
+
       const pend = __getPendencias();
       const i = pend.findIndex(function(x) { return x.id == id; });
-      
+
       if (i < 0) {
-        alert('Pendência não encontrada.');
+        alert('Pendência não encontrada (talvez já tenha sido confirmada por outra sessão).');
+        window.__pendConfirmLock.delete(id);
+        // Re-render pra remover a linha zumbi
+        try { renderFinPendencias?.(); } catch(_){}
         return;
       }
-    
+
       const p = pend[i];
-      
-      // Desabilita o botão temporariamente
-      btnC.disabled = true;
-      btnC.textContent = 'Processando...';
-    
+
       try {
         const lancs = __getLanc();
-        
+
         // ✅ DETERMINA SE É ENTRADA OU SAÍDA
         const ehSaida = (p.tipoCaixa === 'PAGO') || (p.tipo === 'PAGAR');
         const statusFinal = ehSaida ? 'PAGO' : 'RECEBIDO';
-        
+
         // Mensagem de confirmação diferente para pagamentos
         if (ehSaida) {
           const confirmMsg = `Confirmar PAGAMENTO de ${fmtBRL(p.valorConfirm||0)} para ${p.gerenteNome}?\n\nEste valor SAIRÁ do caixa.`;
           if (!confirm(confirmMsg)) {
             btnC.disabled = false;
-            btnC.textContent = 'Confirmar Pagamento';
+            btnC.dataset.processing = '';
+            btnC.textContent = textoOriginal;
+            window.__pendConfirmLock.delete(id);
             return;
           }
         }
-    
+
+        // ⚡ IDEMPOTÊNCIA: verifica se já existe lançamento vindo desta pendência
+        // (defende contra dupla-confirmação mesmo com locks vencendo por refresh)
+        const jaConfirmado = (lancs || []).find(l =>
+          l?.meta?.fromUID === p.uid ||
+          (p.altUID && l?.meta?.fromUID === p.altUID)
+        );
+        if (jaConfirmado) {
+          console.warn('[Fin] Pendência já confirmada anteriormente:', p.uid, '→ lanc:', jaConfirmado.uid);
+          alert('⚠️ Este recebimento JÁ foi confirmado anteriormente.\n\n' +
+                `Transação: ${jaConfirmado.transaction_id || jaConfirmado.uid?.slice(0,8) || '—'}\n` +
+                'A pendência será removida da fila.');
+          // Remove a pendência zumbi
+          pend.splice(i, 1);
+          __setPendencias(pend);
+          if (window.PendenciasAPI?.delete) {
+            try { await window.PendenciasAPI.delete(p.uid); } catch(_){}
+          }
+          window.__pendConfirmLock.delete(id);
+          try { renderFinPendencias?.(); } catch(_){}
+          try { window.renderFin?.(); } catch(_){}
+          return;
+        }
+
+        // 🆔 Gera número de transação legível (TXN + 8 chars do UID + timestamp curto)
+        const uidLanc = (typeof window.uid === 'function' ? window.uid() : 'f_' + Date.now() + '_' + Math.random());
+        const txnId = 'TXN' + Date.now().toString(36).toUpperCase().slice(-6) +
+                      uidLanc.replace(/[^A-Z0-9]/gi, '').slice(0, 4).toUpperCase();
+
         // Cria o novo lançamento
         const novoLanc = {
-          uid: (typeof window.uid === 'function' ? window.uid() : 'f_' + Date.now() + '_' + Math.random()),
+          uid: uidLanc,
+          transaction_id: txnId,   // 🆔 número de transação humano-legível
           gerente: p.gerenteNome || '',
           valor: Number(p.valorConfirm) || 0,
           status: statusFinal,
@@ -1411,7 +1470,8 @@ function renderFinPendencias(){
             prestId: p.prestId || null,
             editado: !!p.edited,
             editadoDe: Number(p.valorOriginal) || 0,
-            tipoPendencia: ehSaida ? 'PAGAMENTO' : 'RECEBIMENTO'
+            tipoPendencia: ehSaida ? 'PAGAMENTO' : 'RECEBIMENTO',
+            transaction_id: txnId
           },
           createdAt: new Date().toISOString()
         };
@@ -1477,21 +1537,24 @@ if (typeof window.saveLanc === 'function') {
         
         // ✅ NOTIFICA SINCRONIZAÇÃO
         if (typeof window.SyncManager !== 'undefined') {
-          window.SyncManager.notify('financeiro', { 
-            confirmacao: true, 
-            tipo: ehSaida ? 'pagamento' : 'recebimento' 
+          window.SyncManager.notify('financeiro', {
+            confirmacao: true,
+            tipo: ehSaida ? 'pagamento' : 'recebimento'
           });
         }
-        
+
       } catch(error) {
         console.error('Erro ao confirmar:', error);
         alert('Erro ao confirmar: ' + error.message);
-        
         // Reabilita o botão em caso de erro
         btnC.disabled = false;
-        btnC.textContent = ehSaida ? 'Confirmar Pagamento' : 'Confirmar';
+        btnC.dataset.processing = '';
+        btnC.textContent = textoOriginal;
+      } finally {
+        // ⚡ SEMPRE libera o lock global, sucesso ou erro
+        window.__pendConfirmLock?.delete(id);
       }
-      
+
       return;
     }
 
@@ -2382,26 +2445,54 @@ console.log('[Financeiro] Módulo carregado e pronto');
           gerente: r.gerente || '', valor: Number(r.valor) || 0,
           status: r.status || 'RECEBIDO', forma: r.forma || 'PIX',
           categoria: r.categoria || '', data: r.data || '',
-          editedAt: r.edited_at, editedBy: r.edited_by || ''
+          editedAt: r.edited_at, editedBy: r.edited_by || '',
+          transaction_id: r.transaction_id || null
         }));
       },
 
       async create(item) {
         const company = item.company || window.getCompany?.() || 'BSX';
         const uid = item.uid || window.uid?.() || crypto.randomUUID();
-        
-        const { data, error } = await window.SupabaseAPI.client
-          .from('lancamentos')
-          .insert([{
-            uid, gerente: item.gerente || '', valor: Number(item.valor) || 0,
-            status: item.status || 'RECEBIDO', forma: item.forma || 'PIX',
-            categoria: item.categoria || '', data: item.data || new Date().toISOString().slice(0,10),
-            company, created_by: window.currentUser?.nome || ''
-          }])
-          .select().single();
-        
+
+        // ⚡ Idempotência no nível do banco: se já existe lançamento com essa
+        // transaction_id, retorna sem duplicar (backup pra ~falha do lock JS).
+        const txnId = item.transaction_id || item.meta?.transaction_id || null;
+        if (txnId) {
+          try {
+            const { data: existente } = await window.SupabaseAPI.client
+              .from('lancamentos')
+              .select('id, uid, transaction_id')
+              .eq('transaction_id', txnId)
+              .maybeSingle();
+            if (existente) {
+              console.warn('[Lancamentos] Idempotência: transação já existe, retornando existente:', txnId);
+              return existente;
+            }
+          } catch(_) { /* coluna pode não existir ainda — segue fluxo normal */ }
+        }
+
+        const payload = {
+          uid, gerente: item.gerente || '', valor: Number(item.valor) || 0,
+          status: item.status || 'RECEBIDO', forma: item.forma || 'PIX',
+          categoria: item.categoria || '', data: item.data || new Date().toISOString().slice(0,10),
+          company, created_by: window.currentUser?.nome || ''
+        };
+        if (txnId) payload.transaction_id = txnId;
+
+        let { data, error } = await window.SupabaseAPI.client
+          .from('lancamentos').insert([payload]).select().single();
+
+        // Fallback: se falhou porque a coluna transaction_id ainda não existe,
+        // repete o insert sem esse campo
+        if (error && /transaction_id/i.test(String(error.message || ''))) {
+          console.warn('[Lancamentos] transaction_id não existe no banco; salvando sem esse campo.');
+          delete payload.transaction_id;
+          ({ data, error } = await window.SupabaseAPI.client
+            .from('lancamentos').insert([payload]).select().single());
+        }
+
         if (error) throw error;
-        console.log('[Lancamentos] ✅ Criado:', uid);
+        console.log('[Lancamentos] ✅ Criado:', uid, txnId ? '(txn ' + txnId + ')' : '');
         return data;
       },
 

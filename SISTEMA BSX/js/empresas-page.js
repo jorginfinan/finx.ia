@@ -401,6 +401,12 @@ window.EMPRESA_EMOJI_OPTIONS = [
     if (!window.SupabaseAPI?.empresas) {
       return setTimeout(reloadSelector, 500);
     }
+    // ⚠️  Não mexer no select se o usuário está interagindo com ele agora
+    // (no mobile isso "cancela" o toque e a seleção não confirma).
+    if (document.activeElement === sel) {
+      console.log('[EmpresasSelector] Select em foco — adiando reload.');
+      return setTimeout(reloadSelector, 800);
+    }
     try {
       const empresas = await window.SupabaseAPI.empresas.getAll({ ativasApenas: true });
       if (!empresas.length) return;
@@ -414,7 +420,6 @@ window.EMPRESA_EMOJI_OPTIONS = [
         );
       }
       if (!visiveis.length) {
-        // Fallback: mesmo sem match, mantém a atual pra não quebrar tela
         visiveis = empresas.filter(e =>
           String(e.nome || '').toUpperCase() === (window.getCompany?.() || 'BSX').toUpperCase()
         );
@@ -423,19 +428,52 @@ window.EMPRESA_EMOJI_OPTIONS = [
 
       const atual = (window.getCompany?.() || 'BSX').toUpperCase();
       const fallback = window.EMPRESA_EMOJI_FALLBACK || {};
-      sel.innerHTML = visiveis.map(e => {
+
+      // ✅ Gera a nova lista e SÓ substitui se o conjunto de opções mudou.
+      // Isso evita destruir o listener e resetar interações no mobile.
+      const novoHTML = visiveis.map(e => {
         const nome = e.nome || '';
         const emoji = e.emoji || fallback[nome.toUpperCase()] || '🏢';
         const selected = nome.toUpperCase() === atual ? 'selected' : '';
         return `<option value="${nome}" ${selected}>${emoji} ${nome}</option>`;
       }).join('');
 
-      // Se a empresa atualmente selecionada NÃO está na lista permitida,
-      // troca automaticamente para a primeira permitida
+      // Compara a lista de valores atual com a nova (rápido)
+      const atualValores = Array.from(sel.options).map(o => o.value).join('|');
+      const novaListaValores = visiveis.map(e => e.nome).join('|');
+
+      if (atualValores !== novaListaValores) {
+        sel.innerHTML = novoHTML;
+      }
+
+      // Ajusta visualmente qual está selecionada, sem disparar change
       const currentIsVisible = visiveis.some(e => String(e.nome).toUpperCase() === atual);
       if (!currentIsVisible && visiveis[0]) {
-        // Não recarrega — só ajusta valor visual do select
         sel.value = visiveis[0].nome;
+      } else {
+        // Só ajusta se estiver diferente pra não disparar change no mobile
+        const alvo = visiveis.find(e => String(e.nome).toUpperCase() === atual)?.nome;
+        if (alvo && sel.value !== alvo) sel.value = alvo;
+      }
+
+      // ✅ Garante que o listener de change EXISTE
+      // (se por acaso foi perdido em algum re-render)
+      if (!sel.__empresasWired) {
+        sel.__empresasWired = true;
+        sel.addEventListener('change', (e) => {
+          const novaEmpresa = e.target.value;
+          if (!novaEmpresa) return;
+          try {
+            if (typeof window.setCompany === 'function') {
+              window.setCompany(novaEmpresa);
+            } else {
+              localStorage.setItem('CURRENT_COMPANY', novaEmpresa);
+              location.reload();
+            }
+          } catch (err) {
+            console.error('[EmpresasSelector] Erro ao trocar empresa:', err);
+          }
+        });
       }
     } catch (e) {
       console.warn('[EmpresasSelector] Falha:', e);

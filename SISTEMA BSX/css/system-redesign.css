@@ -990,8 +990,15 @@ tr.tr-det td {
   .company-switcher select,
   #empresaSelect {
     min-width: 100px !important;
-    font-size: 13px !important;
-    padding: 8px 28px 8px 10px !important;
+    /* ✅ iOS: qualquer font-size < 16px causa zoom automático ao tocar,
+       o que faz a página "pular" e a seleção sumir. 16px previne. */
+    font-size: 16px !important;
+    padding: 10px 30px 10px 12px !important;
+    min-height: 44px !important;  /* área tocável mínima recomendada */
+    touch-action: manipulation;
+    /* garante que o select receba o toque acima de tudo */
+    position: relative;
+    z-index: 2;
   }
 
   /* User area: compact */

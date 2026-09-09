@@ -183,6 +183,166 @@ window.saveLanc = window.saveLanc || function () {
 const LSK_FIN_SORT   = 'bsx_fin_sort_v1';
 const LSK_FIN_FILTER = 'bsx_fin_filter_v1';
 
+// ===== Helpers de contexto (comprovante) =====
+// Retorna 'mobile' | 'tablet' | 'desktop' com base no user-agent
+window.__detectDevice = function () {
+  try {
+    const ua = navigator.userAgent || '';
+    if (/iPad|Tablet|Android(?!.*Mobile)/i.test(ua)) return 'tablet';
+    if (/Mobile|iPhone|Android|IEMobile|Opera Mini|BlackBerry/i.test(ua)) return 'mobile';
+    return 'desktop';
+  } catch (_) { return 'desktop'; }
+};
+
+// User-agent curto e legível (browser + versão)
+window.__uaShort = function () {
+  try {
+    const ua = navigator.userAgent || '';
+    let browser = 'Navegador';
+    if (/Edg\//.test(ua)) browser = 'Edge';
+    else if (/Chrome\//.test(ua) && !/Chromium/.test(ua)) browser = 'Chrome';
+    else if (/Firefox\//.test(ua)) browser = 'Firefox';
+    else if (/Safari\//.test(ua) && !/Chrome/.test(ua)) browser = 'Safari';
+    else if (/Opera|OPR/.test(ua)) browser = 'Opera';
+    let os = 'Sistema';
+    if (/Windows/.test(ua)) os = 'Windows';
+    else if (/Mac OS X/.test(ua)) os = 'macOS';
+    else if (/Android/.test(ua)) os = 'Android';
+    else if (/iPhone|iPad|iPod/.test(ua)) os = 'iOS';
+    else if (/Linux/.test(ua)) os = 'Linux';
+    return `${browser} · ${os}`;
+  } catch (_) { return 'Desconhecido'; }
+};
+
+// Nome/username do usuário atualmente logado
+window.__currentUsername = function () {
+  try {
+    return window.UserAuth?.currentUser?.()?.username
+        || window.currentUser?.nome
+        || window.currentUser?.username
+        || 'Sistema';
+  } catch (_) { return 'Sistema'; }
+};
+
+// ===== COMPROVANTE (extrato bancário) =====
+// Formata data/hora ISO em PT-BR (dd/mm/aaaa HH:MM)
+window.__cmpFmtDT = function (iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '—';
+    const dd = String(d.getDate()).padStart(2,'0');
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const yy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2,'0');
+    const mi = String(d.getMinutes()).padStart(2,'0');
+    return `${dd}/${mm}/${yy} às ${hh}:${mi}`;
+  } catch (_) { return '—'; }
+};
+
+// Emoji do dispositivo
+window.__cmpDeviceLabel = function (dev) {
+  const d = String(dev || '').toLowerCase();
+  if (d === 'mobile') return '📱 Celular';
+  if (d === 'tablet') return '📱 Tablet';
+  if (d === 'desktop') return '💻 Computador';
+  return '—';
+};
+
+// Abre o dialog do comprovante para um lançamento identificado por uid
+window.abrirComprovante = function (uid) {
+  try {
+    const dlg = document.getElementById('dlgComprovante');
+    if (!dlg) return;
+    const lista = Array.isArray(window.lanc) ? window.lanc : [];
+    const item = lista.find(l => (l?.uid || l?.id || l?.key) === uid);
+    if (!item) {
+      alert('Comprovante não encontrado.');
+      return;
+    }
+
+    const isPago = String(item.status || '').toUpperCase() === 'PAGO';
+    const txn = item.transaction_id
+      || item.meta?.transaction_id
+      || ('TXN' + String(uid).replace(/[^A-Z0-9]/gi,'').slice(0,8).toUpperCase());
+
+    // Faixa de cor conforme tipo
+    const faixa = document.getElementById('cmpFaixa');
+    const tipo  = document.getElementById('cmpTipo');
+    if (faixa && tipo) {
+      if (isPago) {
+        faixa.style.background   = '#fef2f2';
+        faixa.style.borderLeftColor = '#dc2626';
+        tipo.style.color = '#991b1b';
+        tipo.textContent = 'PAGAMENTO';
+      } else {
+        faixa.style.background   = '#f0fdf4';
+        faixa.style.borderLeftColor = '#16a34a';
+        tipo.style.color = '#166534';
+        tipo.textContent = 'RECEBIMENTO';
+      }
+    }
+
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val ?? '—'; };
+
+    // Cabeçalho
+    set('cmpEmpresa', item.company || (window.getCompany?.() || '—'));
+
+    // Valor
+    const valorFmt = (typeof fmtBRL === 'function')
+      ? fmtBRL(item.valor)
+      : ('R$ ' + Number(item.valor || 0).toFixed(2).replace('.', ','));
+    set('cmpValor', valorFmt);
+
+    // Transação
+    const codeTxn = document.getElementById('cmpTxn');
+    if (codeTxn) codeTxn.textContent = txn;
+    set('cmpGerente', item.gerente || '—');
+    set('cmpForma', item.forma || '—');
+    set('cmpCategoria', item.categoria || '—');
+    const dataFmt = (item.data || '').split('-').reverse().join('/') || '—';
+    set('cmpData', dataFmt);
+
+    // Origem (prestação)
+    const origUser = item.originator_user || item.meta?.originator_user || '—';
+    const origAt   = item.originator_at   || item.meta?.originator_at   || null;
+    const origDev  = item.originator_device || item.meta?.originator_device || '';
+    set('cmpOrigUser', origUser);
+    set('cmpOrigAt',   window.__cmpFmtDT(origAt));
+    set('cmpOrigDev',  window.__cmpDeviceLabel(origDev));
+
+    // Confirmação (caixa)
+    const confUser = item.created_by || item.meta?.confirmer_user || '—';
+    const confAt   = item.created_at || item.meta?.confirmer_at   || null;
+    const confDev  = item.device     || item.meta?.confirmer_device || '';
+    const confUA   = item.user_agent || item.meta?.confirmer_ua   || '';
+    set('cmpConfUser', confUser);
+    set('cmpConfAt',   window.__cmpFmtDT(confAt));
+    set('cmpConfDev',  window.__cmpDeviceLabel(confDev));
+    const uaRow = document.getElementById('cmpConfUARow');
+    if (uaRow) uaRow.textContent = confUA ? ('via ' + confUA) : '';
+
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open','');
+  } catch (e) {
+    console.error('[Comprovante] erro:', e);
+  }
+};
+
+// Delegação de clique: abre comprovante e fecha
+document.addEventListener('click', function (ev) {
+  const btn = ev.target.closest?.('[data-comprovante]');
+  if (btn) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    window.abrirComprovante(btn.getAttribute('data-comprovante'));
+    return;
+  }
+  if (ev.target?.id === 'cmpClose') {
+    const dlg = document.getElementById('dlgComprovante');
+    if (dlg?.open) dlg.close();
+  }
+}, true);
+
 // ===== FUNÇÃO PARA RECARREGAR DO SUPABASE =====
 window.carregarFinanceiroSupabase = async function() {
   try {
@@ -607,11 +767,6 @@ function renderFin() {
       const uid = item.uid || item.id || item.key || '';
       const data = (item.data || '').split('-').reverse().join('/');
 
-      // 🆔 Transaction ID (curto e legível); usa uid como fallback pra lançamentos antigos
-      const txn = item.transaction_id
-        || item.meta?.transaction_id
-        || ('TXN' + String(uid).replace(/[^A-Z0-9]/gi,'').slice(0,8).toUpperCase());
-
       // Ícone de edição se o item foi editado
       let editIcon = '';
       if (item.editedAt) {
@@ -623,7 +778,10 @@ function renderFin() {
       }
 
       return '<tr data-uid="' + uid + '" data-context="financeiro">' +
-        '<td><code style="font-size:11px; background:#f3f4f6; padding:2px 6px; border-radius:4px; color:#374151;">' + esc(txn) + '</code></td>' +
+        '<td style="text-align:center">' +
+          '<button type="button" class="btn ghost sm" data-comprovante="' + esc(uid) + '" title="Ver comprovante" ' +
+          'style="padding:4px 10px; font-size:16px; line-height:1; cursor:pointer;">🧾</button>' +
+        '</td>' +
         '<td>' + esc(item.gerente || '') + '</td>' +
         '<td style="text-align:right">' + fmtBRL(item.valor) + editIcon + '</td>' +
         '<td>' + esc(item.status || '') + '</td>' +
@@ -806,7 +964,11 @@ function formatDate(date) {
           info: r.info || '', prestId: r.prestacao_id,
           tipoCaixa: r.tipo_caixa || 'RECEBIDO',
           status: r.status || 'PENDENTE', edited: r.edited || false,
-          company: r.company || null   // ✅ Necessário p/ propagar ao lançamento
+          company: r.company || null,   // ✅ Necessário p/ propagar ao lançamento
+          // Metadados de auditoria (para o comprovante)
+          originator_user: r.originator_user || null,
+          originator_at: r.originator_at || null,
+          originator_device: r.originator_device || null
         }));
       } catch(e) { console.error('[Pendencias] Erro:', e); return []; }
     },
@@ -825,7 +987,8 @@ function formatDate(date) {
         const company = item.company || window.getCompany?.() || 'BSX';
         const uid = item.uid || window.uid?.() || crypto.randomUUID();
 
-        await this.client.from('pendencias').insert([{
+        // Payload base (sem colunas opcionais que podem não existir no banco)
+        const payload = {
           uid, alt_uid: item.altUID || null,
           gerente: item.gerenteNome || '', gerente_id: item.gerenteId || null,
           valor_original: Number(item.valorOriginal) || 0,
@@ -835,7 +998,21 @@ function formatDate(date) {
           info: item.info || '', prestacao_id: item.prestId || null,
           tipo_caixa: item.tipoCaixa || 'RECEBIDO',
           status: 'PENDENTE', edited: false, company
-        }]);
+        };
+        // Metadados de auditoria (só grava se o item forneceu — colunas devem existir no banco)
+        if (item.originator_user)   payload.originator_user   = item.originator_user;
+        if (item.originator_at)     payload.originator_at     = item.originator_at;
+        if (item.originator_device) payload.originator_device = item.originator_device;
+
+        let { error: errIns } = await this.client.from('pendencias').insert([payload]);
+        // Fallback: se colunas de auditoria não existem, tenta sem elas
+        if (errIns && /originator_/i.test(String(errIns.message || ''))) {
+          delete payload.originator_user;
+          delete payload.originator_at;
+          delete payload.originator_device;
+          ({ error: errIns } = await this.client.from('pendencias').insert([payload]));
+        }
+        if (errIns) throw errIns;
         console.log('[Pendencias] ✅ Criada:', uid);
         return uid;
       } catch(e) { console.error('[Pendencias] Erro ao criar:', e); throw e; }
@@ -1452,6 +1629,11 @@ function renderFinPendencias(){
         const txnId = 'TXN' + Date.now().toString(36).toUpperCase().slice(-6) +
                       uidLanc.replace(/[^A-Z0-9]/gi, '').slice(0, 4).toUpperCase();
 
+        // ✅ Metadados do CONFIRMADOR (usuário atual, dispositivo, momento)
+        const confirmerUser   = window.__currentUsername?.() || 'Sistema';
+        const confirmerDevice = window.__detectDevice?.()    || 'desktop';
+        const confirmerUA     = window.__uaShort?.()         || '';
+
         // Cria o novo lançamento
         const novoLanc = {
           uid: uidLanc,
@@ -1464,6 +1646,11 @@ function renderFinPendencias(){
           data: p.data || (new Date()).toISOString().slice(0,10),
           // ✅ CRÍTICO: herda a company da pendência para não gravar no caixa errado
           company: p.company || (window.getCompany?.() || 'BSX'),
+          // Metadados de auditoria (para o comprovante)
+          device: confirmerDevice,
+          user_agent: confirmerUA,
+          originator_user: p.originator_user || null,
+          originator_at: p.originator_at || null,
           meta: {
             from: 'prestacao',
             fromUID: p.uid,
@@ -1471,7 +1658,14 @@ function renderFinPendencias(){
             editado: !!p.edited,
             editadoDe: Number(p.valorOriginal) || 0,
             tipoPendencia: ehSaida ? 'PAGAMENTO' : 'RECEBIMENTO',
-            transaction_id: txnId
+            transaction_id: txnId,
+            // Contexto adicional
+            confirmer_user: confirmerUser,
+            confirmer_device: confirmerDevice,
+            confirmer_ua: confirmerUA,
+            originator_user: p.originator_user || null,
+            originator_at: p.originator_at || null,
+            originator_device: p.originator_device || null
           },
           createdAt: new Date().toISOString()
         };
@@ -2446,7 +2640,16 @@ console.log('[Financeiro] Módulo carregado e pronto');
           status: r.status || 'RECEBIDO', forma: r.forma || 'PIX',
           categoria: r.categoria || '', data: r.data || '',
           editedAt: r.edited_at, editedBy: r.edited_by || '',
-          transaction_id: r.transaction_id || null
+          transaction_id: r.transaction_id || null,
+          // ✅ Comprovante / auditoria
+          company: r.company || '',
+          created_by: r.created_by || '',
+          created_at: r.created_at || null,
+          device: r.device || '',
+          user_agent: r.user_agent || '',
+          originator_user: r.originator_user || '',
+          originator_at: r.originator_at || null,
+          originator_device: r.originator_device || ''
         }));
       },
 
@@ -2471,13 +2674,26 @@ console.log('[Financeiro] Módulo carregado e pronto');
           } catch(_) { /* coluna pode não existir ainda — segue fluxo normal */ }
         }
 
+        // Nome do usuário confirmador (prioriza UserAuth, cai para currentUser.nome)
+        const confirmerName =
+          (window.__currentUsername?.()) ||
+          (window.UserAuth?.currentUser?.()?.username) ||
+          (window.currentUser?.nome) || '';
+
         const payload = {
           uid, gerente: item.gerente || '', valor: Number(item.valor) || 0,
           status: item.status || 'RECEBIDO', forma: item.forma || 'PIX',
           categoria: item.categoria || '', data: item.data || new Date().toISOString().slice(0,10),
-          company, created_by: window.currentUser?.nome || ''
+          company, created_by: confirmerName
         };
         if (txnId) payload.transaction_id = txnId;
+
+        // ✅ Metadados de comprovante (com fallback caso as colunas ainda não existam)
+        if (item.device)            payload.device            = item.device;
+        if (item.user_agent)        payload.user_agent        = item.user_agent;
+        if (item.originator_user)   payload.originator_user   = item.originator_user;
+        if (item.originator_at)     payload.originator_at     = item.originator_at;
+        if (item.originator_device) payload.originator_device = item.originator_device;
 
         let { data, error } = await window.SupabaseAPI.client
           .from('lancamentos').insert([payload]).select().single();
@@ -2487,6 +2703,18 @@ console.log('[Financeiro] Módulo carregado e pronto');
         if (error && /transaction_id/i.test(String(error.message || ''))) {
           console.warn('[Lancamentos] transaction_id não existe no banco; salvando sem esse campo.');
           delete payload.transaction_id;
+          ({ data, error } = await window.SupabaseAPI.client
+            .from('lancamentos').insert([payload]).select().single());
+        }
+
+        // Fallback: se falhou por qualquer coluna de comprovante ainda não existir
+        if (error && /device|user_agent|originator_/i.test(String(error.message || ''))) {
+          console.warn('[Lancamentos] colunas de comprovante ainda não existem; salvando sem esses campos.');
+          delete payload.device;
+          delete payload.user_agent;
+          delete payload.originator_user;
+          delete payload.originator_at;
+          delete payload.originator_device;
           ({ data, error } = await window.SupabaseAPI.client
             .from('lancamentos').insert([payload]).select().single());
         }

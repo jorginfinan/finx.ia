@@ -2824,7 +2824,12 @@ const novaPendencia = {
   tipo: 'PAGAR',        // ← Confirma que é PAGAMENTO
 
   // ✅ CRÍTICO: Empresa da prestação (via gerente), não da empresa ativa
-  company: empresaNome
+  company: empresaNome,
+
+  // ✅ Metadados de auditoria (para o comprovante)
+  originator_user: (window.__currentUsername?.() || 'Sistema'),
+  originator_at: new Date().toISOString(),
+  originator_device: (window.__detectDevice?.() || 'desktop')
 };
       
 // ✅ SALVA NO SUPABASE

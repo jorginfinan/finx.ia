@@ -763,6 +763,15 @@ function renderFin() {
       return;
     }
 
+    // Permissões (mesma convenção de core.js: excluir = admin)
+    const cuRole  = window.UserAuth?.currentUser?.()?.role;
+    const canDel  = (typeof window.canDeleteLanc === 'function')
+      ? window.canDeleteLanc()
+      : (cuRole === 'admin');
+    const canEdit = (typeof window.canEditLanc === 'function')
+      ? window.canEditLanc()
+      : (window.UserAuth?.can ? window.UserAuth.can('financeiro_edit') : cuRole === 'admin');
+
     const rows = filtered.map(function(item) {
       const uid = item.uid || item.id || item.key || '';
       const data = (item.data || '').split('-').reverse().join('/');
@@ -789,8 +798,8 @@ function renderFin() {
         '<td>' + esc(item.categoria || '') + '</td>' +
         '<td>' + data + '</td>' +
         '<td class="fin-actions" style="white-space:nowrap">' +
-          '<button class="btn sm" data-edit="' + uid + '" data-context="financeiro">Editar</button> ' +
-          '<button class="btn danger sm" data-del="' + uid + '" data-context="financeiro">Excluir</button>' +
+          (canEdit ? '<button class="btn sm" data-edit="' + uid + '" data-context="financeiro">Editar</button> ' : '') +
+          (canDel  ? '<button class="btn danger sm" data-del="' + uid + '" data-context="financeiro">Excluir</button>' : '') +
         '</td>' +
       '</tr>';
     }).join('');
@@ -867,23 +876,33 @@ function createTableRow(item) {
     tr.appendChild(td);
   });
   
-  // Ações
+  // Ações (respeita permissões: mesma convenção de renderFin)
   const tdActions = document.createElement('td');
-  
-  const btnEdit = document.createElement('button');
-  btnEdit.className = 'btn sm';
-  btnEdit.textContent = 'Editar';
-  btnEdit.onclick = () => editarLancamento(item.id);
-  
-  const btnDel = document.createElement('button');
-  btnDel.className = 'btn danger sm';
-  btnDel.textContent = 'Excluir';
-  btnDel.onclick = () => excluirLancamento(item.id);
-  
-  tdActions.appendChild(btnEdit);
-  tdActions.appendChild(document.createTextNode(' '));
-  tdActions.appendChild(btnDel);
-  
+  const cuRole  = window.UserAuth?.currentUser?.()?.role;
+  const canDel  = (typeof window.canDeleteLanc === 'function')
+    ? window.canDeleteLanc()
+    : (cuRole === 'admin');
+  const canEdit = (typeof window.canEditLanc === 'function')
+    ? window.canEditLanc()
+    : (window.UserAuth?.can ? window.UserAuth.can('financeiro_edit') : cuRole === 'admin');
+
+  if (canEdit) {
+    const btnEdit = document.createElement('button');
+    btnEdit.className = 'btn sm';
+    btnEdit.textContent = 'Editar';
+    btnEdit.onclick = () => editarLancamento(item.id);
+    tdActions.appendChild(btnEdit);
+  }
+
+  if (canDel) {
+    if (canEdit) tdActions.appendChild(document.createTextNode(' '));
+    const btnDel = document.createElement('button');
+    btnDel.className = 'btn danger sm';
+    btnDel.textContent = 'Excluir';
+    btnDel.onclick = () => excluirLancamento(item.id);
+    tdActions.appendChild(btnDel);
+  }
+
   tr.appendChild(tdActions);
   
   return tr;

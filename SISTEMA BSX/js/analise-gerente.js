@@ -778,15 +778,16 @@
       }
     });
     
-    const totalPagamentos = totalPago; // Para o card de pagamentos
-    
-    // Saldo = Resultado das prestações - Pagamentos feitos ao gerente
+    // Resultado das prestações (Coletas - Despesas)
     const totalResultado = prestacoes.reduce((sum, p) => {
       const resultado = Number(p.resumo?.resultado) || 0;
       return sum + resultado;
     }, 0);
     
-    const saldo = totalResultado - totalPago;
+    const totalPagamentos = totalResultado; // Card Pagamentos = Resultado das prestações
+    
+    // Saldo = fluxo líquido de caixa (Recebido - Pago)
+    const saldo = totalRecebido - totalPago;
     
     dadosAnalise.resumo = {
       totalColetas,
@@ -818,27 +819,34 @@
     }
     
     let totalPago = 0;
+    let totalRecebido = 0;
     pagamentosFiltrados.forEach(pg => {
+      const valor = Number(pg.valor) || 0;
       if (pg.isPago || pg.tipo === 'Adiantamento' || pg.tipo === 'Pagamento') {
-        totalPago += Number(pg.valor) || 0;
+        totalPago += valor;
+      } else if (pg.isRecebido || pg.tipo === 'Recebimento') {
+        totalRecebido += valor;
       }
     });
     
     const { totalColetas, totalDespesas, totalComissao, totalResultado } = dadosAnalise.resumo;
-    const saldo = totalResultado - totalPago;
     
-    document.getElementById('agTotalPagamentos').textContent = fmtBRL(totalPago);
+    // Card Pagamentos = Resultado das prestações (Coletas - Despesas)
+    document.getElementById('agTotalPagamentos').textContent = fmtBRL(totalResultado);
+    
+    // Saldo = fluxo líquido de caixa (Recebido - Pago)
+    const saldo = totalRecebido - totalPago;
     
     const saldoEl = document.getElementById('agSaldo');
     const saldoCard = saldoEl.closest('.ag-card');
     if (saldo > 0) {
       saldoCard.classList.remove('ag-card-negativo');
       saldoCard.classList.add('ag-card-positivo');
-      saldoEl.textContent = fmtBRL(saldo) + ' (a pagar)';
+      saldoEl.textContent = fmtBRL(saldo) + ' (a receber)';
     } else if (saldo < 0) {
       saldoCard.classList.remove('ag-card-positivo');
       saldoCard.classList.add('ag-card-negativo');
-      saldoEl.textContent = fmtBRL(Math.abs(saldo)) + ' (pago a mais)';
+      saldoEl.textContent = fmtBRL(Math.abs(saldo)) + ' (a pagar)';
     } else {
       saldoCard.classList.remove('ag-card-positivo', 'ag-card-negativo');
       saldoEl.textContent = 'R$ 0,00 (zerado)';
@@ -854,18 +862,17 @@
     document.getElementById('agTotalPagamentos').textContent = fmtBRL(totalPagamentos);
     
     const saldoEl = document.getElementById('agSaldo');
-    saldoEl.textContent = fmtBRL(Math.abs(saldo));
     
     // Cor do saldo
     const saldoCard = saldoEl.closest('.ag-card');
     if (saldo > 0) {
       saldoCard.classList.remove('ag-card-negativo');
       saldoCard.classList.add('ag-card-positivo');
-      saldoEl.textContent = fmtBRL(saldo) + ' (a pagar)';
+      saldoEl.textContent = fmtBRL(saldo) + ' (a receber)';
     } else if (saldo < 0) {
       saldoCard.classList.remove('ag-card-positivo');
       saldoCard.classList.add('ag-card-negativo');
-      saldoEl.textContent = fmtBRL(Math.abs(saldo)) + ' (pago a mais)';
+      saldoEl.textContent = fmtBRL(Math.abs(saldo)) + ' (a pagar)';
     } else {
       saldoCard.classList.remove('ag-card-positivo', 'ag-card-negativo');
       saldoEl.textContent = 'R$ 0,00 (zerado)';
@@ -1145,7 +1152,10 @@
     const ctx = canvas.getContext('2d');
     
     const WIDTH = 1200;
-    const HEIGHT = 1600;
+    // Altura dinâmica: base + prestações + pagamentos
+    const prestCount = Math.min(dadosAnalise.prestacoes.length, 20);
+    const pagCount = Math.min((dadosAnalise.pagamentos || []).length, 20);
+    const HEIGHT = 500 + (prestCount * 28) + 120 + (pagCount * 28) + 100;
     canvas.width = WIDTH;
     canvas.height = HEIGHT;
     
@@ -1174,7 +1184,7 @@
       { label: 'Total Despesas', value: fmtBRL(resumo.totalDespesas), color: '#ef4444' },
       { label: 'Comissões', value: fmtBRL(resumo.totalComissao), color: '#f59e0b' },
       { label: 'Pagamentos', value: fmtBRL(resumo.totalPagamentos), color: '#3b82f6' },
-      { label: 'Saldo', value: fmtBRL(resumo.saldo), color: resumo.saldo >= 0 ? '#10b981' : '#ef4444' }
+      { label: 'Saldo', value: fmtBRL(Math.abs(resumo.saldo)) + (resumo.saldo > 0 ? ' (a receber)' : resumo.saldo < 0 ? ' (a pagar)' : ' (zerado)'), color: resumo.saldo >= 0 ? '#10b981' : '#ef4444' }
     ];
     
     let cardX = 40;
@@ -1198,30 +1208,29 @@
     
     y += 100;
     
-    // Seção Prestações
+    // ========== SEÇÃO PRESTAÇÕES ==========
     ctx.fillStyle = '#1f2937';
     ctx.font = 'bold 20px Arial';
     ctx.fillText('📋 Prestações / Coletas', 40, y);
     y += 30;
     
-    ctx.font = '12px Arial';
-    ctx.fillStyle = '#6b7280';
-    
-    // Header tabela
-    ctx.fillStyle = '#e5e7eb';
-    ctx.fillRect(40, y, WIDTH - 80, 25);
-    ctx.fillStyle = '#374151';
+    // Header tabela prestações
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(40, y, WIDTH - 80, 28);
+    ctx.fillStyle = '#facc15';
     ctx.font = 'bold 12px Arial';
-    ctx.fillText('Período', 50, y + 17);
-    ctx.fillText('Coletas', 250, y + 17);
-    ctx.fillText('Despesas', 400, y + 17);
-    ctx.fillText('Comissão', 550, y + 17);
-    ctx.fillText('Resultado', 700, y + 17);
-    ctx.fillText('Status', 850, y + 17);
-    y += 30;
+    ctx.fillText('PERÍODO', 50, y + 18);
+    ctx.fillText('COLETAS', 250, y + 18);
+    ctx.fillText('DESPESAS', 400, y + 18);
+    ctx.fillText('COMISSÃO', 550, y + 18);
+    ctx.fillText('RESULTADO', 700, y + 18);
+    ctx.fillText('STATUS', 870, y + 18);
+    y += 32;
     
     ctx.font = '12px Arial';
-    dadosAnalise.prestacoes.slice(0, 15).forEach(p => {
+    let totalColPDF = 0, totalDesPDF = 0, totalComPDF = 0, totalResPDF = 0;
+    
+    dadosAnalise.prestacoes.slice(0, 20).forEach((p, i) => {
       const periodo = `${formatDateBR(p.ini || p.periodoIni)} a ${formatDateBR(p.fim || p.periodoFim)}`;
       const coletas = Number(p.resumo?.coletas) || 0;
       const despesas = Number(p.resumo?.despesas) || 0;
@@ -1229,19 +1238,130 @@
       const resultado = Number(p.resumo?.resultado) || 0;
       const restam = Number(p.resumo?.restam) || 0;
       
+      totalColPDF += coletas;
+      totalDesPDF += despesas;
+      totalComPDF += comissao;
+      totalResPDF += resultado;
+      
+      // Zebra
+      if (i % 2 === 0) {
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(40, y - 4, WIDTH - 80, 26);
+      }
+      
       ctx.fillStyle = '#374151';
       ctx.fillText(periodo, 50, y + 15);
+      ctx.fillStyle = coletas < 0 ? '#ef4444' : '#374151';
       ctx.fillText(fmtBRL(coletas), 250, y + 15);
       ctx.fillStyle = '#ef4444';
       ctx.fillText(fmtBRL(despesas), 400, y + 15);
       ctx.fillStyle = '#374151';
       ctx.fillText(fmtBRL(comissao), 550, y + 15);
+      ctx.fillStyle = resultado < 0 ? '#ef4444' : '#10b981';
       ctx.fillText(fmtBRL(resultado), 700, y + 15);
       ctx.fillStyle = restam > 0 ? '#f59e0b' : '#10b981';
-      ctx.fillText(restam > 0 ? `Restam ${fmtBRL(restam)}` : 'Quitada', 850, y + 15);
+      ctx.fillText(restam > 0 ? `Restam ${fmtBRL(restam)}` : 'Quitada', 870, y + 15);
       
-      y += 25;
+      y += 26;
     });
+    
+    // Rodapé totais prestações
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(40, y, WIDTH - 80, 28);
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 13px Arial';
+    ctx.fillText('TOTAL', 50, y + 18);
+    ctx.fillText(fmtBRL(totalColPDF), 250, y + 18);
+    ctx.fillStyle = '#ef4444';
+    ctx.fillText(fmtBRL(totalDesPDF), 400, y + 18);
+    ctx.fillStyle = '#0f172a';
+    ctx.fillText(fmtBRL(totalComPDF), 550, y + 18);
+    ctx.fillStyle = totalResPDF < 0 ? '#ef4444' : '#10b981';
+    ctx.fillText(fmtBRL(totalResPDF), 700, y + 18);
+    y += 50;
+    
+    // ========== SEÇÃO PAGAMENTOS ==========
+    const pagamentos = dadosAnalise.pagamentos || [];
+    
+    ctx.fillStyle = '#1f2937';
+    ctx.font = 'bold 20px Arial';
+    ctx.fillText(`💳 Pagamentos (${pagamentos.length})`, 40, y);
+    y += 30;
+    
+    // Header tabela pagamentos
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(40, y, WIDTH - 80, 28);
+    ctx.fillStyle = '#facc15';
+    ctx.font = 'bold 12px Arial';
+    ctx.fillText('DATA', 50, y + 18);
+    ctx.fillText('TIPO', 220, y + 18);
+    ctx.fillText('DESCRIÇÃO', 400, y + 18);
+    ctx.fillText('VALOR', 900, y + 18);
+    y += 32;
+    
+    let somaPagoPDF = 0;
+    let somaRecebidoPDF = 0;
+    
+    ctx.font = '12px Arial';
+    pagamentos.slice(0, 20).forEach((pg, i) => {
+      const valor = Number(pg.valor) || 0;
+      const isPago = pg.isPago || pg.tipo === 'Adiantamento' || pg.tipo === 'Pagamento';
+      const isRecebido = pg.isRecebido || pg.tipo === 'Recebimento';
+      
+      if (isPago) somaPagoPDF += valor;
+      if (isRecebido) somaRecebidoPDF += valor;
+      
+      // Zebra
+      if (i % 2 === 0) {
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(40, y - 4, WIDTH - 80, 26);
+      }
+      
+      // Data
+      ctx.fillStyle = '#374151';
+      ctx.fillText(formatDateBR(pg.data), 50, y + 15);
+      
+      // Tipo (colorido)
+      if (pg.tipo === 'Adiantamento') ctx.fillStyle = '#d97706';
+      else if (pg.tipo === 'Recebimento') ctx.fillStyle = '#10b981';
+      else if (pg.tipo === 'Pagamento') ctx.fillStyle = '#ef4444';
+      else ctx.fillStyle = '#6b7280';
+      ctx.font = 'bold 12px Arial';
+      ctx.fillText(pg.tipo || '-', 220, y + 15);
+      
+      // Descrição
+      ctx.fillStyle = '#374151';
+      ctx.font = '12px Arial';
+      const desc = (pg.descricao || '-') + (pg.formaPgto ? ` (${pg.formaPgto})` : '');
+      ctx.fillText(desc.substring(0, 60), 400, y + 15);
+      
+      // Valor
+      ctx.fillStyle = isPago ? '#ef4444' : '#10b981';
+      ctx.font = 'bold 12px Arial';
+      ctx.fillText(fmtBRL(valor), 900, y + 15);
+      
+      ctx.font = '12px Arial';
+      y += 26;
+    });
+    
+    // Rodapé totais pagamentos
+    const saldoPag = somaRecebidoPDF - somaPagoPDF;
+    
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(40, y, WIDTH - 80, 60);
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 13px Arial';
+    
+    ctx.fillText(`Total Pago: ${fmtBRL(somaPagoPDF)}`, 50, y + 18);
+    ctx.fillStyle = '#10b981';
+    ctx.fillText(`Total Recebido: ${fmtBRL(somaRecebidoPDF)}`, 350, y + 18);
+    
+    ctx.fillStyle = '#0f172a';
+    ctx.font = 'bold 15px Arial';
+    ctx.fillText('Saldo:', 650, y + 40);
+    ctx.fillStyle = saldoPag >= 0 ? '#10b981' : '#ef4444';
+    const saldoLabel = saldoPag > 0 ? ' (a receber)' : saldoPag < 0 ? ' (a pagar)' : ' (zerado)';
+    ctx.fillText(fmtBRL(Math.abs(saldoPag)) + saldoLabel, 720, y + 40);
     
     // Download
     const link = document.createElement('a');

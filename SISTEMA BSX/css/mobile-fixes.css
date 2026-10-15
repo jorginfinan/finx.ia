@@ -95,14 +95,14 @@
   }
 
   /* Coluna de informações pode quebrar linha */
-  #pageDespesas td:nth-child(4),
-  #pageDespesas th:nth-child(4) {
+  #pageDespesas td:nth-child(2),
+  #pageDespesas th:nth-child(2) {
     white-space: normal;
     min-width: 150px;
   }
 
   /* Valores alinhados à direita */
-  #pageDespesas td:nth-child(5) {
+  #pageDespesas td:nth-child(3) {
     text-align: right;
     font-weight: 600;
   }

@@ -202,7 +202,7 @@ function getRotaByFicha(ficha) {
     const ate = document.getElementById('despAte')?.value || '9999-12-31';
     const showHidden = !!document.getElementById('despMostrarOcultas')?.checked;
     
-    const IDEAL_RATE = typeof window.IDEAL_RATE === 'number' ? window.IDEAL_RATE : 0.06;
+    const IDEAL_RATE = typeof window.IDEAL_RATE === 'number' ? window.IDEAL_RATE : 0.04;
 
 
     // Permissões por perfil
@@ -295,13 +295,21 @@ console.log('[renderDespesas] ✅ Após filtrar:', list.length, 'despesas');
       };
     }
   
+    // Mesma regra do alerta do Início (dashboard.js → limiar_alerta), para que
+    // as linhas em vermelho sejam exatamente as despesas que geraram o alerta.
+    const foraPadrao = (r) => {
+      if (hideRestricted || r.isHidden || !String(r.ficha||'').trim()) return false;
+      if (typeof window.limiar_alerta !== 'function') return false;
+      try { return !!window.limiar_alerta(r)?.atingiu; } catch(_) { return false; }
+    };
+    let qtdForaPadrao = 0;
+
     const linhas = [];
-  
+
     for(const ficha of fichasOrd){
       const itens = groups.get(ficha).slice().sort((a,b)=> (a.data||'').localeCompare(b.data||''));
       const qtd   = itens.length;
-  
-      const rota  = getRotaByFicha(ficha) || '—';
+
       const gerentesSet = Array.from(new Set(itens.map(x=> (x.gerenteNome||'').trim()).filter(Boolean)));
       const gerenteNome = gerentesSet.length <= 1 ? (gerentesSet[0]||'') : 'Vários';
   
@@ -329,23 +337,23 @@ console.log('[renderDespesas] ✅ Após filtrar:', list.length, 'despesas');
         }
         
         const actions = makeDespActionsMenu({ id:r.id, isHidden:!!r.isHidden }, { canDelete });
-        
+        const fp = foraPadrao(r);
+        if (fp) qtdForaPadrao++;
+        const trCls = [r.isHidden ? 'row-oculta' : '', fp ? 'row-fora-padrao' : ''].join(' ').trim();
+
         linhas.push(`
-          <tr class="${r.isHidden?'row-oculta':''}">
-            <!-- REMOVIDO: td da Data -->
-            <td>${esc(gerenteNome)}</td>
-            <td>${esc(rota)}</td>
-            <td>${esc(r.ficha||'')}</td>
-            <td style="text-align:left">${infoTxt}</td>
-            <td>${fmtBRL(valorAj)}</td>
-            <td>${hideRestricted ? '' : fmtBRL(ideal)}</td>
-            <td style="color:${hideRestricted ? 'inherit' : difColor}">
+          <tr class="${trCls}"${fp ? ' title="Despesa fora do padrão (gerou alerta no Início)"' : ''}>
+            <td class="c-ficha">${esc(r.ficha||'')}</td>
+            <td class="c-info">${infoTxt}</td>
+            <td class="c-num">${fmtBRL(valorAj)}</td>
+            <td class="c-num">${hideRestricted ? '' : fmtBRL(ideal)}</td>
+            <td class="c-num" style="color:${hideRestricted ? 'inherit' : difColor}">
               ${hideRestricted ? '' : ((dif >= 0 ? '+' : '') + fmtBRL(dif))}
             </td>
-            <td>${hideRestricted ? '' : status}</td>
-            <td>${fmtBRL(vBruta)}</td>
-            <td>${fmtBRL(vLiq)}</td>
-            <td>${actions}</td>
+            <td class="c-status">${hideRestricted ? '' : status}</td>
+            <td class="c-num">${fmtBRL(vBruta)}</td>
+            <td class="c-num">${fmtBRL(vLiq)}</td>
+            <td class="c-acts">${actions}</td>
           </tr>
         `);
           
@@ -363,57 +371,58 @@ const gNome   = safe(gerenteNome);
 const pIni    = safe(itens[0]?.periodoIni);
 const pFim    = safe(itens[0]?.periodoFim);
 const groupId = `grp-${safe(ficha)}-${gNome}-${pIni}-${pFim}`;
-      
+
+        // Grupo com alguma despesa fora do padrão já abre expandido e destacado
+        const fpItens = itens.map(foraPadrao);
+        const grupoFP = fpItens.some(Boolean);
+        qtdForaPadrao += fpItens.filter(Boolean).length;
+
         // 1) LINHA RESUMO (Informações = "Total Despesas"; Valor Ajuda = total + link mostrar/ocultar)
         linhas.push(`
-          <tr data-group="${groupId}">
-            <!-- REMOVIDO: td "—" da Data -->
-            <td>${esc(gerenteNome)}</td>
-            <td>${esc(rota)}</td>
-            <td>${esc(ficha)}</td>
-            <td style="text-align:left"><strong>Total Despesas</strong></td>
-            <td>
+          <tr data-group="${groupId}" class="${grupoFP ? 'row-fora-padrao' : ''}">
+            <td class="c-ficha">${esc(ficha)}</td>
+            <td class="c-info"><strong>Total Despesas</strong> <small class="muted">(${qtd})</small></td>
+            <td class="c-num">
               <span>${fmtBRL(totalAjuda)}</span>
               <button type="button" class="btn-mini-toggle"
-                      data-inline-toggle="${groupId}" aria-expanded="false">
-                + detalhes
+                      data-inline-toggle="${groupId}" aria-expanded="${grupoFP ? 'true' : 'false'}">
+                ${grupoFP ? '- detalhes' : '+ detalhes'}
               </button>
             </td>
-            <td>${hideRestricted ? '' : fmtBRL(ideal)}</td>
-            <td style="color:${hideRestricted ? 'inherit' : difColor}">
+            <td class="c-num">${hideRestricted ? '' : fmtBRL(ideal)}</td>
+            <td class="c-num" style="color:${hideRestricted ? 'inherit' : difColor}">
               ${hideRestricted ? '' : ((dif >= 0 ? '+' : '') + fmtBRL(dif))}
             </td>
-            <td>${hideRestricted ? '' : status}</td>
-            <td>${fmtBRL(vBruta)}</td>
-            <td>${fmtBRL(vLiq)}</td>
-            <td></td>
+            <td class="c-status">${hideRestricted ? '' : status}</td>
+            <td class="c-num">${fmtBRL(vBruta)}</td>
+            <td class="c-num">${fmtBRL(vLiq)}</td>
+            <td class="c-acts"></td>
           </tr>
         `);
-        
-      
-// 2) LINHAS-FILHAS (uma por despesa), inicialmente ocultas
-//    Mesma quantidade de colunas do cabeçalho (11 colunas).
-for (const it of itens){
+
+
+// 2) LINHAS-FILHAS (uma por despesa); só abertas de início se o grupo tem despesa fora do padrão
+//    Mesma quantidade de colunas do cabeçalho (9 colunas).
+itens.forEach((it, idx) => {
   const selo    = it.isHidden ? '<span class="pill-oculta" title="Esta despesa está oculta">ocultada</span>' : '';
   const infoTxt = `${esc(it.info||'')} — <small class="muted">${fmtDiaMes(it.data)}</small>${selo}`;
   const actions = makeDespActionsMenu({ id:it.id, isHidden:!!it.isHidden }, { canDelete });
+  const fp = fpItens[idx];
 
   linhas.push(`
-    <tr class="tr-det" data-parent="${groupId}" style="display:none">
-      <td></td>                 <!-- Gerente (vazio para alinhar) -->
-      <td></td>                 <!-- Rota    (vazio) -->
-      <td></td>                 <!-- Ficha   (vazio) -->
-      <td class="td-info-indent" style="text-align:left">${infoTxt}</td>  <!-- Informações + data -->
-      <td>${fmtBRL(it.valor)}</td>   <!-- Valor Ajuda -->
-      <td></td>                 <!-- Ideal -->
-      <td></td>                 <!-- Diferença -->
-      <td></td>                 <!-- Status -->
-      <td></td>                 <!-- Venda Bruta -->
-      <td></td>                 <!-- Venda Líquida -->
-      <td>${actions}</td>       <!-- Ações (menu Opções) -->
+    <tr class="tr-det${fp ? ' row-fora-padrao' : ''}" data-parent="${groupId}" style="display:${grupoFP ? 'table-row' : 'none'}"${fp ? ' title="Despesa fora do padrão (gerou alerta no Início)"' : ''}>
+      <td class="c-ficha"></td>
+      <td class="c-info td-info-indent">${infoTxt}</td>
+      <td class="c-num">${fmtBRL(it.valor)}</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td class="c-acts">${actions}</td>
     </tr>
   `);
-}
+});
       
     
         } 
@@ -421,6 +430,14 @@ for (const it of itens){
   
     tb.innerHTML = linhas.join('');
     console.log('[renderDespesas] ✅ Renderizadas', linhas.length, 'linhas de', list.length, 'despesas');
+
+    const avisoFP = document.getElementById('despAvisoForaPadrao');
+    if (avisoFP) {
+      avisoFP.textContent = qtdForaPadrao
+        ? `🔴 ${qtdForaPadrao} ${qtdForaPadrao === 1 ? 'despesa fora do padrão destacada' : 'despesas fora do padrão destacadas'} em vermelho (mesma regra do alerta do Início).`
+        : '';
+      avisoFP.classList.toggle('hidden', !qtdForaPadrao);
+    }
   
     // Aviso de ocultas (mesma lógica)
     atualizaAvisoOcultas();

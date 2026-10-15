@@ -150,15 +150,16 @@
           <div class="ag-card ag-card-pagamentos">
             <div class="ag-card-icon">💳</div>
             <div class="ag-card-info">
-              <span class="ag-card-label">Pagamentos</span>
+              <span class="ag-card-label">Pago ao gerente</span>
               <span class="ag-card-value" id="agTotalPagamentos">R$ 0,00</span>
+              <span class="ag-card-sub" id="agTotalRecebidosSub">Recebido: R$ 0,00</span>
             </div>
           </div>
-          
+
           <div class="ag-card ag-card-saldo">
             <div class="ag-card-icon">📊</div>
             <div class="ag-card-info">
-              <span class="ag-card-label">Saldo</span>
+              <span class="ag-card-label">Saldo (Recebido − Pago)</span>
               <span class="ag-card-value" id="agSaldo">R$ 0,00</span>
             </div>
           </div>
@@ -253,7 +254,7 @@
           <!-- PAGAMENTOS -->
           <div class="ag-secao card">
             <div class="ag-secao-header" data-toggle="agTabelaPagamentos">
-              <h3>💳 Pagamentos</h3>
+              <h3>💳 Recebimentos e Pagamentos</h3>
               <span class="ag-secao-badge" id="agBadgePagamentos">0</span>
               <span class="ag-secao-toggle">▼</span>
             </div>
@@ -271,25 +272,63 @@
                 <button id="agFiltrarPag" class="btn secondary" style="padding:6px 14px;font-size:13px;">Filtrar</button>
                 <button id="agLimparPag" class="btn secondary" style="padding:6px 14px;font-size:13px;background:#f3f4f6;color:#374151;">Limpar</button>
               </div>
-              <table class="ag-table">
-                <thead>
-                  <tr>
-                    <th>Data</th>
-                    <th>Tipo</th>
-                    <th>Descrição</th>
-                    <th>Valor</th>
-                  </tr>
-                </thead>
-                <tbody id="agBodyPagamentos">
-                  <tr><td colspan="4" class="ag-empty">Nenhum pagamento encontrado</td></tr>
-                </tbody>
-                <tfoot id="agFootPagamentos">
-                  <tr class="ag-total-row">
-                    <td colspan="3"><strong>Saldo</strong></td>
-                    <td class="valor"><strong id="agTotalPagamentosTabela">R$ 0,00</strong></td>
-                  </tr>
-                </tfoot>
-              </table>
+              <div id="agBlocoRecebimentos">
+                <div class="ag-sub-title ag-sub-rec">
+                  📥 Recebimentos <small>— o gerente entregou (entrou no caixa)</small>
+                  <span class="ag-secao-badge" id="agBadgeRecebimentos">0</span>
+                </div>
+                <table class="ag-table">
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th>Forma</th>
+                      <th>Descrição</th>
+                      <th>Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody id="agBodyRecebimentos">
+                    <tr><td colspan="4" class="ag-empty">Nenhum recebimento</td></tr>
+                  </tbody>
+                  <tfoot>
+                    <tr class="ag-total-row">
+                      <td colspan="3"><strong>Total recebido</strong></td>
+                      <td class="valor" style="color:#059669"><strong id="agTotalRecTabela">R$ 0,00</strong></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              <div id="agBlocoPagamentos">
+                <div class="ag-sub-title ag-sub-pag">
+                  📤 Pagamentos <small>— a empresa pagou ao gerente (saiu do caixa)</small>
+                  <span class="ag-secao-badge" id="agBadgeSoPagamentos">0</span>
+                </div>
+                <table class="ag-table">
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th>Tipo</th>
+                      <th>Forma</th>
+                      <th>Descrição</th>
+                      <th>Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody id="agBodyPagamentos">
+                    <tr><td colspan="5" class="ag-empty">Nenhum pagamento</td></tr>
+                  </tbody>
+                  <tfoot>
+                    <tr class="ag-total-row">
+                      <td colspan="4"><strong>Total pago</strong></td>
+                      <td class="valor despesa"><strong id="agTotalPagTabela">R$ 0,00</strong></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              <div class="ag-saldo-caixa">
+                <span>Saldo (Recebido − Pago)</span>
+                <strong id="agTotalPagamentosTabela">R$ 0,00</strong>
+              </div>
             </div>
           </div>
           
@@ -613,31 +652,49 @@
     });
   }
   
+  // Casa o texto de gerente gravado num lançamento/despesa com o gerente analisado.
+  // - Texto com número de rota ("034 ...") → exige a MESMA rota. Antes casava só
+  //   pelo primeiro nome e misturava "034 DIEGO" com "078 DIEGO SILVA".
+  // - Texto sem número → nome igual; nome parcial só se não for ambíguo com outro gerente.
+  function criarMatcherGerente(gerenteNome) {
+    const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+    const alvo = norm(gerenteNome);
+    const mAlvo = alvo.match(/^(\d+)\s*(.*)$/);
+    const rotaAlvo = mAlvo ? mAlvo[1].padStart(3, '0') : '';
+    const nomeAlvo = mAlvo ? mAlvo[2] : alvo;
+    const contem = (a, b) => a.length > 2 && b.length > 2 && (a.includes(b) || b.includes(a));
+    const outrosNomes = (window.gerentes || [])
+      .map(g => norm(g?.nome))
+      .filter(n => n && n !== alvo)
+      .map(n => n.replace(/^\d+\s*/, ''))
+      .filter(Boolean);
+
+    return function (texto) {
+      const t = norm(texto);
+      if (!t) return false;
+      const m = t.match(/^(\d+)\s*(.*)$/);
+      if (m) return !!rotaAlvo && m[1].padStart(3, '0') === rotaAlvo;
+      if (!nomeAlvo) return false;
+      if (t === nomeAlvo) return true;
+      if (!contem(t, nomeAlvo)) return false;
+      return !outrosNomes.some(n => contem(t, n));
+    };
+  }
+
   function buscarDespesas(gerenteNome, gerenteRota, de, ate) {
     const todasDespesas = window.despesas || [];
     const fichaRotaMap = new Map(
       (window.fichas || []).map(f => [String(f.ficha).trim(), String(f.area || '').trim()])
     );
-    
-    // Normaliza texto: remove acentos, lowercase, trim
-    const norm = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-    
-    const nomeNorm   = norm(gerenteNome);
-    // Nome sem número para match parcial (ex: "005 wewerton" → "wewerton")
-    const nomeSoNome = nomeNorm.replace(/^\d+\s*/, '');
-    const rotaPad    = (gerenteRota || '').padStart(3, '0');
-    
+
+    const rotaPad      = (gerenteRota || '').padStart(3, '0');
+    const gerenteUid   = String(currentGerente?.uid || currentGerente?.id || '');
+    const matchGerente = criarMatcherGerente(gerenteNome);
+
     const result = todasDespesas.filter(d => {
-      const dg = norm(d.gerenteNome);
-      
-      // Match pelo número da rota no início: "005 ..." 
-      const rotaMatch = rotaPad && dg.startsWith(rotaPad);
-      // Match pelo nome completo normalizado
-      const nomeMatch = nomeNorm && dg.includes(nomeNorm);
-      // Match só pelo nome sem número (cobre grafias diferentes)
-      const nomeParc  = nomeSoNome.length > 2 && dg.includes(nomeSoNome);
-      
-      if (!rotaMatch && !nomeMatch && !nomeParc) return false;
+      const idMatch = gerenteUid && d.gerenteId && String(d.gerenteId) === gerenteUid;
+      if (!idMatch && !matchGerente(d.gerenteNome)) return false;
       
       const dataRef = d.data || d.periodoFim || '';
       if (dataRef < de || dataRef > ate) return false;
@@ -660,22 +717,7 @@
     
     // ✅ BUSCA EM window.lanc (tabela lancamentos do Supabase)
     const lancamentos = window.lanc || [];
-    const normalize = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
-    
-    // Extrai só o nome sem o número para match por nome (ex: "041 Assis Boy" → "assis boy")
-    const nomeSemNumero = normalize(gerenteNome.replace(/^\d+\s*/, ''));
-    const rotaNorm = (gerenteRota || '').padStart(3, '0');
-    
-    function matchGerente(textoGerente) {
-      const t = normalize((textoGerente || '').replace(/[-_]/g, ' '));
-      if (!t) return false;
-      // Match pelo número da rota: "026 savio", "026", "026 sávio queiroz"
-      if (rotaNorm && t.startsWith(rotaNorm)) return true;
-      if (rotaNorm && t.includes(' ' + rotaNorm + ' ')) return true;
-      // Match pelo nome sem número: "sávio", "savio queiroz", "assis boy"
-      if (nomeSemNumero.length > 2 && normalize(t).includes(nomeSemNumero)) return true;
-      return false;
-    }
+    const matchGerente = criarMatcherGerente(gerenteNome);
     
     lancamentos.forEach(f => {
       if (!matchGerente(f.gerente)) return;
@@ -765,27 +807,16 @@
       return sum + comissao;
     }, 0);
     
-    // Total de pagamentos (separado por tipo)
-    let totalPago = 0;
-    let totalRecebido = 0;
-    
-    pagamentos.forEach(pg => {
-      const valor = Number(pg.valor) || 0;
-      if (pg.isPago || pg.tipo === 'Adiantamento' || pg.tipo === 'Pagamento') {
-        totalPago += valor;
-      } else if (pg.isRecebido || pg.tipo === 'Recebimento') {
-        totalRecebido += valor;
-      }
-    });
-    
+    const { totalPago, totalRecebido } = somarCaixa(pagamentos);
+
     // Resultado das prestações (Coletas - Despesas)
     const totalResultado = prestacoes.reduce((sum, p) => {
       const resultado = Number(p.resumo?.resultado) || 0;
       return sum + resultado;
     }, 0);
-    
-    const totalPagamentos = totalResultado; // Card Pagamentos = Resultado das prestações
-    
+
+    const totalPagamentos = totalPago;
+
     // Saldo = fluxo líquido de caixa (Recebido - Pago)
     const saldo = totalRecebido - totalPago;
     
@@ -807,76 +838,74 @@
   // RENDER CARDS
   // ============================================
   
-  // Recalcula cards respeitando filtros de data e tipo
-  function recalcularCards(filtroDe = '', filtroAte = '', filtroTipo = '') {
-    let pagamentosFiltrados = dadosAnalise.pagamentos || [];
-    if (filtroDe) pagamentosFiltrados = pagamentosFiltrados.filter(p => (p.data || '') >= filtroDe);
-    if (filtroAte) pagamentosFiltrados = pagamentosFiltrados.filter(p => (p.data || '') <= filtroAte);
-    if (filtroTipo === 'recebimento') {
-      pagamentosFiltrados = pagamentosFiltrados.filter(p => p.isRecebido || p.tipo === 'Recebimento');
-    } else if (filtroTipo === 'pagamento') {
-      pagamentosFiltrados = pagamentosFiltrados.filter(p => !p.isRecebido && (p.isPago || p.tipo === 'Adiantamento' || p.tipo === 'Pagamento'));
-    }
-    
-    let totalPago = 0;
-    let totalRecebido = 0;
-    pagamentosFiltrados.forEach(pg => {
-      const valor = Number(pg.valor) || 0;
-      if (pg.isPago || pg.tipo === 'Adiantamento' || pg.tipo === 'Pagamento') {
-        totalPago += valor;
-      } else if (pg.isRecebido || pg.tipo === 'Recebimento') {
-        totalRecebido += valor;
-      }
+  // Direção do movimento decidida pelo STATUS do lançamento (RECEBIDO = entrou,
+  // PAGO = saiu). O tipo ("Adiantamento", etc.) é só descritivo.
+  function ehSaida(pg) {
+    if (pg.isPago) return true;
+    if (pg.isRecebido) return false;
+    return pg.tipo === 'Adiantamento' || pg.tipo === 'Pagamento';
+  }
+
+  function somarCaixa(lista) {
+    let totalPago = 0, totalRecebido = 0;
+    (lista || []).forEach(pg => {
+      const v = Number(pg.valor) || 0;
+      if (ehSaida(pg)) totalPago += v; else totalRecebido += v;
     });
-    
-    const { totalColetas, totalDespesas, totalComissao, totalResultado } = dadosAnalise.resumo;
-    
-    // Card Pagamentos = Resultado das prestações (Coletas - Despesas)
-    document.getElementById('agTotalPagamentos').textContent = fmtBRL(totalResultado);
-    
-    // Saldo = fluxo líquido de caixa (Recebido - Pago)
+    return { totalPago, totalRecebido };
+  }
+
+  function filtrarPagamentos(filtroDe = '', filtroAte = '', filtroTipo = '') {
+    let lista = dadosAnalise.pagamentos || [];
+    if (filtroDe)  lista = lista.filter(p => (p.data || '') >= filtroDe);
+    if (filtroAte) lista = lista.filter(p => (p.data || '') <= filtroAte);
+    if (filtroTipo === 'recebimento') lista = lista.filter(p => !ehSaida(p));
+    else if (filtroTipo === 'pagamento') lista = lista.filter(p => ehSaida(p));
+    return lista;
+  }
+
+  function filtrosPagamentosAtuais() {
+    return {
+      de:   document.getElementById('agPagDe')?.value || '',
+      ate:  document.getElementById('agPagAte')?.value || '',
+      tipo: document.getElementById('agFiltroTipoPag')?.value || ''
+    };
+  }
+
+  function saldoTexto(saldo) {
+    if (saldo > 0) return fmtBRL(saldo) + ' (entrou mais)';
+    if (saldo < 0) return fmtBRL(Math.abs(saldo)) + ' (saiu mais)';
+    return 'R$ 0,00 (zerado)';
+  }
+
+  function atualizarCardsCaixa(lista) {
+    const { totalPago, totalRecebido } = somarCaixa(lista);
     const saldo = totalRecebido - totalPago;
-    
+
+    document.getElementById('agTotalPagamentos').textContent = fmtBRL(totalPago);
+    const sub = document.getElementById('agTotalRecebidosSub');
+    if (sub) sub.textContent = 'Recebido: ' + fmtBRL(totalRecebido);
+
     const saldoEl = document.getElementById('agSaldo');
     const saldoCard = saldoEl.closest('.ag-card');
-    if (saldo > 0) {
-      saldoCard.classList.remove('ag-card-negativo');
-      saldoCard.classList.add('ag-card-positivo');
-      saldoEl.textContent = fmtBRL(saldo) + ' (a receber)';
-    } else if (saldo < 0) {
-      saldoCard.classList.remove('ag-card-positivo');
-      saldoCard.classList.add('ag-card-negativo');
-      saldoEl.textContent = fmtBRL(Math.abs(saldo)) + ' (a pagar)';
-    } else {
-      saldoCard.classList.remove('ag-card-positivo', 'ag-card-negativo');
-      saldoEl.textContent = 'R$ 0,00 (zerado)';
-    }
+    saldoCard.classList.remove('ag-card-positivo', 'ag-card-negativo');
+    if (saldo > 0) saldoCard.classList.add('ag-card-positivo');
+    else if (saldo < 0) saldoCard.classList.add('ag-card-negativo');
+    saldoEl.textContent = saldoTexto(saldo);
   }
-  
+
+  // Recalcula cards respeitando filtros de data e tipo
+  function recalcularCards(filtroDe = '', filtroAte = '', filtroTipo = '') {
+    atualizarCardsCaixa(filtrarPagamentos(filtroDe, filtroAte, filtroTipo));
+  }
+
   function renderCards() {
-    const { totalColetas, totalDespesas, totalComissao, totalPagamentos, saldo } = dadosAnalise.resumo;
-    
+    const { totalColetas, totalDespesas, totalComissao } = dadosAnalise.resumo;
+
     document.getElementById('agTotalColetas').textContent = fmtBRL(totalColetas);
     document.getElementById('agTotalDespesas').textContent = fmtBRL(totalDespesas);
     document.getElementById('agTotalComissao').textContent = fmtBRL(totalComissao);
-    document.getElementById('agTotalPagamentos').textContent = fmtBRL(totalPagamentos);
-    
-    const saldoEl = document.getElementById('agSaldo');
-    
-    // Cor do saldo
-    const saldoCard = saldoEl.closest('.ag-card');
-    if (saldo > 0) {
-      saldoCard.classList.remove('ag-card-negativo');
-      saldoCard.classList.add('ag-card-positivo');
-      saldoEl.textContent = fmtBRL(saldo) + ' (a receber)';
-    } else if (saldo < 0) {
-      saldoCard.classList.remove('ag-card-positivo');
-      saldoCard.classList.add('ag-card-negativo');
-      saldoEl.textContent = fmtBRL(Math.abs(saldo)) + ' (a pagar)';
-    } else {
-      saldoCard.classList.remove('ag-card-positivo', 'ag-card-negativo');
-      saldoEl.textContent = 'R$ 0,00 (zerado)';
-    }
+    atualizarCardsCaixa(dadosAnalise.pagamentos);
   }
   
   // ============================================
@@ -1061,315 +1090,247 @@
   }
   
   function renderTabelaPagamentos(filtroDe = '', filtroAte = '', filtroTipo = '') {
-    const tbody = document.getElementById('agBodyPagamentos');
-    const badge = document.getElementById('agBadgePagamentos');
-    let { pagamentos } = dadosAnalise;
-    
-    // Aplica filtro de data
-    if (filtroDe) pagamentos = pagamentos.filter(p => (p.data || '') >= filtroDe);
-    if (filtroAte) pagamentos = pagamentos.filter(p => (p.data || '') <= filtroAte);
-    
-    // Aplica filtro de tipo
-    if (filtroTipo === 'recebimento') {
-      pagamentos = pagamentos.filter(p => p.isRecebido || p.tipo === 'Recebimento');
-    } else if (filtroTipo === 'pagamento') {
-      pagamentos = pagamentos.filter(p => !p.isRecebido && (p.isPago || p.tipo === 'Adiantamento' || p.tipo === 'Pagamento'));
-    }
-    
-    badge.textContent = pagamentos.length;
-    
-    if (pagamentos.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="ag-empty">Nenhum pagamento encontrado</td></tr>';
-      const saldoEl = document.getElementById('agTotalPagamentosTabela');
-      saldoEl.textContent = 'R$ 0,00';
-      saldoEl.style.color = '';
-      return;
-    }
-    
-    let html = '';
-    let somaPago = 0;
-    let somaRecebido = 0;
-    
-    pagamentos.forEach(pg => {
-      const valor = Number(pg.valor) || 0;
-      
-      // Determina classe visual
-      let tipoClass = 'tipo-outros';
-      if (pg.tipo === 'Adiantamento') {
-        tipoClass = 'tipo-adiant';
-        somaPago += valor;
-      } else if (pg.tipo === 'Recebimento' || pg.isRecebido) {
-        tipoClass = 'tipo-receb';
-        somaRecebido += valor;
-      } else if (pg.tipo === 'Pagamento' || pg.isPago) {
-        tipoClass = 'tipo-pago';
-        somaPago += valor;
-      } else {
-        // Outros - tenta inferir
-        if (pg.isPago) somaPago += valor;
-        else somaRecebido += valor;
-      }
-      
-      html += `
+    const lista = filtrarPagamentos(filtroDe, filtroAte, filtroTipo);
+    const recebimentos = lista.filter(p => !ehSaida(p));
+    const pagos        = lista.filter(p => ehSaida(p));
+    const { totalPago, totalRecebido } = somarCaixa(lista);
+
+    document.getElementById('agBadgePagamentos').textContent = lista.length;
+    document.getElementById('agBadgeRecebimentos').textContent = recebimentos.length;
+    document.getElementById('agBadgeSoPagamentos').textContent = pagos.length;
+
+    // Com filtro de tipo, mostra só o bloco correspondente
+    document.getElementById('agBlocoRecebimentos').style.display = filtroTipo === 'pagamento' ? 'none' : '';
+    document.getElementById('agBlocoPagamentos').style.display   = filtroTipo === 'recebimento' ? 'none' : '';
+
+    const forma = pg => pg.formaPgto ? esc(pg.formaPgto) : '-';
+
+    document.getElementById('agBodyRecebimentos').innerHTML = recebimentos.length
+      ? recebimentos.map(pg => `
         <tr>
           <td>${formatDateBR(pg.data)}</td>
-          <td><span class="${tipoClass}">${esc(pg.tipo)}</span></td>
-          <td>${esc(pg.descricao || '-')}${pg.formaPgto ? ` <small>(${pg.formaPgto})</small>` : ''}</td>
-          <td class="valor ${pg.isPago ? 'despesa' : ''}">${fmtBRL(valor)}</td>
-        </tr>
-      `;
-    });
-    
-    tbody.innerHTML = html;
-    
-    // Recebimentos, Pagamentos e Saldo
-    const saldo = somaRecebido - somaPago;
-    
+          <td>${forma(pg)}</td>
+          <td>${esc(pg.descricao || '-')}</td>
+          <td class="valor" style="color:#059669">${fmtBRL(pg.valor)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="4" class="ag-empty">Nenhum recebimento</td></tr>';
+
+    document.getElementById('agBodyPagamentos').innerHTML = pagos.length
+      ? pagos.map(pg => {
+          const tipoClass = pg.tipo === 'Adiantamento' ? 'tipo-adiant' : 'tipo-pago';
+          const tipoTxt   = pg.tipo === 'Adiantamento' ? 'Adiantamento' : 'Pagamento';
+          return `
+        <tr>
+          <td>${formatDateBR(pg.data)}</td>
+          <td><span class="${tipoClass}">${tipoTxt}</span></td>
+          <td>${forma(pg)}</td>
+          <td>${esc(pg.descricao || '-')}</td>
+          <td class="valor despesa">${fmtBRL(pg.valor)}</td>
+        </tr>`;
+        }).join('')
+      : '<tr><td colspan="5" class="ag-empty">Nenhum pagamento</td></tr>';
+
+    document.getElementById('agTotalRecTabela').textContent = fmtBRL(totalRecebido);
+    document.getElementById('agTotalPagTabela').textContent = fmtBRL(totalPago);
+
+    const saldo = totalRecebido - totalPago;
     const saldoEl = document.getElementById('agTotalPagamentosTabela');
-    saldoEl.textContent = fmtBRL(Math.abs(saldo));
-    saldoEl.style.color = saldo >= 0 ? '#10b981' : '#ef4444';
-    if (saldo > 0)       saldoEl.textContent += ' (a favor)';
-    else if (saldo < 0)  saldoEl.textContent += ' (a pagar)';
-    
-    // Atualiza também o card de pagamentos na barra de resumo
-    document.getElementById('agTotalPagamentos').textContent = fmtBRL(somaPago);
+    saldoEl.textContent = saldoTexto(saldo);
+    saldoEl.style.color = saldo > 0 ? '#059669' : saldo < 0 ? '#dc2626' : '';
   }
   
   // ============================================
   // EXPORTAR PDF
   // ============================================
   
-  async function exportarPDF() {
+  function exportarPDF() {
     if (!currentGerente) {
       alert('Nenhuma análise carregada');
       return;
     }
-    
-    console.log('[Análise Gerente] 📄 Exportando PDF...');
-    
-    // Cria canvas para o PDF
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    
-    const WIDTH = 1200;
-    // Altura dinâmica: base + prestações + pagamentos
-    const prestCount = Math.min(dadosAnalise.prestacoes.length, 20);
-    const pagCount = Math.min((dadosAnalise.pagamentos || []).length, 20);
-    const HEIGHT = 500 + (prestCount * 28) + 120 + (pagCount * 28) + 100;
-    canvas.width = WIDTH;
-    canvas.height = HEIGHT;
-    
-    // Fundo
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, WIDTH, HEIGHT);
-    
-    let y = 40;
-    
-    // Título
-    ctx.fillStyle = '#1f2937';
-    ctx.font = 'bold 28px Arial';
-    ctx.fillText(`Análise - ${currentGerente.numero || ''} ${currentGerente.nome || ''}`, 40, y);
-    
-    y += 35;
-    ctx.font = '16px Arial';
-    ctx.fillStyle = '#6b7280';
-    ctx.fillText(`Período: ${formatDateBR(currentPeriodo.de)} a ${formatDateBR(currentPeriodo.ate)}`, 40, y);
-    
-    y += 50;
-    
-    // Cards resumo
-    const { resumo } = dadosAnalise;
-    const cards = [
-      { label: 'Total Coletas', value: fmtBRL(resumo.totalColetas), color: '#10b981' },
-      { label: 'Total Despesas', value: fmtBRL(resumo.totalDespesas), color: '#ef4444' },
-      { label: 'Comissões', value: fmtBRL(resumo.totalComissao), color: '#f59e0b' },
-      { label: 'Pagamentos', value: fmtBRL(resumo.totalPagamentos), color: '#3b82f6' },
-      { label: 'Saldo', value: fmtBRL(Math.abs(resumo.saldo)) + (resumo.saldo > 0 ? ' (a receber)' : resumo.saldo < 0 ? ' (a pagar)' : ' (zerado)'), color: resumo.saldo >= 0 ? '#10b981' : '#ef4444' }
-    ];
-    
-    let cardX = 40;
-    cards.forEach(card => {
-      // Box
-      ctx.fillStyle = '#f3f4f6';
-      ctx.fillRect(cardX, y, 210, 70);
-      
-      // Label
-      ctx.fillStyle = '#6b7280';
-      ctx.font = '14px Arial';
-      ctx.fillText(card.label, cardX + 15, y + 25);
-      
-      // Value
-      ctx.fillStyle = card.color;
-      ctx.font = 'bold 20px Arial';
-      ctx.fillText(card.value, cardX + 15, y + 55);
-      
-      cardX += 225;
-    });
-    
-    y += 100;
-    
-    // ========== SEÇÃO PRESTAÇÕES ==========
-    ctx.fillStyle = '#1f2937';
-    ctx.font = 'bold 20px Arial';
-    ctx.fillText('📋 Prestações / Coletas', 40, y);
-    y += 30;
-    
-    // Header tabela prestações
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(40, y, WIDTH - 80, 28);
-    ctx.fillStyle = '#facc15';
-    ctx.font = 'bold 12px Arial';
-    ctx.fillText('PERÍODO', 50, y + 18);
-    ctx.fillText('COLETAS', 250, y + 18);
-    ctx.fillText('DESPESAS', 400, y + 18);
-    ctx.fillText('COMISSÃO', 550, y + 18);
-    ctx.fillText('RESULTADO', 700, y + 18);
-    ctx.fillText('STATUS', 870, y + 18);
-    y += 32;
-    
-    ctx.font = '12px Arial';
-    let totalColPDF = 0, totalDesPDF = 0, totalComPDF = 0, totalResPDF = 0;
-    
-    dadosAnalise.prestacoes.slice(0, 20).forEach((p, i) => {
-      const periodo = `${formatDateBR(p.ini || p.periodoIni)} a ${formatDateBR(p.fim || p.periodoFim)}`;
-      const coletas = Number(p.resumo?.coletas) || 0;
-      const despesas = Number(p.resumo?.despesas) || 0;
-      const comissao = Number(p.resumo?.comissaoVal) || 0;
+
+    const { prestacoes, despesas, resumo } = dadosAnalise;
+    const f = filtrosPagamentosAtuais();
+    const listaCaixa   = filtrarPagamentos(f.de, f.ate, f.tipo);
+    const recebimentos = listaCaixa.filter(p => !ehSaida(p));
+    const pagos        = listaCaixa.filter(p => ehSaida(p));
+    const { totalPago, totalRecebido } = somarCaixa(listaCaixa);
+    const saldoCaixa = totalRecebido - totalPago;
+
+    const filtrosTxt = [];
+    if (f.de || f.ate) filtrosTxt.push(`Recebimentos/Pagamentos de ${f.de ? formatDateBR(f.de) : '…'} a ${f.ate ? formatDateBR(f.ate) : '…'}`);
+    if (f.tipo === 'recebimento') filtrosTxt.push('Só recebimentos');
+    if (f.tipo === 'pagamento')   filtrosTxt.push('Só pagamentos');
+
+    let tCol = 0, tDes = 0, tCom = 0, tRes = 0;
+    const linhasPrest = prestacoes.map(p => {
+      const coletas   = Number(p.resumo?.coletas) || 0;
+      const desp      = Number(p.resumo?.despesas) || 0;
+      const comissao  = Number(p.resumo?.comissaoVal) || Number(p.resumo?.comis1 || 0) + Number(p.resumo?.comis2 || 0);
       const resultado = Number(p.resumo?.resultado) || 0;
-      const restam = Number(p.resumo?.restam) || 0;
-      
-      totalColPDF += coletas;
-      totalDesPDF += despesas;
-      totalComPDF += comissao;
-      totalResPDF += resultado;
-      
-      // Zebra
-      if (i % 2 === 0) {
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(40, y - 4, WIDTH - 80, 26);
-      }
-      
-      ctx.fillStyle = '#374151';
-      ctx.fillText(periodo, 50, y + 15);
-      ctx.fillStyle = coletas < 0 ? '#ef4444' : '#374151';
-      ctx.fillText(fmtBRL(coletas), 250, y + 15);
-      ctx.fillStyle = '#ef4444';
-      ctx.fillText(fmtBRL(despesas), 400, y + 15);
-      ctx.fillStyle = '#374151';
-      ctx.fillText(fmtBRL(comissao), 550, y + 15);
-      ctx.fillStyle = resultado < 0 ? '#ef4444' : '#10b981';
-      ctx.fillText(fmtBRL(resultado), 700, y + 15);
-      ctx.fillStyle = restam > 0 ? '#f59e0b' : '#10b981';
-      ctx.fillText(restam > 0 ? `Restam ${fmtBRL(restam)}` : 'Quitada', 870, y + 15);
-      
-      y += 26;
-    });
-    
-    // Rodapé totais prestações
-    ctx.fillStyle = '#e2e8f0';
-    ctx.fillRect(40, y, WIDTH - 80, 28);
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 13px Arial';
-    ctx.fillText('TOTAL', 50, y + 18);
-    ctx.fillText(fmtBRL(totalColPDF), 250, y + 18);
-    ctx.fillStyle = '#ef4444';
-    ctx.fillText(fmtBRL(totalDesPDF), 400, y + 18);
-    ctx.fillStyle = '#0f172a';
-    ctx.fillText(fmtBRL(totalComPDF), 550, y + 18);
-    ctx.fillStyle = totalResPDF < 0 ? '#ef4444' : '#10b981';
-    ctx.fillText(fmtBRL(totalResPDF), 700, y + 18);
-    y += 50;
-    
-    // ========== SEÇÃO PAGAMENTOS ==========
-    const pagamentos = dadosAnalise.pagamentos || [];
-    
-    ctx.fillStyle = '#1f2937';
-    ctx.font = 'bold 20px Arial';
-    ctx.fillText(`💳 Pagamentos (${pagamentos.length})`, 40, y);
-    y += 30;
-    
-    // Header tabela pagamentos
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(40, y, WIDTH - 80, 28);
-    ctx.fillStyle = '#facc15';
-    ctx.font = 'bold 12px Arial';
-    ctx.fillText('DATA', 50, y + 18);
-    ctx.fillText('TIPO', 220, y + 18);
-    ctx.fillText('DESCRIÇÃO', 400, y + 18);
-    ctx.fillText('VALOR', 900, y + 18);
-    y += 32;
-    
-    let somaPagoPDF = 0;
-    let somaRecebidoPDF = 0;
-    
-    ctx.font = '12px Arial';
-    pagamentos.slice(0, 20).forEach((pg, i) => {
-      const valor = Number(pg.valor) || 0;
-      const isPago = pg.isPago || pg.tipo === 'Adiantamento' || pg.tipo === 'Pagamento';
-      const isRecebido = pg.isRecebido || pg.tipo === 'Recebimento';
-      
-      if (isPago) somaPagoPDF += valor;
-      if (isRecebido) somaRecebidoPDF += valor;
-      
-      // Zebra
-      if (i % 2 === 0) {
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(40, y - 4, WIDTH - 80, 26);
-      }
-      
-      // Data
-      ctx.fillStyle = '#374151';
-      ctx.fillText(formatDateBR(pg.data), 50, y + 15);
-      
-      // Tipo (colorido)
-      if (pg.tipo === 'Adiantamento') ctx.fillStyle = '#d97706';
-      else if (pg.tipo === 'Recebimento') ctx.fillStyle = '#10b981';
-      else if (pg.tipo === 'Pagamento') ctx.fillStyle = '#ef4444';
-      else ctx.fillStyle = '#6b7280';
-      ctx.font = 'bold 12px Arial';
-      ctx.fillText(pg.tipo || '-', 220, y + 15);
-      
-      // Descrição
-      ctx.fillStyle = '#374151';
-      ctx.font = '12px Arial';
-      const desc = (pg.descricao || '-') + (pg.formaPgto ? ` (${pg.formaPgto})` : '');
-      ctx.fillText(desc.substring(0, 60), 400, y + 15);
-      
-      // Valor
-      ctx.fillStyle = isPago ? '#ef4444' : '#10b981';
-      ctx.font = 'bold 12px Arial';
-      ctx.fillText(fmtBRL(valor), 900, y + 15);
-      
-      ctx.font = '12px Arial';
-      y += 26;
-    });
-    
-    // Rodapé totais pagamentos
-    const saldoPag = somaRecebidoPDF - somaPagoPDF;
-    
-    ctx.fillStyle = '#e2e8f0';
-    ctx.fillRect(40, y, WIDTH - 80, 60);
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 13px Arial';
-    
-    ctx.fillText(`Total Pago: ${fmtBRL(somaPagoPDF)}`, 50, y + 18);
-    ctx.fillStyle = '#10b981';
-    ctx.fillText(`Total Recebido: ${fmtBRL(somaRecebidoPDF)}`, 350, y + 18);
-    
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 15px Arial';
-    ctx.fillText('Saldo:', 650, y + 40);
-    ctx.fillStyle = saldoPag >= 0 ? '#10b981' : '#ef4444';
-    const saldoLabel = saldoPag > 0 ? ' (a receber)' : saldoPag < 0 ? ' (a pagar)' : ' (zerado)';
-    ctx.fillText(fmtBRL(Math.abs(saldoPag)) + saldoLabel, 720, y + 40);
-    
-    // Download
-    const link = document.createElement('a');
-    link.download = `analise_${currentGerente.numero}_${currentPeriodo.de}_${currentPeriodo.ate}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-    
-    console.log('[Análise Gerente] ✅ PDF exportado');
+      const restam    = Number(p.resumo?.restam) || 0;
+      tCol += coletas; tDes += desp; tCom += comissao; tRes += resultado;
+      return `<tr>
+        <td>${esc(formatDateBR(p.ini || p.periodoIni))} a ${esc(formatDateBR(p.fim || p.periodoFim))}</td>
+        <td class="num">${fmtBRL(coletas)}</td>
+        <td class="num neg">${fmtBRL(desp)}</td>
+        <td class="num">${fmtBRL(comissao)}</td>
+        <td class="num ${resultado < 0 ? 'neg' : 'pos'}">${fmtBRL(resultado)}</td>
+        <td>${restam > 0 ? 'Restam ' + fmtBRL(restam) : 'Quitada'}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" class="vazio">Nenhuma prestação no período.</td></tr>';
+
+    const linhasDesp = despesas.map(d => `<tr>
+        <td class="data">${esc(formatDateBR(d.data))}</td>
+        <td>${esc(d.rota && d.rota.trim() ? d.rota : '-')}</td>
+        <td>${esc(d.ficha || '-')}</td>
+        <td>${esc(d.info || d.descricao || '-')}</td>
+        <td class="num neg">${fmtBRL(d.valor)}</td>
+      </tr>`).join('') || '<tr><td colspan="5" class="vazio">Nenhuma despesa no período.</td></tr>';
+
+    const linhasRec = recebimentos.map(pg => `<tr>
+        <td class="data">${esc(formatDateBR(pg.data))}</td>
+        <td>${esc(pg.formaPgto || '-')}</td>
+        <td>${esc(pg.descricao || '-')}</td>
+        <td class="num pos">${fmtBRL(pg.valor)}</td>
+      </tr>`).join('') || '<tr><td colspan="4" class="vazio">Nenhum recebimento.</td></tr>';
+
+    const linhasPag = pagos.map(pg => `<tr>
+        <td class="data">${esc(formatDateBR(pg.data))}</td>
+        <td>${pg.tipo === 'Adiantamento' ? 'Adiantamento' : 'Pagamento'}</td>
+        <td>${esc(pg.formaPgto || '-')}</td>
+        <td>${esc(pg.descricao || '-')}</td>
+        <td class="num neg">${fmtBRL(pg.valor)}</td>
+      </tr>`).join('') || '<tr><td colspan="5" class="vazio">Nenhum pagamento.</td></tr>';
+
+    const titulo = `${esc(currentGerente.nome || '')}`;
+    const periodo = `${esc(formatDateBR(currentPeriodo.de))} a ${esc(formatDateBR(currentPeriodo.ate))}`;
+    const empresa = esc(window.getCompany?.() || '');
+    const emitido = new Date().toLocaleString('pt-BR');
+
+    const html = `<!doctype html><html><head><meta charset="utf-8">
+<title>Análise - ${titulo}</title>
+<style>
+  @page { size: A4 portrait; margin: 8mm 10mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; color: #111; margin: 0; font-size: 11px; }
+  .header { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #111; padding-bottom:6px; margin-bottom:8px; }
+  .header-title { font-size:17px; font-weight:700; }
+  .header-sub { font-size:10px; color:#555; margin-top:2px; }
+  .header-right { font-size:10px; color:#666; text-align:right; }
+  .cards { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-bottom:10px; }
+  .card { border:1px solid #e5e7eb; border-left:4px solid #999; border-radius:6px; padding:6px 8px; }
+  .card .lbl { font-size:9px; text-transform:uppercase; color:#555; letter-spacing:.3px; }
+  .card .val { font-size:13px; font-weight:700; margin-top:2px; }
+  .card .sub { font-size:9px; color:#555; margin-top:1px; }
+  .c-col { border-left-color:#10b981; } .c-des { border-left-color:#ef4444; } .c-com { border-left-color:#f59e0b; }
+  .c-pag { border-left-color:#3b82f6; } .c-sal { border-left-color:#8b5cf6; }
+  .secao { margin-bottom:10px; }
+  .secao h3 { font-size:12px; margin:0 0 3px; padding:5px 8px; color:#fff; border-radius:4px 4px 0 0;
+              print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+  .h-prest h3 { background:#0f172a; } .h-desp h3 { background:#b45309; }
+  .h-rec h3 { background:#16a34a; } .h-pag h3 { background:#dc2626; }
+  .secao h3 small { font-weight:400; opacity:.9; margin-left:6px; }
+  thead { display:table-header-group; }
+  tr { page-break-inside:avoid; }
+  table { width:100%; border-collapse:collapse; font-size:10px; }
+  th, td { padding:4px 6px; border-bottom:1px solid #e5e7eb; text-align:left; }
+  th { background:#f3f4f6; text-transform:uppercase; font-size:9px; letter-spacing:.3px; }
+  td.num { text-align:right; font-family:ui-monospace, monospace; font-weight:600; white-space:nowrap; }
+  td.data { white-space:nowrap; }
+  .pos { color:#047857; } .neg { color:#b91c1c; }
+  tfoot td { background:#f9fafb; font-weight:700; border-top:2px solid #333; border-bottom:none; }
+  .vazio { text-align:center; color:#6b7280; font-style:italic; padding:10px !important; }
+  .saldo { display:flex; justify-content:space-between; align-items:center; margin-top:4px; padding:8px 12px;
+           border-radius:6px; background:${saldoCaixa >= 0 ? '#ecfdf5' : '#fef2f2'};
+           border-left:4px solid ${saldoCaixa >= 0 ? '#059669' : '#dc2626'};
+           print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+  .saldo .lbl { font-size:10px; text-transform:uppercase; color:#555; }
+  .saldo .val { font-size:15px; font-weight:700; color:${saldoCaixa >= 0 ? '#047857' : '#b91c1c'}; }
+  .print-btn { position:fixed; top:16px; right:16px; padding:10px 18px; background:#2563eb; color:#fff; border:none;
+               border-radius:8px; font-weight:700; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,.15); }
+  @media print { .print-btn { display:none; } }
+</style></head><body>
+  <button class="print-btn" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+
+  <div class="header">
+    <div>
+      <div class="header-title">📊 Análise — ${titulo}</div>
+      <div class="header-sub">Período: <strong>${periodo}</strong>${empresa ? ' • ' + empresa : ''}${filtrosTxt.length ? ' • ' + esc(filtrosTxt.join(' • ')) : ''}</div>
+    </div>
+    <div class="header-right">Emitido em: <strong>${esc(emitido)}</strong></div>
+  </div>
+
+  <div class="cards">
+    <div class="card c-col"><div class="lbl">Total Coletas</div><div class="val">${fmtBRL(resumo.totalColetas)}</div></div>
+    <div class="card c-des"><div class="lbl">Total Despesas</div><div class="val">${fmtBRL(resumo.totalDespesas)}</div></div>
+    <div class="card c-com"><div class="lbl">Comissões</div><div class="val">${fmtBRL(resumo.totalComissao)}</div></div>
+    <div class="card c-pag"><div class="lbl">Pago ao gerente</div><div class="val">${fmtBRL(totalPago)}</div><div class="sub">Recebido: ${fmtBRL(totalRecebido)}</div></div>
+    <div class="card c-sal"><div class="lbl">Saldo (Receb. − Pago)</div><div class="val">${saldoTexto(saldoCaixa)}</div></div>
+  </div>
+
+  <div class="secao h-prest">
+    <h3>📋 Prestações / Coletas <small>(${prestacoes.length})</small></h3>
+    <table>
+      <thead><tr><th>Período</th><th style="text-align:right">Coletas</th><th style="text-align:right">Despesas</th><th style="text-align:right">Comissão</th><th style="text-align:right">Resultado</th><th>Status</th></tr></thead>
+      <tbody>${linhasPrest}</tbody>
+      ${prestacoes.length ? `<tfoot><tr><td>TOTAL</td><td class="num">${fmtBRL(tCol)}</td><td class="num neg">${fmtBRL(tDes)}</td><td class="num">${fmtBRL(tCom)}</td><td class="num ${tRes < 0 ? 'neg' : 'pos'}">${fmtBRL(tRes)}</td><td></td></tr></tfoot>` : ''}
+    </table>
+  </div>
+
+  <div class="secao h-desp">
+    <h3>💸 Despesas Detalhadas <small>(${despesas.length} — ${fmtBRL(resumo.totalDespesas)})</small></h3>
+    <table>
+      <thead><tr><th>Data</th><th>Rota</th><th>Ficha</th><th>Descrição</th><th style="text-align:right">Valor</th></tr></thead>
+      <tbody>${linhasDesp}</tbody>
+      ${despesas.length ? `<tfoot><tr><td colspan="4" style="text-align:right">TOTAL DESPESAS:</td><td class="num neg">${fmtBRL(resumo.totalDespesas)}</td></tr></tfoot>` : ''}
+    </table>
+  </div>
+
+  ${f.tipo === 'pagamento' ? '' : `
+  <div class="secao h-rec">
+    <h3>📥 Recebimentos — o gerente entregou <small>(${recebimentos.length} — ${fmtBRL(totalRecebido)})</small></h3>
+    <table>
+      <thead><tr><th>Data</th><th>Forma</th><th>Descrição</th><th style="text-align:right">Valor</th></tr></thead>
+      <tbody>${linhasRec}</tbody>
+      ${recebimentos.length ? `<tfoot><tr><td colspan="3" style="text-align:right">TOTAL RECEBIDO:</td><td class="num pos">${fmtBRL(totalRecebido)}</td></tr></tfoot>` : ''}
+    </table>
+  </div>`}
+
+  ${f.tipo === 'recebimento' ? '' : `
+  <div class="secao h-pag">
+    <h3>📤 Pagamentos — a empresa pagou ao gerente <small>(${pagos.length} — ${fmtBRL(totalPago)})</small></h3>
+    <table>
+      <thead><tr><th>Data</th><th>Tipo</th><th>Forma</th><th>Descrição</th><th style="text-align:right">Valor</th></tr></thead>
+      <tbody>${linhasPag}</tbody>
+      ${pagos.length ? `<tfoot><tr><td colspan="4" style="text-align:right">TOTAL PAGO:</td><td class="num neg">${fmtBRL(totalPago)}</td></tr></tfoot>` : ''}
+    </table>
+  </div>`}
+
+  <div class="saldo">
+    <span class="lbl">Saldo (Recebido ${fmtBRL(totalRecebido)} − Pago ${fmtBRL(totalPago)})</span>
+    <span class="val">${saldoTexto(saldoCaixa)}</span>
+  </div>
+
+  <script>setTimeout(() => window.print(), 300);<\/script>
+</body></html>`;
+
+    let w = null;
+    try { w = window.open('', '_blank'); } catch (_) {}
+    if (w && w.document) {
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+      try { w.focus(); } catch (_) {}
+      return;
+    }
+    // Popup bloqueado: abre via Blob em nova aba
+    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
   
   // ============================================
@@ -1403,8 +1364,9 @@
       ['Total Coletas', dadosAnalise.resumo.totalColetas],
       ['Total Despesas', dadosAnalise.resumo.totalDespesas],
       ['Comissões', dadosAnalise.resumo.totalComissao],
-      ['Pagamentos', dadosAnalise.resumo.totalPagamentos],
-      ['Saldo', dadosAnalise.resumo.saldo]
+      ['Recebido do gerente', dadosAnalise.resumo.totalRecebido],
+      ['Pago ao gerente', dadosAnalise.resumo.totalPago],
+      ['Saldo (Recebido - Pago)', dadosAnalise.resumo.saldo]
     ];
     const wsResumo = XLSX.utils.aoa_to_sheet(resumoData);
     XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo');
@@ -1444,12 +1406,14 @@
     
     // Aba Pagamentos
     const pagData = [
-      ['Data', 'Tipo', 'Descrição', 'Valor']
+      ['Data', 'Entrada/Saída', 'Tipo', 'Forma', 'Descrição', 'Valor']
     ];
     dadosAnalise.pagamentos.forEach(pg => {
       pagData.push([
         pg.data || '',
+        ehSaida(pg) ? 'Saída (pago)' : 'Entrada (recebido)',
         pg.tipo || '',
+        pg.formaPgto || '',
         pg.descricao || '',
         Number(pg.valor) || 0
       ]);
@@ -1567,6 +1531,40 @@
         color: #1f2937;
       }
       
+      .ag-card-sub {
+        font-size: 12px;
+        color: #059669;
+        font-weight: 600;
+        margin-top: 2px;
+      }
+
+      /* Recebimentos / Pagamentos */
+      .ag-sub-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 15px;
+        font-weight: 700;
+        font-size: 14px;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      .ag-sub-title small { font-weight: 400; color: #6b7280; flex: 1; }
+      .ag-sub-rec { background: #ecfdf5; color: #065f46; border-left: 4px solid #10b981; }
+      .ag-sub-pag { background: #fef2f2; color: #991b1b; border-left: 4px solid #ef4444; margin-top: 14px; }
+      .ag-sub-rec .ag-secao-badge { background: #10b981; }
+      .ag-sub-pag .ag-secao-badge { background: #ef4444; }
+      .ag-saldo-caixa {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 14px 15px 15px;
+        padding: 12px 15px;
+        border-radius: 8px;
+        background: #f3f4f6;
+        font-weight: 600;
+      }
+      .ag-saldo-caixa strong { font-size: 16px; font-family: 'Courier New', monospace; }
+
       /* Export */
       .ag-export {
         display: flex;

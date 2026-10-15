@@ -1578,23 +1578,22 @@ function pgDivAddFromForm(){
         </div>
       <!-- Aviso de despesas ocultadas -->
 <p id="despAvisoOcultas" class="hidden desp-aviso"></p>
+<p id="despAvisoForaPadrao" class="hidden desp-aviso-fp"></p>
 
         <!-- tabela com barra inferior -->
         <div class="scroll-main" id="despScrollMain">
           <table id="tblDespesas">
             <thead>
               <tr>
-                <th>Gerente</th>
-                <th>Rota</th>
-                <th>Ficha</th>
-                <th>Informações</th>
-                <th>Valor Ajuda</th>
-                <th>Ideal</th>
-                <th>Diferença</th>
-                <th>Status</th>
-                <th>Venda Bruta</th>
-                <th>Venda Líquida</th>
-                <th>Ações</th>
+                <th class="c-ficha">Ficha</th>
+                <th class="c-info">Informações</th>
+                <th class="c-num">Valor Ajuda</th>
+                <th class="c-num">Ideal</th>
+                <th class="c-num">Diferença</th>
+                <th class="c-status">Status</th>
+                <th class="c-num">Venda Bruta</th>
+                <th class="c-num">Venda Líquida</th>
+                <th class="c-acts">Ações</th>
               </tr>
             </thead>
             <tbody id="tbodyDespesas"></tbody>

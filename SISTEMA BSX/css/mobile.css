@@ -475,8 +475,8 @@ button, .btn {
     padding: 10px 8px !important;
   }
 
-  #tbodyDespesas th:nth-child(5),
-  #tbodyDespesas td:nth-child(5) {
+  #tbodyDespesas th:nth-child(2),
+  #tbodyDespesas td:nth-child(2) {
     white-space: normal;
   }
 

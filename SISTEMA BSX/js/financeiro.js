@@ -1304,29 +1304,34 @@ window.__setLanc = function(novo) {
             continue;
           }
 
-          // ✅ CORREÇÃO: Verificação extra no Supabase antes de criar
-          const jaConfirmado = await PendenciasAPI.isConfirmed(uids.stable) || 
-                               await PendenciasAPI.isConfirmed(uids.legacy);
-          if (jaConfirmado) {
-            console.log('⚠️ Pendência já confirmada no Supabase, ignorando:', uids.stable);
-            confirmadosFromUID.add(uids.stable);
-            continue;
+          // Falha em um pagamento não pode interromper a sincronização dos demais
+          try {
+            // ✅ CORREÇÃO: Verificação extra no Supabase antes de criar
+            const jaConfirmado = await PendenciasAPI.isConfirmed(uids.stable) ||
+                                 await PendenciasAPI.isConfirmed(uids.legacy);
+            if (jaConfirmado) {
+              console.log('⚠️ Pendência já confirmada no Supabase, ignorando:', uids.stable);
+              confirmadosFromUID.add(uids.stable);
+              continue;
+            }
+
+            await PendenciasAPI.create({
+              uid: uids.stable, altUID: uids.legacy,
+              prestId: p.id, gerenteId: p.gerenteId, gerenteNome,
+              data: pg.data || p.fim || p.ini || '',
+              valorOriginal: Number(pg.valor) || 0,
+              valorConfirm: Number(pg.valor) || 0,
+              info: 'Prest. ' + (p.ini || '').slice(5).split('-').reverse().join('/') +
+                    '–' + (p.fim || '').slice(5).split('-').reverse().join('/'),
+              forma: pg.forma || pg.tipo || 'PRESTAÇÃO',
+              tipoCaixa: 'RECEBIDO'
+            });
+
+            pendUIDs.add(uids.stable);
+            novos++;
+          } catch (e) {
+            console.error('[syncPendenciasFromPrest] Falha ao criar pendência:', uids.stable, e);
           }
-
-          await PendenciasAPI.create({
-            uid: uids.stable, altUID: uids.legacy,
-            prestId: p.id, gerenteId: p.gerenteId, gerenteNome,
-            data: pg.data || p.fim || p.ini || '',
-            valorOriginal: Number(pg.valor) || 0,
-            valorConfirm: Number(pg.valor) || 0,
-            info: 'Prest. ' + (p.ini || '').slice(5).split('-').reverse().join('/') +
-                  '–' + (p.fim || '').slice(5).split('-').reverse().join('/'),
-            forma: pg.forma || pg.tipo || 'PRESTAÇÃO',
-            tipoCaixa: 'RECEBIDO'
-          });
-
-          pendUIDs.add(uids.stable);
-          novos++;
         }
       }
 

@@ -2712,6 +2712,13 @@ function atualizarEstilosMonetarios() {
   }
 }
 
+async function __pendenciaExisteNoBanco(uid) {
+  const client = window.SupabaseAPI?.client;
+  if (!client) return false;
+  const { data } = await client.from('pendencias').select('uid').eq('uid', uid).maybeSingle();
+  return !!data;
+}
+
 // ===== CRIAR PENDÊNCIA DE PAGAMENTO (quando empresa deve ao gerente) =====
 async function criarPendenciaPagamento(prestacao) {
   try {
@@ -2784,23 +2791,25 @@ async function criarPendenciaPagamento(prestacao) {
 for (const pag of pagamentosDivida) {
   const valorPagamento = Number(pag.valor) || 0;
   if (valorPagamento <= 0) continue;  // ✅ era 'return'
-  
+
   // UID único para este pagamento
   const uid = `DIVPAG:${prestacao.id}:${pag.id}:${valorPagamento}`;
-  
-  // ✅ VERIFICA SE JÁ FOI CONFIRMADO
-  if (confirmadosUIDs.has(uid)) {
+
+  // Falha em um pagamento não pode impedir a criação dos demais da mesma prestação
+  try {
+
+  // ✅ VERIFICA SE JÁ FOI CONFIRMADO (memória e trava no banco)
+  if (confirmadosUIDs.has(uid) || await window.PendenciasAPI?.isConfirmed?.(uid)) {
     console.log('⚠️ Pagamento já confirmado, não recria:', uid);
-    continue;  // ✅ era 'return'
+    continue;
   }
-  
-  // Verifica se já existe pendência
-  const jaExiste = pendencias.some(p => p.uid === uid);
-  if (jaExiste) {
-    console.log('⚠️ Pendência já existe para este pagamento');
-    continue;  // ✅ era 'return'
+
+  // Verifica se já existe pendência (cache ou banco, qualquer empresa)
+  if (pendencias.some(p => p.uid === uid) || await __pendenciaExisteNoBanco(uid)) {
+    console.log('⚠️ Pendência já existe para este pagamento:', uid);
+    continue;
   }
-      
+
       // Cria pendência
 const novaPendencia = {
   id: (crypto?.randomUUID ? crypto.randomUUID() : 'pend_' + Date.now() + '_' + Math.random()),
@@ -2841,6 +2850,9 @@ if (window.PendenciasAPI?.create) {
 criadas++;
 
 console.log('✅ Pendência de dívida criada:', valorPagamento);
+  } catch (e) {
+    console.error('[criarPendenciaPagamento] Falha ao criar pendência:', uid, e);
+  }
 }
 
 if (criadas > 0) {

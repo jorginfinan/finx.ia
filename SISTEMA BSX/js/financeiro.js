@@ -374,9 +374,8 @@ window.abrirComprovante = function (uid) {
     }
 
     const isPago = String(item.status || '').toUpperCase() === 'PAGO';
-    const txn = item.transaction_id
-      || item.meta?.transaction_id
-      || ('TXN' + String(uid).replace(/[^A-Z0-9]/gi,'').slice(0,8).toUpperCase());
+    const txn = item.transaction_id || item.meta?.transaction_id || '';
+    const NR = 'não registrado';
 
     // Faixa de cor conforme tipo
     const faixa = document.getElementById('cmpFaixa');
@@ -410,14 +409,14 @@ window.abrirComprovante = function (uid) {
     const codigoOrigem = item.codigo_origem || item.meta?.codigo_origem || '';
     set('cmpCodOrigem', codigoOrigem || '— (lançamento anterior aos códigos)');
     const codeTxn = document.getElementById('cmpTxn');
-    if (codeTxn) codeTxn.textContent = txn;
+    if (codeTxn) codeTxn.textContent = txn || '— (lançamento anterior aos códigos)';
     const correcaoDe = item.codigo_referencia || '';
     const rowCorr = document.getElementById('cmpCorrecaoRow');
     if (rowCorr) rowCorr.hidden = !correcaoDe;
     set('cmpCorrecaoDe', correcaoDe);
     const dec = window.__decodificarCodigo(codigoOrigem);
     set('cmpOrigTipo', dec
-      ? `${dec.tipo} · ${dec.empresa} · rota ${dec.rota} · ${dec.data}`
+      ? `${dec.tipo} · ${dec.empresa}${dec.rota !== '000' ? ' · rota ' + dec.rota : ''} · ${dec.data}`
       : (/prest/i.test(item.categoria || '') ? 'Prestação de contas' : 'Lançamento no caixa'));
     set('cmpGerente', item.gerente || '—');
     set('cmpForma', item.forma || '—');
@@ -425,24 +424,31 @@ window.abrirComprovante = function (uid) {
     const dataFmt = (item.data || '').split('-').reverse().join('/') || '—';
     set('cmpData', dataFmt);
 
-    // Origem (prestação)
-    const origUser = item.originator_user || item.meta?.originator_user || '—';
-    const origAt   = item.originator_at   || item.meta?.originator_at   || null;
-    const origDev  = item.originator_device || item.meta?.originator_device || '';
-    set('cmpOrigUser', origUser);
-    set('cmpOrigAt',   window.__cmpFmtDT(origAt));
-    set('cmpOrigDev',  window.__cmpDeviceLabel(origDev));
+    // Origem: na prestação, quem lançou o pagamento; no lançamento manual, quem lançou no caixa
+    const ehPrestacao = /^(REC|PAG)-/.test(codigoOrigem) || /^presta[cç][aã]o de contas/i.test(item.categoria || '');
+    let origUser = item.originator_user || item.meta?.originator_user || '';
+    let origAt   = item.originator_at   || item.meta?.originator_at   || null;
+    let origDev  = item.originator_device || item.meta?.originator_device || '';
+    if (!ehPrestacao && !origUser) {
+      origUser = item.created_by || '';
+      origAt   = origAt || item.created_at || null;
+      origDev  = origDev || item.device || '';
+    }
+    set('cmpOrigUser', origUser || NR);
+    set('cmpOrigAt',   origAt ? window.__cmpFmtDT(origAt) : NR);
+    set('cmpOrigDev',  origDev ? window.__cmpDeviceLabel(origDev) : NR);
 
     // Confirmação (caixa)
-    const confUser = item.created_by || item.meta?.confirmer_user || '—';
+    const confUser = item.created_by || item.meta?.confirmer_user || '';
     const confAt   = item.created_at || item.meta?.confirmer_at   || null;
     const confDev  = item.device     || item.meta?.confirmer_device || '';
     const confUA   = item.user_agent || item.meta?.confirmer_ua   || '';
-    set('cmpConfUser', confUser);
-    set('cmpConfAt',   window.__cmpFmtDT(confAt));
-    set('cmpConfDev',  window.__cmpDeviceLabel(confDev));
+    set('cmpConfUser', confUser || NR);
+    set('cmpConfAt',   confAt ? window.__cmpFmtDT(confAt) : NR);
+    set('cmpConfDev',  confDev ? window.__cmpDeviceLabel(confDev) : NR);
     const uaRow = document.getElementById('cmpConfUARow');
-    if (uaRow) uaRow.textContent = confUA ? ('via ' + confUA) : '';
+    if (uaRow) uaRow.textContent = confUA ? ('via ' + confUA)
+      : ([origUser, origAt, origDev, confDev].some(v => !v) ? '"não registrado": lançamento feito antes de o sistema gravar esses dados' : '');
 
     if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open','');
   } catch (e) {

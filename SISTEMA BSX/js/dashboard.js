@@ -64,6 +64,13 @@ function limiar_alerta(despesa,
   if (!despesa) {
     return { atingiu:false, diff:0, ajuda:0, ideal:0, bruta:0 };
   }
+  // Despesa sem ficha não entra na regra dos 4%
+  const semFicha = (typeof window.__despesaSemFicha === 'function')
+    ? window.__despesaSemFicha(despesa.ficha)
+    : !String(despesa.ficha || '').trim();
+  if (semFicha) {
+    return { atingiu:false, diff:0, ajuda:Number(despesa.valor)||0, ideal:0, bruta:0, semFicha:true };
+  }
 
   // bruta do mês de referência da própria despesa (mês anterior ao da data)
   const bruta = vendaBrutaRefDaDespesa(despesa.ficha, despesa.data, despesa.periodoIni, despesa.periodoFim);
@@ -474,8 +481,8 @@ function buildAlertsForMonth(ym){
     if (eid && d.empresaId && String(d.empresaId)!==eid) return false;
     if (d.isHidden || d.oculta) return false;
 
-    // ✅ REQUERIDO: Só aceita despesas com FICHA preenchida
-    if (!String(d.ficha||'').trim()) return false;
+    // ✅ REQUERIDO: despesa sem ficha (vazia ou "-") não entra na regra dos 4%
+    if (typeof window.__despesaSemFicha === 'function' ? window.__despesaSemFicha(d.ficha) : !String(d.ficha||'').trim()) return false;
 
     // ✅ Filtra por periodicidade do gerente (semanal / mensal)
     // Usa versão TOLERANTE que aceita match por id ou por nome, porque

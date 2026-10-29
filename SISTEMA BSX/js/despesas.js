@@ -173,6 +173,12 @@ window.loadDespesas = loadDespesas;
   };
 });
 
+// Despesa sem ficha (vazia ou só traço) não entra na regra dos 4% — nem aqui nem no alerta do Início
+function __despesaSemFicha(ficha) {
+  return /^[\s\-–—_.]*$/.test(String(ficha ?? ''));
+}
+window.__despesaSemFicha = __despesaSemFicha;
+
 // Helpers - ✅ USA window.fichas e window.vendas (Supabase)
 function getRotaByFicha(ficha) {
     const rec = (window.fichas || []).find(f => String(f.ficha) === String(ficha));
@@ -307,11 +313,22 @@ console.log('[renderDespesas] ✅ Após filtrar:', list.length, 'despesas');
     // Mesma regra do alerta do Início (dashboard.js → limiar_alerta), para que
     // as linhas em vermelho sejam exatamente as despesas que geraram o alerta.
     const foraPadrao = (r) => {
-      if (hideRestricted || r.isHidden || !String(r.ficha||'').trim()) return false;
+      if (hideRestricted || r.isHidden || __despesaSemFicha(r.ficha)) return false;
       if (typeof window.limiar_alerta !== 'function') return false;
       try { return !!window.limiar_alerta(r)?.atingiu; } catch(_) { return false; }
     };
     let qtdForaPadrao = 0;
+
+    // Colunas da regra dos 4% (Ideal, Diferença, Status, Venda Bruta, Venda Líquida)
+    const celulasRegra = (semFicha, { ideal, dif, status, difColor, vBruta, vLiq }) => semFicha
+      ? `<td class="c-num muted">—</td><td class="c-num muted">—</td>` +
+        `<td class="c-status" style="color:#6b7280;font-weight:600" title="Despesa sem ficha não entra na regra dos 4%">SEM FICHA</td>` +
+        `<td class="c-num muted">—</td><td class="c-num muted">—</td>`
+      : `<td class="c-num">${hideRestricted ? '' : fmtBRL(ideal)}</td>` +
+        `<td class="c-num" style="color:${hideRestricted ? 'inherit' : difColor}">${hideRestricted ? '' : ((dif >= 0 ? '+' : '') + fmtBRL(dif))}</td>` +
+        `<td class="c-status">${hideRestricted ? '' : status}</td>` +
+        `<td class="c-num">${fmtBRL(vBruta)}</td>` +
+        `<td class="c-num">${fmtBRL(vLiq)}</td>`;
 
     const linhas = [];
 
@@ -355,13 +372,7 @@ console.log('[renderDespesas] ✅ Após filtrar:', list.length, 'despesas');
             <td class="c-ficha">${esc(r.ficha||'')}</td>
             <td class="c-info">${infoTxt}</td>
             <td class="c-num">${fmtBRL(valorAj)}</td>
-            <td class="c-num">${hideRestricted ? '' : fmtBRL(ideal)}</td>
-            <td class="c-num" style="color:${hideRestricted ? 'inherit' : difColor}">
-              ${hideRestricted ? '' : ((dif >= 0 ? '+' : '') + fmtBRL(dif))}
-            </td>
-            <td class="c-status">${hideRestricted ? '' : status}</td>
-            <td class="c-num">${fmtBRL(vBruta)}</td>
-            <td class="c-num">${fmtBRL(vLiq)}</td>
+            ${celulasRegra(__despesaSemFicha(r.ficha), { ideal, dif, status, difColor, vBruta, vLiq })}
             <td class="c-acts">${actions}</td>
           </tr>
         `);
@@ -398,13 +409,7 @@ const groupId = `grp-${safe(ficha)}-${gNome}-${pIni}-${pFim}`;
                 ${grupoFP ? '- detalhes' : '+ detalhes'}
               </button>
             </td>
-            <td class="c-num">${hideRestricted ? '' : fmtBRL(ideal)}</td>
-            <td class="c-num" style="color:${hideRestricted ? 'inherit' : difColor}">
-              ${hideRestricted ? '' : ((dif >= 0 ? '+' : '') + fmtBRL(dif))}
-            </td>
-            <td class="c-status">${hideRestricted ? '' : status}</td>
-            <td class="c-num">${fmtBRL(vBruta)}</td>
-            <td class="c-num">${fmtBRL(vLiq)}</td>
+            ${celulasRegra(__despesaSemFicha(ficha), { ideal, dif, status, difColor, vBruta, vLiq })}
             <td class="c-acts"></td>
           </tr>
         `);
@@ -741,6 +746,7 @@ function __mapDespPrintRows_groupedWithTotals(base){
       const status  = Math.abs(dif) < 0.005 ? 'IDEAL' : (dif > 0 ? 'ACIMA' : 'ABAIXO');
 
       rows.push({
+        semFicha: __despesaSemFicha(ficha),
         __rowType: 'single',            // <<< importante
         rota,
         ficha: String(ficha),
@@ -783,6 +789,7 @@ function __mapDespPrintRows_groupedWithTotals(base){
     const status     = Math.abs(dif) < 0.005 ? 'IDEAL' : (dif > 0 ? 'ACIMA' : 'ABAIXO');
 
     rows.push({
+      semFicha: __despesaSemFicha(ficha),
       __rowType: 'total',
       rota,
       ficha: String(ficha),
@@ -884,11 +891,11 @@ function __buildPrintHTML({ titulo, sub, rows, modo }) {
     const tbody = rows.map(r=>{
           const isTotal  = r.__rowType === 'total';
           const isSingle = r.__rowType === 'single';
-          const showCalc = isTotal || isSingle;
+          const showCalc = (isTotal || isSingle) && !r.semFicha;   // sem ficha: fora da regra dos 4%
           const difTxt   = showCalc ? ((r.dif>=0?'+':'') + fmtBRL(r.dif)) : '—';
           const difCls   = showCalc ? (r.dif>0 ? 'red' : (r.dif<0 ? 'blue' : '')) : '';
           const idealTd  = showCalc ? fmtBRL(r.ideal) : '—';
-          const statusTd = showCalc ? esc(r.status||'') : '';
+          const statusTd = r.semFicha ? 'SEM FICHA' : (showCalc ? esc(r.status||'') : '');
           const vBrutaTd = showCalc ? fmtBRL(r.vBruta||0) : '—';
           const vLiqTd   = showCalc ? fmtBRL(r.vLiq  ||0) : '—';
           const trCls    = isTotal ? 'class="group-total"' : '';

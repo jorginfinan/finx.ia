@@ -1429,6 +1429,181 @@ const __pcDebounced = function() {
   }
   
 
+// ===== CÓDIGOS DE TRANSAÇÃO DO PAGAMENTO =====
+// Cada pagamento que vai ao caixa tem uma cadeia de movimentos (pg.codigos): o original e,
+// se o valor for corrigido depois de confirmado no caixa, um movimento só com a diferença.
+const __round2 = n => Math.round((Number(n) || 0) * 100) / 100;
+const __vaiAoCaixa = pg => !['ADIANTAMENTO', 'VALE'].includes(String(pg?.forma || '').toUpperCase());
+const __direcaoBase = pg => String(pg?.forma || '').toUpperCase() === 'DIVIDA_PAGA' ? 'PAG' : 'REC';
+
+function __gerenteNomeAtual() {
+  const gid = document.getElementById('pcGerente')?.value || '';
+  const g = (window.gerentes || []).find(x => String(x.uid) === String(gid) || String(x.id) === String(gid));
+  return g?.nome || '';
+}
+
+function __novoMovimento(pg, valor, { ref, gerenteNome } = {}) {
+  const base = __direcaoBase(pg);
+  const dir = valor >= 0 ? base : (base === 'PAG' ? 'REC' : 'PAG');
+  const usados = new Set((prestacaoAtual.pagamentos || [])
+    .flatMap(x => [...(x.codigos || []), ...(x.substituidos || [])].map(m => m.codigo)));
+  let codigo;
+  do {
+    codigo = window.__gerarCodigoOrigem(dir, { gerenteNome: gerenteNome || __gerenteNomeAtual(), data: pg.data });
+  } while (usados.has(codigo));
+  return {
+    codigo, valor: __round2(valor), ...(ref ? { ref } : {}),
+    lancadoPor: window.__currentUsername?.() || 'Sistema',
+    lancadoEm: new Date().toISOString(),
+    lancadoDispositivo: window.__detectDevice?.() || 'desktop'
+  };
+}
+
+function __iniciarCodigos(pg) {
+  if (!__vaiAoCaixa(pg) || typeof window.__gerarCodigoOrigem !== 'function') return pg;
+  const mov = __novoMovimento(pg, pg.valor);
+  pg.codigos = [mov];
+  pg.codigo = mov.codigo;
+  pg.lancadoPor = mov.lancadoPor;
+  pg.lancadoEm = mov.lancadoEm;
+  pg.lancadoDispositivo = mov.lancadoDispositivo;
+  return pg;
+}
+
+// Valor que cada código já moveu no caixa (sinal no sentido do pagamento).
+// Usa o valor REAL lançado no caixa (o caixa pode ter confirmado um valor editado).
+async function __valoresNoCaixa(pg, codigos) {
+  const res = new Map();
+  const client = window.SupabaseAPI?.client;
+  if (!client || !codigos.length) return res;
+  const statusBase = __direcaoBase(pg) === 'PAG' ? 'PAGO' : 'RECEBIDO';
+  const { data, error } = await client.from('lancamentos')
+    .select('codigo_origem, valor, status').in('codigo_origem', codigos);
+  if (error) {
+    if (!/codigo_origem/i.test(String(error.message || ''))) throw error;
+    // SQL ainda não rodado: usa a trava de confirmação com o valor do movimento
+    const { data: conf, error: e2 } = await client.from('pendencias_confirmadas').select('uid').in('uid', codigos);
+    if (e2) throw e2;
+    const todos = [...(pg.codigos || []), ...(pg.substituidos || [])];
+    (conf || []).forEach(r => res.set(r.uid, Number(todos.find(m => m.codigo === r.uid)?.valor) || 0));
+    return res;
+  }
+  (data || []).forEach(r => {
+    const v = Number(r.valor) || 0;
+    res.set(r.codigo_origem, (res.get(r.codigo_origem) || 0) + (r.status === statusBase ? v : -v));
+  });
+  return res;
+}
+
+// Recalcula a cadeia de códigos dos pagamentos corrigidos e dos que tiveram um código
+// substituído confirmado no caixa depois (autocorreção). Devolve true se algo mudou.
+async function __reconciliarCodigos(pagamentos, gerenteNome) {
+  let mudou = false;
+  for (const pg of (pagamentos || [])) {
+    if (!Array.isArray(pg?.codigos)) continue;
+    const substituidos = pg.substituidos || [];
+    const noCaixa = await __valoresNoCaixa(pg, [...pg.codigos, ...substituidos].map(m => m.codigo));
+    const tardio = substituidos.some(m => noCaixa.has(m.codigo));
+    if (!pg.__recalcular && !tardio) continue;
+
+    const confirmados = [...pg.codigos, ...substituidos]
+      .filter(m => noCaixa.has(m.codigo))
+      .map(m => ({ ...m, valor: __round2(noCaixa.get(m.codigo)) }));
+    const pendentes = pg.codigos.filter(m => !noCaixa.has(m.codigo));
+    const jaNoCaixa = __round2(confirmados.reduce((a, m) => a + m.valor, 0));
+    const alvo = __vaiAoCaixa(pg) ? __round2(pg.valor) : 0;
+    const diferenca = __round2(alvo - jaNoCaixa);
+
+    const novos = [...confirmados];
+    if (diferenca !== 0) {
+      // Referência = código corrigido (o último que estava no caixa, ou o que estava pendente)
+      const ref = confirmados.length ? confirmados[confirmados.length - 1].codigo
+                                     : (pendentes[pendentes.length - 1]?.codigo || null);
+      novos.push(__novoMovimento(pg, diferenca, { ref: ref || undefined, gerenteNome }));
+    }
+    pg.substituidos = [
+      ...substituidos.filter(m => !noCaixa.has(m.codigo)),
+      ...pendentes.map(m => ({ ...m, substituidoEm: new Date().toISOString() }))
+    ];
+    pg.codigos = novos;
+    if (novos.length) pg.codigo = novos[novos.length - 1].codigo;
+    delete pg.__recalcular;
+    mudou = true;
+  }
+  return mudou;
+}
+
+// Pagamento com movimento já confirmado no caixa não pode ser excluído (use Editar).
+// Devolve a mensagem de bloqueio, ou null se todos puderem ser removidos.
+async function __bloqueioRemocaoPagamentos(lista) {
+  for (const pg of (lista || [])) {
+    const codigos = (window.__codigosAtivos?.(pg) || []).map(m => m.codigo);
+    if (!codigos.length) continue;
+    let noCaixa;
+    try { noCaixa = await __valoresNoCaixa(pg, codigos); }
+    catch (_) { return 'Não foi possível verificar no caixa se este pagamento já foi confirmado. Tente novamente.'; }
+    if (noCaixa.size) {
+      return `O pagamento de ${fmtBRL(pg.valor)} (${fmtData(pg.data || '')}) já foi confirmado no caixa.\n\n` +
+             `Código: ${[...noCaixa.keys()].join(', ')}\n\n` +
+             'Ele não pode ser excluído. Use "Editar" para corrigir o valor: o sistema marca a correção ' +
+             'e gera um novo código só com a diferença para o caixa.';
+    }
+  }
+  return null;
+}
+
+// Edição: registra a correção no pagamento; a cadeia de códigos é recalculada ao salvar.
+function pgEditarPagamento(id, { data, valor, forma, obs }) {
+  const pg = (prestacaoAtual.pagamentos || []).find(x => x.id === id);
+  if (!pg) return false;
+  const formaAtual = String(pg.forma || '').toUpperCase();
+  const ehDivida = formaAtual === 'DIVIDA_PAGA';
+  const novaForma = ehDivida ? 'DIVIDA_PAGA' : String(forma || formaAtual).toUpperCase();
+  const v = __round2(Math.abs(Number(valor)));
+
+  if (valor === '' || isNaN(Number(valor))) { alert('Informe um valor válido.'); return false; }
+  if ((formaAtual === 'ADIANTAMENTO') !== (novaForma === 'ADIANTAMENTO')) {
+    alert('Não é possível trocar de/para ADIANTAMENTO na edição. Exclua e lance de novo.');
+    return false;
+  }
+  if (__vaiAoCaixa(pg) && !Array.isArray(pg.codigos)) {
+    alert('Este pagamento foi lançado antes dos códigos de transação e não pode ser editado.\n\n' +
+          'Para corrigir, lance um novo pagamento com a diferença.');
+    return false;
+  }
+
+  const antes = { valor: __round2(pg.valor), data: pg.data || '', forma: formaAtual, obs: pg.obs || '' };
+  const depois = { valor: v, data: data || pg.data || '', forma: novaForma,
+                   obs: ehDivida ? (obs || pg.obs || '') : (obs || '') };
+  if (JSON.stringify(antes) === JSON.stringify(depois)) return true;
+
+  (pg.correcoes ||= []).push({
+    em: new Date().toISOString(),
+    por: window.__currentUsername?.() || 'Sistema',
+    dispositivo: window.__detectDevice?.() || 'desktop',
+    de: antes, para: depois
+  });
+  Object.assign(pg, depois);
+  pg.corrigido = true;
+  if (__vaiAoCaixa(pg)) pg.__recalcular = true;
+
+  __recalcValeParcFromPagamentos();
+  pcSchedule();
+  pgRender();
+  return true;
+}
+window.pgEditarPagamento = pgEditarPagamento;
+
+function __seloCorrigido(pg) {
+  const ult = (pg?.correcoes || []).slice(-1)[0];
+  if (!ult) return '';
+  const quando = new Date(ult.em).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+  const tip = `Corrigido de ${fmtBRL(ult.de?.valor)} para ${fmtBRL(ult.para?.valor)} por ${ult.por} em ${quando}` +
+              ((pg.correcoes.length > 1) ? ` (${pg.correcoes.length} correções)` : '');
+  return ` <span title="${esc(tip)}" style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;` +
+         `background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;cursor:help">✏️ corrigido</span>`;
+}
+
 // ===== PAGAMENTOS (Prestação) =====
 function pgRender(){
   const todos = (prestacaoAtual.pagamentos||[]);
@@ -1463,10 +1638,13 @@ if (tbN){
     return `
       <tr>
         <td>${fmtData(p.data||'')}</td>
-        <td style="${corValor}">${fmtBRL(valorExibir)}</td>
+        <td style="${corValor}">${fmtBRL(valorExibir)}${__seloCorrigido(p)}</td>
         <td>${isDivida ? 'PIX (Empresa → Gerente)' : (p.forma||'').toString().toUpperCase()}</td>
         <td>${esc(p.obs||'')}</td>
-        <td><button class="btn danger" data-del-pg="${p.id}">Excluir</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn" data-edit-pg="${p.id}">Editar</button>
+          <button class="btn danger" data-del-pg="${p.id}">Excluir</button>
+        </td>
       </tr>
     `;
   }).join('') || '<tr><td colspan="5">Nenhum pagamento lançado.</td></tr>';
@@ -1480,12 +1658,20 @@ const totN = listaNorm.reduce((a,b)=> {
 const elTotN = document.getElementById('pgNTotal'); 
 if (elTotN) elTotN.textContent = fmtBRL(totN);
 
-  // deletar (vale para ambas as tabelas)
+document.querySelectorAll('[data-edit-pg]').forEach(b=>{
+  b.addEventListener('click', ()=> window.__abrirEdicaoPagamento?.(b.getAttribute('data-edit-pg')));
+});
+
 // deletar (vale para ambas as tabelas)
 document.querySelectorAll('[data-del-pg]').forEach(b=>{
-  b.addEventListener('click', ()=>{
+  b.addEventListener('click', async ()=>{
     const id = b.getAttribute('data-del-pg');
     const pay = (prestacaoAtual.pagamentos||[]).find(x=>x.id===id);
+    if (b.disabled) return;
+    b.disabled = true;
+    const bloqueio = await __bloqueioRemocaoPagamentos([pay]);
+    b.disabled = false;
+    if (bloqueio) { alert(bloqueio); return; }
     prestacaoAtual.pagamentos = (prestacaoAtual.pagamentos||[]).filter(x=>x.id!==id);
 
     __recalcValeParcFromPagamentos();
@@ -1514,24 +1700,25 @@ function pgNAddFromForm(){
   if (valor < 0 && aPagar < 0) {
     // Inverte o sinal para ficar positivo (é um pagamento de dívida)
     valor = Math.abs(valor);
-    
+
     // Adiciona como DIVIDA_PAGA
-    (prestacaoAtual.pagamentos ||= []).push({ 
-      id: uid(), 
-      data, 
-      valor, 
+    (prestacaoAtual.pagamentos ||= []).push(__iniciarCodigos({
+      id: uid(),
+      data,
+      valor,
       forma: 'DIVIDA_PAGA',  // ✅ Marca como dívida
       obs: obs || forma      // Mantém a forma original na obs
-    });
+    }));
   } else {
     // Pagamento normal (positivo ou negativo quando À PAGAR é positivo)
-    (prestacaoAtual.pagamentos ||= []).push({ 
-      id: uid(), 
-      data, 
+    // ADIANTAMENTO não vai para o caixa, então não recebe código de origem
+    (prestacaoAtual.pagamentos ||= []).push(__iniciarCodigos({
+      id: uid(),
+      data,
       valor: Math.abs(valor),  // ✅ Sempre positivo no banco
-      forma, 
-      obs 
-    });
+      forma,
+      obs
+    }));
   }
 
   document.getElementById('pgNValor').value = '';
@@ -1617,6 +1804,9 @@ pcSchedule();
   
   addPcListener(btn, 'click', async function() {
   if(!confirm('Limpar os pagamentos NORMAIS desta prestação?')) return;
+  const removidos = (prestacaoAtual.pagamentos||[]).filter(p => (p.forma||'').toUpperCase()!=='VALE');
+  const bloqueio = await __bloqueioRemocaoPagamentos(removidos);
+  if (bloqueio) { alert(bloqueio + '\n\nNenhum pagamento foi removido.'); return; }
   prestacaoAtual.pagamentos = (prestacaoAtual.pagamentos||[]).filter(p => (p.forma||'').toUpperCase()==='VALE');
   pcSchedule();
 });
@@ -2712,6 +2902,28 @@ function atualizarEstilosMonetarios() {
   }
 }
 
+// Remove pendências AINDA NÃO CONFIRMADAS cujo pagamento (com código) saiu da prestação.
+// Só mexe em pendências com código de origem; as do formato antigo ficam como estão.
+async function __limparPendenciasOrfas(prestacao) {
+  try {
+    const client = window.SupabaseAPI?.client;
+    if (!client || !prestacao?.id || typeof window.__ehCodigoOrigem !== 'function') return;
+    const codigos = new Set((prestacao.pagamentos || [])
+      .flatMap(p => (window.__codigosAtivos?.(p) || []).map(m => m.codigo)));
+    const { data, error } = await client.from('pendencias')
+      .select('uid').eq('prestacao_id', prestacao.id).eq('status', 'PENDENTE');
+    if (error) throw error;
+    const orfas = (data || []).map(r => r.uid).filter(u => window.__ehCodigoOrigem(u) && !codigos.has(u));
+    for (const u of orfas) {
+      await window.PendenciasAPI?.delete?.(u);
+      console.log('[Prestação] Pendência removida (pagamento saiu da prestação):', u);
+    }
+    if (orfas.length) await window.__getPendenciasAsync?.();
+  } catch (e) {
+    console.warn('[Prestação] Não foi possível limpar pendências órfãs:', e);
+  }
+}
+
 async function __pendenciaExisteNoBanco(uid) {
   const client = window.SupabaseAPI?.client;
   if (!client) return false;
@@ -2726,7 +2938,7 @@ async function criarPendenciaPagamento(prestacao) {
     const lancamentos = window.lanc || window.__getLanc?.() || [];
     const confirmadosUIDs = new Set(
       lancamentos
-        .map(l => l?.meta?.fromUID)
+        .flatMap(l => [l?.meta?.fromUID, l?.codigo_origem])
         .filter(Boolean)
     );
     
@@ -2748,13 +2960,16 @@ async function criarPendenciaPagamento(prestacao) {
     });
     __setPendencias(todasPendencias);
 
-    // ✅ NOVO: Só cria pendência dos pagamentos do tipo "DIVIDA_PAGA"
+    // Pagamentos com código de transação (recebimentos e dívidas): pendência por movimento
+    const pagamentosCodificados = (prestacao.pagamentos || [])
+      .filter(p => p?.codigo && !p?.cancelado && __vaiAoCaixa(p));
+
+    // Formato antigo: só DIVIDA_PAGA sem código (os demais antigos são tratados pelo Financeiro)
     const pagamentosDivida = (prestacao.pagamentos || [])
-      .filter(p => String(p.forma || '').toUpperCase() === 'DIVIDA_PAGA');
+      .filter(p => !p?.codigo && String(p.forma || '').toUpperCase() === 'DIVIDA_PAGA');
     
-    // Se não tem pagamento de dívida, não cria pendência
-    if (!pagamentosDivida.length) {
-      console.log('ℹ️ Sem pagamentos de dívida para criar pendência');
+    if (!pagamentosDivida.length && !pagamentosCodificados.length) {
+      console.log('ℹ️ Sem pagamentos para criar pendência');
       return;
     }
     
@@ -2787,13 +3002,20 @@ async function criarPendenciaPagamento(prestacao) {
     // Cria uma pendência para CADA pagamento de dívida
     const pendencias = __getPendencias();
     let criadas = 0;
+
+    for (const pg of pagamentosCodificados) {
+      criadas += await window.__garantirPendenciasCodificadas(prestacao, pg, {
+        gerenteNome, company: empresaNome,
+        jaConhecido: u => confirmadosUIDs.has(u)
+      }) || 0;
+    }
     
 for (const pag of pagamentosDivida) {
   const valorPagamento = Number(pag.valor) || 0;
   if (valorPagamento <= 0) continue;  // ✅ era 'return'
 
-  // UID único para este pagamento
-  const uid = `DIVPAG:${prestacao.id}:${pag.id}:${valorPagamento}`;
+  // Identidade da pendência: código de origem (pagamentos novos) ou o formato antigo
+  const uid = pag.codigo || `DIVPAG:${prestacao.id}:${pag.id}:${valorPagamento}`;
 
   // Falha em um pagamento não pode impedir a criação dos demais da mesma prestação
   try {
@@ -2813,7 +3035,7 @@ for (const pag of pagamentosDivida) {
       // Cria pendência
 const novaPendencia = {
   id: (crypto?.randomUUID ? crypto.randomUUID() : 'pend_' + Date.now() + '_' + Math.random()),
-  uid: `DIVPAG:${prestacao.id}:${pag.id}:${valorPagamento}`,
+  uid,
   prestId: prestacao.id,
   gerenteId: prestacao.gerenteId,
   gerenteNome: gerenteNome,
@@ -2835,10 +3057,10 @@ const novaPendencia = {
   // ✅ CRÍTICO: Empresa da prestação (via gerente), não da empresa ativa
   company: empresaNome,
 
-  // ✅ Metadados de auditoria (para o comprovante)
-  originator_user: (window.__currentUsername?.() || 'Sistema'),
-  originator_at: new Date().toISOString(),
-  originator_device: (window.__detectDevice?.() || 'desktop')
+  // ✅ Metadados de auditoria (para o comprovante): quem lançou o pagamento na prestação
+  originator_user: pag.lancadoPor || (window.__currentUsername?.() || 'Sistema'),
+  originator_at: pag.lancadoEm || new Date().toISOString(),
+  originator_device: pag.lancadoDispositivo || (window.__detectDevice?.() || 'desktop')
 };
       
 // ✅ SALVA NO SUPABASE
@@ -3678,6 +3900,15 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
       
       prestacaoAtual.valeParcAplicado = migVale;
       
+      // 🔒 Códigos de transação: recalcula a cadeia dos pagamentos corrigidos contra o caixa
+      try {
+        await __reconciliarCodigos(prestacaoAtual.pagamentos, g?.nome);
+      } catch (e) {
+        console.error('[Prestação] Falha ao verificar códigos no caixa:', e);
+        alert('Não foi possível verificar no caixa os pagamentos corrigidos. Verifique a conexão e salve de novo.');
+        return;
+      }
+
       const recPrest = {
         id: reusedId || uid(),
         gerenteId,
@@ -3728,9 +3959,23 @@ function __backfillValeParcFromPagamentos(arrPag, gerenteId) {
         }
       } 
 
+      // 🔒 Conferência pós-gravação: se o caixa confirmou um código substituído durante o
+      // salvamento, a cadeia é corrigida e a prestação gravada de novo antes de gerar pendências.
+      try {
+        if (await __reconciliarCodigos(prestacaoAtual.pagamentos, g?.nome)) {
+          recPrest.pagamentos = (prestacaoAtual.pagamentos || []).map(p => ({ ...p }));
+          await window.salvarPrestacaoGlobal?.(recPrest);
+        }
+      } catch (e) {
+        console.error('[Prestação] Falha na conferência pós-gravação dos códigos:', e);
+      }
+
       try { window.__syncAbertasMirror(); } catch {}
 
       console.log('✅ Saldo gerenciado via SaldoAcumulado (Supabase)');
+
+      // Pagamento removido da prestação (e ainda não confirmado) não pode ficar esperando no caixa
+      __limparPendenciasOrfas(recPrest);
 
       // ✅ CRIA PENDÊNCIA APENAS DOS PAGAMENTOS DE DÍVIDA
       const qtdPendencias = criarPendenciaPagamento(recPrest);
@@ -5375,12 +5620,42 @@ document.getElementById('pcFim')?.addEventListener('change', pcApplyCarryIfAny);
         </label>
         <label class="col-2">Obs <input id="dlgPgObs" placeholder="opcional"></label>
       </div>
+      <div id="dlgPgAvisoEdicao" hidden style="margin:8px 0;padding:8px 10px;border-radius:6px;background:#fffbeb;border-left:4px solid #f59e0b;font-size:12px;color:#92400e">
+        ✏️ A correção fica registrada no pagamento (quem, quando, de quanto para quanto) e gera um novo código.
+        Se o valor já foi confirmado no caixa, vai para o caixa só a diferença.
+      </div>
       <div class="pc-actions">
         <button value="cancel" type="reset" class="btn ghost">Cancelar</button>
         <button id="dlgPgSalvar" class="btn">Salvar</button>
       </div>
     </form>`;
   document.body.appendChild(dlgPg);
+
+  const sairModoEdicao = () => {
+    delete dlgPg.dataset.editId;
+    dlgPg.querySelector('.pc-head').textContent = 'Adicionar pagamento';
+    dlgPg.querySelector('#dlgPgForma').disabled = false;
+    dlgPg.querySelector('#dlgPgAvisoEdicao').hidden = true;
+  };
+  dlgPg.addEventListener('close', sairModoEdicao);
+
+  window.__abrirEdicaoPagamento = function (id) {
+    const pg = (prestacaoAtual.pagamentos || []).find(x => x.id === id);
+    if (!pg) return;
+    const forma = String(pg.forma || '').toUpperCase();
+    const ehDivida = forma === 'DIVIDA_PAGA';
+    const sel = dlgPg.querySelector('#dlgPgForma');
+    if (!ehDivida && ![...sel.options].some(o => o.value === forma)) sel.add(new Option(forma, forma));
+    sel.value = ehDivida ? 'PIX' : forma;
+    sel.disabled = ehDivida;
+    dlgPg.querySelector('#dlgPgData').value  = pg.data || '';
+    dlgPg.querySelector('#dlgPgValor').value = Math.abs(Number(pg.valor) || 0);
+    dlgPg.querySelector('#dlgPgObs').value   = pg.obs || '';
+    dlgPg.querySelector('.pc-head').textContent = ehDivida ? 'Editar pagamento de dívida' : 'Editar pagamento';
+    dlgPg.querySelector('#dlgPgAvisoEdicao').hidden = !Array.isArray(pg.codigos);
+    dlgPg.dataset.editId = id;
+    dlgPg.showModal();
+  };
 
 // 4) Abrir os dialogs
 document.getElementById('btnAbrirVale')?.addEventListener('click', ()=> dlgVale.showModal());
@@ -5392,7 +5667,7 @@ document.getElementById('btnAbrirVale')?.addEventListener('click', ()=> dlgVale.
   if (oldBtn) {
     const clone = oldBtn.cloneNode(true); // sem listeners antigos
     oldBtn.parentNode.replaceChild(clone, oldBtn);
-    clone.addEventListener('click', (e)=>{ e.preventDefault(); dlgPg.showModal(); }, {capture:true});
+    clone.addEventListener('click', (e)=>{ e.preventDefault(); sairModoEdicao(); dlgPg.showModal(); }, {capture:true});
   }
 }
 
@@ -5404,6 +5679,11 @@ document.getElementById('btnAbrirVale')?.addEventListener('click', ()=> dlgVale.
     const v = dlgPg.querySelector('#dlgPgValor')?.value || '';
     const f = dlgPg.querySelector('#dlgPgForma')?.value || 'PIX';
     const o = dlgPg.querySelector('#dlgPgObs')?.value || '';
+
+    if (dlgPg.dataset.editId) {
+      if (pgEditarPagamento(dlgPg.dataset.editId, { data: d, valor: v, forma: f, obs: o })) dlgPg.close();
+      return;
+    }
 
     // Preenche os inputs originais (escondidos) e reutiliza a função nativa
     if (document.getElementById('pgNData'))  document.getElementById('pgNData').value  = d;

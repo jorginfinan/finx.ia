@@ -224,6 +224,118 @@ window.__currentUsername = function () {
   } catch (_) { return 'Sistema'; }
 };
 
+// ===== CÓDIGOS DE TRANSAÇÃO =====
+// Origem: DIR-EMPRESA-ROTA-AAMMDD-XXXX  (ex.: REC-BSX-041-261016-K7Q2)
+//   DIR: REC = gerente → empresa · PAG = empresa → gerente · MAN = lançado direto no caixa
+// Caixa:  CX-EMPRESA-AAMMDD-XXXX         (gerado na confirmação)
+const __COD_ALFABETO = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // sem 0/O e 1/I
+function __codSufixo(n = 4) {
+  const bytes = new Uint8Array(n);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => __COD_ALFABETO[b % __COD_ALFABETO.length]).join('');
+}
+function __codEmpresa(emp) {
+  return String(emp || window.getCompany?.() || 'BSX').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'EMP';
+}
+function __codData(iso) {
+  const d = String(iso || '').slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d.slice(2, 4) + d.slice(5, 7) + d.slice(8, 10);
+  const h = new Date();
+  return String(h.getFullYear()).slice(2) + String(h.getMonth() + 1).padStart(2, '0') + String(h.getDate()).padStart(2, '0');
+}
+function __codRota(gerenteNome) {
+  const m = String(gerenteNome || '').trim().match(/^(\d+)/);
+  return m ? m[1].padStart(3, '0') : '000';
+}
+
+window.__gerarCodigoOrigem = function (direcao, { gerenteNome, data, empresa } = {}) {
+  return [direcao, __codEmpresa(empresa), __codRota(gerenteNome), __codData(data), __codSufixo()].join('-');
+};
+window.__gerarCodigoCaixa = function (empresa) {
+  return ['CX', __codEmpresa(empresa), __codData(), __codSufixo()].join('-');
+};
+const __RE_COD_ORIGEM = /^(REC|PAG|MAN)-([A-Z0-9]+)-(\d{3,})-(\d{2})(\d{2})(\d{2})-([A-Z0-9]{4})$/;
+window.__ehCodigoOrigem = s => __RE_COD_ORIGEM.test(String(s || ''));
+window.__decodificarCodigo = function (codigo) {
+  const m = String(codigo || '').match(__RE_COD_ORIGEM);
+  if (!m) return null;
+  const tipos = {
+    REC: 'Recebimento da prestação (gerente → empresa)',
+    PAG: 'Pagamento da prestação (empresa → gerente)',
+    MAN: 'Lançado direto no caixa'
+  };
+  return { direcao: m[1], tipo: tipos[m[1]], empresa: m[2], rota: m[3], data: `${m[6]}/${m[5]}/20${m[4]}` };
+};
+
+// Movimentos ativos de um pagamento da prestação: [{ codigo, valor, ref, lancadoPor, ... }].
+// `valor` é o quanto aquele código move no caixa, no sentido do pagamento (negativo = estorno).
+// Correção de valor já confirmado gera um movimento só com a diferença.
+window.__codigosAtivos = function (pg) {
+  if (Array.isArray(pg?.codigos)) return pg.codigos;
+  if (!pg?.codigo) return [];
+  return [{ codigo: pg.codigo, valor: Number(pg.valor) || 0,
+            lancadoPor: pg.lancadoPor, lancadoEm: pg.lancadoEm, lancadoDispositivo: pg.lancadoDispositivo }];
+};
+
+// Cria (se faltar) a pendência de cada movimento ativo do pagamento. Idempotente.
+window.__garantirPendenciasCodificadas = async function (prest, pg, { gerenteNome, company, jaConhecido } = {}) {
+  const ehDivida = String(pg?.forma || '').toUpperCase() === 'DIVIDA_PAGA';
+  const base = ehDivida ? 'PAGO' : 'RECEBIDO';
+  const oposto = ehDivida ? 'RECEBIDO' : 'PAGO';
+  const dm = iso => String(iso || '').slice(5).split('-').reverse().join('/');
+  const periodo = `${ehDivida ? 'Dívida ' : ''}Prest. ${dm(prest?.ini)}–${dm(prest?.fim)}`;
+  let criadas = 0;
+
+  for (const mov of window.__codigosAtivos(pg)) {
+    const valor = Math.round((Number(mov?.valor) || 0) * 100) / 100;
+    if (!mov?.codigo || !valor) continue;
+    if (jaConhecido?.(mov.codigo)) continue;
+    try {
+      if (await window.PendenciasAPI.isConfirmed(mov.codigo)) continue;
+      if (await window.PendenciasAPI.exists(mov.codigo)) continue;
+      const tipoCaixa = valor > 0 ? base : oposto;
+      await window.PendenciasAPI.create({
+        uid: mov.codigo, altUID: null,
+        prestId: prest.id, gerenteId: prest.gerenteId,
+        gerenteNome: gerenteNome || prest.gerenteNome || '',
+        data: pg.data || prest.fim || prest.ini || '',
+        valorOriginal: Math.abs(valor),
+        valorConfirm: Math.abs(valor),
+        info: periodo + (pg.obs && ehDivida ? ' - ' + pg.obs : '') +
+              (mov.ref ? ` · correção de ${mov.ref}${valor < 0 ? ' (estorno)' : ''}` : ''),
+        forma: ehDivida ? 'PIX' : (pg.forma || 'PIX'),
+        tipoCaixa,
+        tipo: tipoCaixa === 'PAGO' ? 'PAGAR' : 'RECEBER',
+        company: company || undefined,
+        codigoReferencia: mov.ref || null,
+        originator_user: mov.lancadoPor || null,
+        originator_at: mov.lancadoEm || null,
+        originator_device: mov.lancadoDispositivo || null
+      });
+      criadas++;
+    } catch (e) {
+      console.error('[Pendências] Falha ao criar pendência do código', mov.codigo, e);
+    }
+  }
+  return criadas;
+};
+
+// O código ainda é um movimento ativo na prestação salva? true / false / null (não deu para verificar)
+window.__codigoAtivoNaPrestacao = async function (prestId, codigo) {
+  try {
+    const client = window.SupabaseAPI?.client;
+    if (!client || !prestId) return null;
+    const { data, error } = await client.from('prestacoes').select('dados').eq('uid', prestId).limit(1);
+    if (error) throw error;
+    const pagamentos = data?.[0]?.dados?.pagamentos;
+    if (!Array.isArray(pagamentos)) return false;
+    return pagamentos.some(pg => window.__codigosAtivos(pg).some(m => m.codigo === codigo));
+  } catch (e) {
+    console.error('[Pendências] Não foi possível verificar o código na prestação:', e);
+    return null;
+  }
+};
+
 // ===== COMPROVANTE (extrato bancário) =====
 // Formata data/hora ISO em PT-BR (dd/mm/aaaa HH:MM)
 window.__cmpFmtDT = function (iso) {
@@ -294,9 +406,19 @@ window.abrirComprovante = function (uid) {
       : ('R$ ' + Number(item.valor || 0).toFixed(2).replace('.', ','));
     set('cmpValor', valorFmt);
 
-    // Transação
+    // Transação: código de origem (prestação/manual) + código do caixa
+    const codigoOrigem = item.codigo_origem || item.meta?.codigo_origem || '';
+    set('cmpCodOrigem', codigoOrigem || '— (lançamento anterior aos códigos)');
     const codeTxn = document.getElementById('cmpTxn');
     if (codeTxn) codeTxn.textContent = txn;
+    const correcaoDe = item.codigo_referencia || '';
+    const rowCorr = document.getElementById('cmpCorrecaoRow');
+    if (rowCorr) rowCorr.hidden = !correcaoDe;
+    set('cmpCorrecaoDe', correcaoDe);
+    const dec = window.__decodificarCodigo(codigoOrigem);
+    set('cmpOrigTipo', dec
+      ? `${dec.tipo} · ${dec.empresa} · rota ${dec.rota} · ${dec.data}`
+      : (/prest/i.test(item.categoria || '') ? 'Prestação de contas' : 'Lançamento no caixa'));
     set('cmpGerente', item.gerente || '—');
     set('cmpForma', item.forma || '—');
     set('cmpCategoria', item.categoria || '—');
@@ -542,11 +664,22 @@ window.__fin_saveFromForm = async function(){
     if (!Array.isArray(window.lanc)) window.lanc = [];
     const newId = (typeof uid === 'function' ? uid()
                     : (crypto?.randomUUID?.() || String(Date.now())));
-    window.lanc.push({ uid: newId, ...reg });
+    const agora = new Date().toISOString();
+    const quem = window.__currentUsername?.() || 'Sistema';
+    const disp = window.__detectDevice?.() || 'desktop';
+    const novoManual = {
+      uid: newId, ...reg,
+      codigo_origem: window.__gerarCodigoOrigem('MAN', { gerenteNome: reg.gerente, data: reg.data }),
+      transaction_id: window.__gerarCodigoCaixa(),
+      device: disp, user_agent: window.__uaShort?.() || '',
+      originator_user: quem, originator_at: agora, originator_device: disp,
+      created_by: quem, created_at: agora
+    };
+    window.lanc.push(novoManual);
     // ✅ Cria no Supabase
     if (window.SupabaseAPI?.lancamentos) {
       try {
-        await window.SupabaseAPI.lancamentos.create({ uid: newId, ...reg });
+        await window.SupabaseAPI.lancamentos.create(novoManual);
       } catch(e) {
         console.error('[Financeiro] Erro ao criar no Supabase:', e);
       }
@@ -687,7 +820,8 @@ function applyFilters(rows){
     if (ate && d && d > ate) return false;  // inclusivo no <= ate
 
     if (buscaI){
-      const hay = [ r.gerente, r.categoria, r.forma, r.status ]
+      const hay = [ r.gerente, r.categoria, r.forma, r.status,
+                    r.codigo_origem, r.transaction_id, r.codigo_referencia ]
         .map(normalize).join(' ');
       if (!hay.includes(buscaI)) return false;
     }
@@ -987,7 +1121,8 @@ function formatDate(date) {
           // Metadados de auditoria (para o comprovante)
           originator_user: r.originator_user || null,
           originator_at: r.originator_at || null,
-          originator_device: r.originator_device || null
+          originator_device: r.originator_device || null,
+          codigoReferencia: r.codigo_referencia || null
         }));
       } catch(e) { console.error('[Pendencias] Erro:', e); return []; }
     },
@@ -1022,13 +1157,19 @@ function formatDate(date) {
         if (item.originator_user)   payload.originator_user   = item.originator_user;
         if (item.originator_at)     payload.originator_at     = item.originator_at;
         if (item.originator_device) payload.originator_device = item.originator_device;
+        if (item.codigoReferencia)  payload.codigo_referencia = item.codigoReferencia;
 
         let { error: errIns } = await this.client.from('pendencias').insert([payload]);
-        // Fallback: se colunas de auditoria não existem, tenta sem elas
-        if (errIns && /originator_/i.test(String(errIns.message || ''))) {
-          delete payload.originator_user;
-          delete payload.originator_at;
-          delete payload.originator_device;
+        // Fallback enquanto o SQL não foi rodado: tenta sem as colunas opcionais
+        for (let t = 0; t < 2 && errIns && errIns.code !== '23505'; t++) {
+          const msg = String(errIns.message || '');
+          if (/originator_/i.test(msg)) {
+            delete payload.originator_user;
+            delete payload.originator_at;
+            delete payload.originator_device;
+          } else if (/codigo_referencia/i.test(msg)) {
+            delete payload.codigo_referencia;
+          } else break;
           ({ error: errIns } = await this.client.from('pendencias').insert([payload]));
         }
         if (errIns) throw errIns;
@@ -1078,6 +1219,14 @@ function formatDate(date) {
         await this.delete(uid);
         console.log('[Pendencias] ✅ Confirmada:', uid);
       } catch(e) { console.error('[Pendencias] Erro ao confirmar:', e); }
+    },
+
+    async exists(uid) {
+      try {
+        if (!this.client) return false;
+        const { data } = await this.client.from('pendencias').select('uid').eq('uid', uid).maybeSingle();
+        return !!data;
+      } catch { return false; }
     },
 
     async isConfirmed(uid) {
@@ -1292,45 +1441,76 @@ window.__setLanc = function(novo) {
           .concat(Array.isArray(p.pagamentosNormais) ? p.pagamentosNormais : [])
           .filter(x => {
             const f = String((x.forma || x.tipo || '') + '').trim().toUpperCase();
-            return !x?.cancelado && f !== 'ADIANTAMENTO' && f !== 'VALE' && f !== 'DIVIDA_PAGA';
+            // DIVIDA_PAGA antiga (sem código) é tratada só no salvamento da prestação
+            return !x?.cancelado && f !== 'ADIANTAMENTO' && f !== 'VALE' && (f !== 'DIVIDA_PAGA' || !!x?.codigo);
           });
 
-        for (const pg of pagamentos) {
+        const info = 'Prest. ' + (p.ini || '').slice(5).split('-').reverse().join('/') +
+                     '–' + (p.fim || '').slice(5).split('-').reverse().join('/');
+
+        // Pagamentos com código de origem: cada movimento (original/correção) é a própria pendência
+        for (const pg of pagamentos.filter(x => x?.codigo)) {
+          novos += await window.__garantirPendenciasCodificadas(p, pg, {
+            gerenteNome,
+            jaConhecido: uid => pendUIDs.has(uid) || confirmadosFromUID.has(uid)
+          });
+          window.__codigosAtivos(pg).forEach(m => pendUIDs.add(m.codigo));
+        }
+
+        // Pagamentos antigos (sem código): pagamentos iguais (mesma data, valor e forma)
+        // têm o mesmo código "estável"; por isso cada um também é identificado pelo próprio id.
+        const grupos = new Map();
+        pagamentos.filter(x => !x?.codigo).forEach((pg, idx) => {
           const uids = window.__pgMakeUIDs(p, pg);
+          const proprios = pg?.id ? [uids.legacy, `${uids.stable}|I:${pg.id}`] : [];
+          if (!grupos.has(uids.stable)) grupos.set(uids.stable, []);
+          grupos.get(uids.stable).push({ pg, uids, proprios, idx });
+        });
 
-          if (pendUIDs.has(uids.stable) || pendUIDs.has(uids.legacy) ||
-              pendAlt.has(uids.stable) || pendAlt.has(uids.legacy) ||
-              confirmadosFromUID.has(uids.stable) || confirmadosFromUID.has(uids.legacy)) {
-            continue;
-          }
+        const marcado = uid => pendUIDs.has(uid) || pendAlt.has(uid) || confirmadosFromUID.has(uid);
 
-          // Falha em um pagamento não pode interromper a sincronização dos demais
-          try {
-            // ✅ CORREÇÃO: Verificação extra no Supabase antes de criar
-            const jaConfirmado = await PendenciasAPI.isConfirmed(uids.stable) ||
-                                 await PendenciasAPI.isConfirmed(uids.legacy);
-            if (jaConfirmado) {
-              console.log('⚠️ Pendência já confirmada no Supabase, ignorando:', uids.stable);
-              confirmadosFromUID.add(uids.stable);
-              continue;
+        for (const [stable, itens] of grupos) {
+          const stableUsado = marcado(stable);
+          const cobertos = itens.filter(it => it.proprios.some(marcado));
+          const aCriar = itens.filter(it => !cobertos.includes(it));
+          // Registro antigo só com o código estável cobre um (e apenas um) pagamento do grupo
+          if (stableUsado && cobertos.length === 0) aCriar.shift();
+
+          let stableLivre = !stableUsado;
+          for (const it of aCriar) {
+            const uid = stableLivre ? stable : `${stable}|I:${it.pg.id || it.idx}`;
+            const altUID = it.pg?.id ? it.uids.legacy : `${it.uids.legacy}|I:${it.idx}`;
+
+            // Falha em um pagamento não pode interromper a sincronização dos demais
+            try {
+              // ✅ CORREÇÃO: Verificação extra no Supabase antes de criar
+              const jaConfirmado = await PendenciasAPI.isConfirmed(uid) ||
+                                   await PendenciasAPI.isConfirmed(altUID);
+              if (jaConfirmado) {
+                console.log('⚠️ Pendência já confirmada no Supabase, ignorando:', uid);
+                confirmadosFromUID.add(uid);
+                if (uid === stable) stableLivre = false;
+                continue;
+              }
+
+              await PendenciasAPI.create({
+                uid, altUID,
+                prestId: p.id, gerenteId: p.gerenteId, gerenteNome,
+                data: it.pg.data || p.fim || p.ini || '',
+                valorOriginal: Number(it.pg.valor) || 0,
+                valorConfirm: Number(it.pg.valor) || 0,
+                info,
+                forma: it.pg.forma || it.pg.tipo || 'PRESTAÇÃO',
+                tipoCaixa: 'RECEBIDO'
+              });
+
+              pendUIDs.add(uid);
+              pendAlt.add(altUID);
+              if (uid === stable) stableLivre = false;
+              novos++;
+            } catch (e) {
+              console.error('[syncPendenciasFromPrest] Falha ao criar pendência:', uid, e);
             }
-
-            await PendenciasAPI.create({
-              uid: uids.stable, altUID: uids.legacy,
-              prestId: p.id, gerenteId: p.gerenteId, gerenteNome,
-              data: pg.data || p.fim || p.ini || '',
-              valorOriginal: Number(pg.valor) || 0,
-              valorConfirm: Number(pg.valor) || 0,
-              info: 'Prest. ' + (p.ini || '').slice(5).split('-').reverse().join('/') +
-                    '–' + (p.fim || '').slice(5).split('-').reverse().join('/'),
-              forma: pg.forma || pg.tipo || 'PRESTAÇÃO',
-              tipoCaixa: 'RECEBIDO'
-            });
-
-            pendUIDs.add(uids.stable);
-            novos++;
-          } catch (e) {
-            console.error('[syncPendenciasFromPrest] Falha ao criar pendência:', uids.stable, e);
           }
         }
       }
@@ -1627,9 +1807,11 @@ function renderFinPendencias(){
 
         // ⚡ IDEMPOTÊNCIA: verifica se já existe lançamento vindo desta pendência
         // (defende contra dupla-confirmação mesmo com locks vencendo por refresh)
+        const codigoOrigem = window.__ehCodigoOrigem?.(p.uid) ? p.uid : null;
         const jaConfirmado = (lancs || []).find(l =>
           l?.meta?.fromUID === p.uid ||
-          (p.altUID && l?.meta?.fromUID === p.altUID)
+          (p.altUID && l?.meta?.fromUID === p.altUID) ||
+          (codigoOrigem && l?.codigo_origem === codigoOrigem)
         );
         if (jaConfirmado) {
           console.warn('[Fin] Pendência já confirmada anteriormente:', p.uid, '→ lanc:', jaConfirmado.uid);
@@ -1648,10 +1830,31 @@ function renderFinPendencias(){
           return;
         }
 
-        // 🆔 Gera número de transação legível (TXN + 8 chars do UID + timestamp curto)
+        // 🔒 Código de origem precisa continuar ativo na prestação (não foi corrigido/removido)
+        const retirarPendencia = async (msg) => {
+          alert(msg);
+          pend.splice(i, 1);
+          __setPendencias(pend);
+          try { await window.PendenciasAPI?.delete?.(p.uid); } catch(_){}
+          try { renderFinPendencias?.(); } catch(_){}
+        };
+        const MSG_CORRIGIDO = '⚠️ Este valor foi corrigido ou removido na prestação depois de ir para o caixa.\n\n' +
+          'Nada foi lançado. A pendência será retirada; o valor correto aparece como nova pendência.';
+        if (codigoOrigem) {
+          const ativo = await window.__codigoAtivoNaPrestacao(p.prestId, codigoOrigem);
+          if (ativo === null) {
+            alert('Não foi possível verificar a prestação deste pagamento. Tente novamente.');
+            btnC.disabled = false;
+            btnC.dataset.processing = '';
+            btnC.textContent = textoOriginal;
+            return;
+          }
+          if (!ativo) { await retirarPendencia(MSG_CORRIGIDO); return; }
+        }
+
+        // 🆔 Código do caixa (CX-EMPRESA-AAMMDD-XXXX), ligado ao código de origem
         const uidLanc = (typeof window.uid === 'function' ? window.uid() : 'f_' + Date.now() + '_' + Math.random());
-        const txnId = 'TXN' + Date.now().toString(36).toUpperCase().slice(-6) +
-                      uidLanc.replace(/[^A-Z0-9]/gi, '').slice(0, 4).toUpperCase();
+        const txnId = window.__gerarCodigoCaixa(p.company);
 
         // ✅ Metadados do CONFIRMADOR (usuário atual, dispositivo, momento)
         const confirmerUser   = window.__currentUsername?.() || 'Sistema';
@@ -1661,7 +1864,9 @@ function renderFinPendencias(){
         // Cria o novo lançamento
         const novoLanc = {
           uid: uidLanc,
-          transaction_id: txnId,   // 🆔 número de transação humano-legível
+          transaction_id: txnId,          // 🆔 código do caixa
+          codigo_origem: codigoOrigem,    // 🆔 código do pagamento na prestação
+          codigo_referencia: p.codigoReferencia || null,  // código corrigido por este movimento
           gerente: p.gerenteNome || '',
           valor: Number(p.valorConfirm) || 0,
           status: statusFinal,
@@ -1675,6 +1880,7 @@ function renderFinPendencias(){
           user_agent: confirmerUA,
           originator_user: p.originator_user || null,
           originator_at: p.originator_at || null,
+          originator_device: p.originator_device || null,
           meta: {
             from: 'prestacao',
             fromUID: p.uid,
@@ -1683,6 +1889,7 @@ function renderFinPendencias(){
             editadoDe: Number(p.valorOriginal) || 0,
             tipoPendencia: ehSaida ? 'PAGAMENTO' : 'RECEBIMENTO',
             transaction_id: txnId,
+            codigo_origem: codigoOrigem,
             // Contexto adicional
             confirmer_user: confirmerUser,
             confirmer_device: confirmerDevice,
@@ -1700,13 +1907,32 @@ function renderFinPendencias(){
           novoLanc.editedBy = (window.currentUser?.nome || window.UserAuth?.currentUser()?.username || 'Usuário');
         }
     
-// Adiciona ao array de lançamentos
-lancs.push(novoLanc);
-        
-// ✅ SALVA NO SUPABASE
-if (window.SupabaseAPI?.lancamentos?.create) {
-  await window.SupabaseAPI.lancamentos.create(novoLanc);
-}
+        // ✅ SALVA NO SUPABASE primeiro: se o banco recusar, nada entra no caixa local
+        if (window.SupabaseAPI?.lancamentos?.create) {
+          const criado = await window.SupabaseAPI.lancamentos.create(novoLanc);
+          if (criado?.__jaExistia) {
+            alert('⚠️ Este pagamento JÁ está no caixa.\n\n' +
+                  `Código de origem: ${criado.codigo_origem || codigoOrigem || '—'}\n` +
+                  `Código do caixa: ${criado.transaction_id || '—'}\n\n` +
+                  'Nada foi lançado de novo. A pendência será removida da fila.');
+            __addConf(p.uid);
+            if (p.altUID) __addConf(p.altUID);
+            pend.splice(i, 1);
+            __setPendencias(pend);
+            try { renderFinPendencias?.(); } catch(_){}
+            try { await window.carregarFinanceiroSupabase?.(); } catch(_){}
+            return;
+          }
+
+          // 🔒 Conferência pós-gravação: se a prestação foi corrigida neste mesmo instante, desfaz
+          if (codigoOrigem && await window.__codigoAtivoNaPrestacao(p.prestId, codigoOrigem) === false) {
+            try { await window.SupabaseAPI.lancamentos.delete(uidLanc); } catch(_){}
+            await retirarPendencia(MSG_CORRIGIDO);
+            return;
+          }
+        }
+
+        lancs.push(novoLanc);
 
 // Salva localmente como backup
 __setLanc(lancs);
@@ -2673,7 +2899,9 @@ console.log('[Financeiro] Módulo carregado e pronto');
           user_agent: r.user_agent || '',
           originator_user: r.originator_user || '',
           originator_at: r.originator_at || null,
-          originator_device: r.originator_device || ''
+          originator_device: r.originator_device || '',
+          codigo_origem: r.codigo_origem || '',
+          codigo_referencia: r.codigo_referencia || ''
         }));
       },
 
@@ -2681,21 +2909,27 @@ console.log('[Financeiro] Módulo carregado e pronto');
         const company = item.company || window.getCompany?.() || 'BSX';
         const uid = item.uid || window.uid?.() || crypto.randomUUID();
 
-        // ⚡ Idempotência no nível do banco: se já existe lançamento com essa
-        // transaction_id, retorna sem duplicar (backup pra ~falha do lock JS).
-        const txnId = item.transaction_id || item.meta?.transaction_id || null;
-        if (txnId) {
+        const client = window.SupabaseAPI.client;
+        const ehDuplicado = e => !!e && (e.code === '23505' || /duplicate key/i.test(String(e.message || '')));
+        const buscarExistente = async (coluna, valor) => {
           try {
-            const { data: existente } = await window.SupabaseAPI.client
-              .from('lancamentos')
-              .select('id, uid, transaction_id')
-              .eq('transaction_id', txnId)
-              .maybeSingle();
-            if (existente) {
-              console.warn('[Lancamentos] Idempotência: transação já existe, retornando existente:', txnId);
-              return existente;
-            }
-          } catch(_) { /* coluna pode não existir ainda — segue fluxo normal */ }
+            const { data } = await client.from('lancamentos')
+              .select('id, uid, transaction_id, codigo_origem').eq(coluna, valor).maybeSingle();
+            return data || null;
+          } catch (_) { return null; } // coluna pode não existir ainda
+        };
+
+        // ⚡ Idempotência: o mesmo pagamento (código de origem) ou a mesma transação
+        // do caixa nunca geram um segundo lançamento.
+        const txnId = item.transaction_id || item.meta?.transaction_id || null;
+        const codOrigem = item.codigo_origem || item.meta?.codigo_origem || null;
+        for (const [coluna, valor] of [['codigo_origem', codOrigem], ['transaction_id', txnId]]) {
+          if (!valor) continue;
+          const existente = await buscarExistente(coluna, valor);
+          if (existente) {
+            console.warn('[Lancamentos] Idempotência: já existe lançamento com', coluna, valor);
+            return { ...existente, __jaExistia: true };
+          }
         }
 
         // Nome do usuário confirmador (prioriza UserAuth, cai para currentUser.nome)
@@ -2710,41 +2944,47 @@ console.log('[Financeiro] Módulo carregado e pronto');
           categoria: item.categoria || '', data: item.data || new Date().toISOString().slice(0,10),
           company, created_by: confirmerName
         };
-        if (txnId) payload.transaction_id = txnId;
+        if (txnId)     payload.transaction_id = txnId;
+        if (codOrigem) payload.codigo_origem  = codOrigem;
+        if (item.codigo_referencia) payload.codigo_referencia = item.codigo_referencia;
 
-        // ✅ Metadados de comprovante (com fallback caso as colunas ainda não existam)
+        // ✅ Metadados de comprovante
         if (item.device)            payload.device            = item.device;
         if (item.user_agent)        payload.user_agent        = item.user_agent;
         if (item.originator_user)   payload.originator_user   = item.originator_user;
         if (item.originator_at)     payload.originator_at     = item.originator_at;
         if (item.originator_device) payload.originator_device = item.originator_device;
 
-        let { data, error } = await window.SupabaseAPI.client
-          .from('lancamentos').insert([payload]).select().single();
+        const inserir = () => client.from('lancamentos').insert([payload]).select().single();
+        let { data, error } = await inserir();
 
-        // Fallback: se falhou porque a coluna transaction_id ainda não existe,
-        // repete o insert sem esse campo
-        if (error && /transaction_id/i.test(String(error.message || ''))) {
-          console.warn('[Lancamentos] transaction_id não existe no banco; salvando sem esse campo.');
-          delete payload.transaction_id;
-          ({ data, error } = await window.SupabaseAPI.client
-            .from('lancamentos').insert([payload]).select().single());
+        // Fallback enquanto o SQL não foi rodado: remove só a coluna que o banco
+        // disse não existir. Nunca em caso de duplicidade (aí o bloqueio é o objetivo).
+        const gruposOpcionais = [
+          { re: /codigo_origem/i, campos: ['codigo_origem'] },
+          { re: /codigo_referencia/i, campos: ['codigo_referencia'] },
+          { re: /transaction_id/i, campos: ['transaction_id'] },
+          { re: /device|user_agent|originator_/i,
+            campos: ['device', 'user_agent', 'originator_user', 'originator_at', 'originator_device'] }
+        ];
+        for (let t = 0; t < gruposOpcionais.length && error && !ehDuplicado(error); t++) {
+          const msg = String(error.message || '');
+          const g = gruposOpcionais.find(x => x.re.test(msg) && x.campos.some(c => c in payload));
+          if (!g) break;
+          console.warn('[Lancamentos] Coluna ausente no banco; salvando sem:', g.campos.join(', '));
+          g.campos.forEach(c => delete payload[c]);
+          ({ data, error } = await inserir());
         }
 
-        // Fallback: se falhou por qualquer coluna de comprovante ainda não existir
-        if (error && /device|user_agent|originator_/i.test(String(error.message || ''))) {
-          console.warn('[Lancamentos] colunas de comprovante ainda não existem; salvando sem esses campos.');
-          delete payload.device;
-          delete payload.user_agent;
-          delete payload.originator_user;
-          delete payload.originator_at;
-          delete payload.originator_device;
-          ({ data, error } = await window.SupabaseAPI.client
-            .from('lancamentos').insert([payload]).select().single());
+        // 🔒 Banco recusou por duplicidade: devolve o lançamento que já existe
+        if (ehDuplicado(error)) {
+          const existente = (codOrigem && await buscarExistente('codigo_origem', codOrigem)) ||
+                            (txnId && await buscarExistente('transaction_id', txnId));
+          if (existente) return { ...existente, __jaExistia: true };
         }
 
         if (error) throw error;
-        console.log('[Lancamentos] ✅ Criado:', uid, txnId ? '(txn ' + txnId + ')' : '');
+        console.log('[Lancamentos] ✅ Criado:', uid, codOrigem || '', txnId || '');
         return data;
       },
 

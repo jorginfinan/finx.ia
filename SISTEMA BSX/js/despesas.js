@@ -245,6 +245,15 @@ function makeDespActionsMenu({ id, isHidden }, { canDelete }){
   
     // Quantidade de colunas (para mensagens vazias)
     const colCount = tb?.closest('table')?.querySelectorAll('thead th').length || 12;
+
+    // Sem gerente, rota ou ficha selecionados, a tabela não lista nada
+    if (!buscaG && !buscaR && !buscaF) {
+      tb.innerHTML = `<tr><td colspan="${colCount}" style="text-align:center;padding:28px;color:#6b7280">` +
+                     `Selecione um gerente, rota ou ficha para ver as despesas.</td></tr>`;
+      document.getElementById('despAvisoForaPadrao')?.classList.add('hidden');
+      document.getElementById('despAvisoOcultas')?.classList.add('hidden');
+      return;
+    }
   
 // 1) Filtra
 const allDespesas = __getDespesas();
@@ -434,7 +443,7 @@ itens.forEach((it, idx) => {
     const avisoFP = document.getElementById('despAvisoForaPadrao');
     if (avisoFP) {
       avisoFP.textContent = qtdForaPadrao
-        ? `🔴 ${qtdForaPadrao} ${qtdForaPadrao === 1 ? 'despesa fora do padrão destacada' : 'despesas fora do padrão destacadas'} em vermelho (mesma regra do alerta do Início).`
+        ? `${qtdForaPadrao} ${qtdForaPadrao === 1 ? 'despesa fora do padrão' : 'despesas fora do padrão'}`
         : '';
       avisoFP.classList.toggle('hidden', !qtdForaPadrao);
     }

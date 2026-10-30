@@ -1471,7 +1471,8 @@ function __iniciarCodigos(pg) {
 }
 
 // Valor que cada código já moveu no caixa (sinal no sentido do pagamento).
-// Usa o valor REAL lançado no caixa (o caixa pode ter confirmado um valor editado).
+// 1) lançamento no caixa com esse código → valor REAL lançado (o caixa pode ter editado);
+// 2) sem lançamento mas com trava (confirmado pelo formato antigo ou descartado) → valor do movimento.
 async function __valoresNoCaixa(pg, codigos) {
   const res = new Map();
   const client = window.SupabaseAPI?.client;
@@ -1479,19 +1480,19 @@ async function __valoresNoCaixa(pg, codigos) {
   const statusBase = __direcaoBase(pg) === 'PAG' ? 'PAGO' : 'RECEBIDO';
   const { data, error } = await client.from('lancamentos')
     .select('codigo_origem, valor, status').in('codigo_origem', codigos);
-  if (error) {
-    if (!/codigo_origem/i.test(String(error.message || ''))) throw error;
-    // SQL ainda não rodado: usa a trava de confirmação com o valor do movimento
-    const { data: conf, error: e2 } = await client.from('pendencias_confirmadas').select('uid').in('uid', codigos);
-    if (e2) throw e2;
-    const todos = [...(pg.codigos || []), ...(pg.substituidos || [])];
-    (conf || []).forEach(r => res.set(r.uid, Number(todos.find(m => m.codigo === r.uid)?.valor) || 0));
-    return res;
-  }
+  if (error && !/codigo_origem/i.test(String(error.message || ''))) throw error;
   (data || []).forEach(r => {
     const v = Number(r.valor) || 0;
     res.set(r.codigo_origem, (res.get(r.codigo_origem) || 0) + (r.status === statusBase ? v : -v));
   });
+
+  const semLancamento = codigos.filter(c => !res.has(c));
+  if (semLancamento.length) {
+    const { data: conf, error: e2 } = await client.from('pendencias_confirmadas').select('uid').in('uid', semLancamento);
+    if (e2) throw e2;
+    const todos = [...(pg.codigos || []), ...(pg.substituidos || [])];
+    (conf || []).forEach(r => res.set(r.uid, Number(todos.find(m => m.codigo === r.uid)?.valor) || 0));
+  }
   return res;
 }
 

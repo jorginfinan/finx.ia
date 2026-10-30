@@ -293,6 +293,14 @@ window.__garantirPendenciasCodificadas = async function (prest, pg, { gerenteNom
     try {
       if (await window.PendenciasAPI.isConfirmed(mov.codigo)) continue;
       if (await window.PendenciasAPI.exists(mov.codigo)) continue;
+      if (!mov.ref) {
+        const antigo = await window.__legadoCobre(prest, pg);
+        if (antigo) {
+          console.warn('[Pendências] Pagamento já tratado no formato antigo', antigo, '→ trava', mov.codigo);
+          await window.PendenciasAPI.confirm(mov.codigo);
+          continue;
+        }
+      }
       const tipoCaixa = valor > 0 ? base : oposto;
       await window.PendenciasAPI.create({
         uid: mov.codigo, altUID: null,
@@ -320,19 +328,50 @@ window.__garantirPendenciasCodificadas = async function (prest, pg, { gerenteNom
   return criadas;
 };
 
-// O código ainda é um movimento ativo na prestação salva? true / false / null (não deu para verificar)
-window.__codigoAtivoNaPrestacao = async function (prestId, codigo) {
+// O pagamento já foi tratado no formato ANTIGO (antes dos códigos)? Acontece quando um
+// aparelho com versão antiga em cache confirmou o pagamento pelo código antigo.
+// Devolve o UID antigo encontrado (confirmado/descartado ou na fila) ou null.
+window.__legadoCobre = async function (prest, pg) {
+  if (!prest?.id || !pg?.id || typeof window.__pgMakeUIDs !== 'function') return null;
+  const orig = { ...pg, ...(pg.correcoes?.[0]?.de || {}) };   // valores de quando foi lançado
+  const ids = [];
+  if (String(orig.forma || '').toUpperCase() === 'DIVIDA_PAGA') {
+    ids.push(`DIVPAG:${prest.id}:${pg.id}:${Number(orig.valor) || 0}`);
+  } else {
+    const { stable, legacy } = window.__pgMakeUIDs(prest, orig);
+    ids.push(legacy, `${stable}|I:${pg.id}`);
+    const iguais = (prest.pagamentos || []).filter(x => x?.id !== pg.id &&
+      window.__pgMakeUIDs(prest, { ...x, ...(x?.correcoes?.[0]?.de || {}) }).stable === stable);
+    if (!iguais.length) ids.push(stable);   // código estável só identifica se for único
+  }
+  const api = window.PendenciasAPI;
+  const travados = await api.travadas(ids);
+  for (const id of ids) {
+    if (travados.has(id) || await api.exists(id)) return id;
+  }
+  return null;
+};
+
+// Localiza o código na prestação salva: { status: 'ativo'|'inativo'|'erro', prest, pg, mov }
+window.__localizarCodigoNaPrestacao = async function (prestId, codigo) {
   try {
     const client = window.SupabaseAPI?.client;
-    if (!client || !prestId) return null;
-    const { data, error } = await client.from('prestacoes').select('dados').eq('uid', prestId).limit(1);
+    if (!client || !prestId) return { status: 'erro' };
+    const { data, error } = await client.from('prestacoes')
+      .select('uid, periodo_ini, periodo_fim, dados').eq('uid', prestId).limit(1);
     if (error) throw error;
-    const pagamentos = data?.[0]?.dados?.pagamentos;
-    if (!Array.isArray(pagamentos)) return false;
-    return pagamentos.some(pg => window.__codigosAtivos(pg).some(m => m.codigo === codigo));
+    const reg = data?.[0];
+    const pagamentos = reg?.dados?.pagamentos;
+    if (!Array.isArray(pagamentos)) return { status: 'inativo' };
+    const prest = { id: reg.uid, ini: reg.periodo_ini, fim: reg.periodo_fim, pagamentos };
+    for (const pg of pagamentos) {
+      const mov = window.__codigosAtivos(pg).find(m => m.codigo === codigo);
+      if (mov) return { status: 'ativo', prest, pg, mov };
+    }
+    return { status: 'inativo', prest };
   } catch (e) {
     console.error('[Pendências] Não foi possível verificar o código na prestação:', e);
-    return null;
+    return { status: 'erro' };
   }
 };
 
@@ -407,7 +446,8 @@ window.abrirComprovante = function (uid) {
 
     // Transação: código de origem (prestação/manual) + código do caixa
     const codigoOrigem = item.codigo_origem || item.meta?.codigo_origem || '';
-    set('cmpCodOrigem', codigoOrigem || '— (lançamento anterior aos códigos)');
+    set('cmpCodOrigem', !codigoOrigem ? '— (lançamento anterior aos códigos)'
+      : window.__ehCodigoOrigem(codigoOrigem) ? codigoOrigem : `${codigoOrigem} (formato antigo)`);
     const codeTxn = document.getElementById('cmpTxn');
     if (codeTxn) codeTxn.textContent = txn || '— (lançamento anterior aos códigos)';
     const correcaoDe = item.codigo_referencia || '';
@@ -1113,8 +1153,21 @@ function formatDate(date) {
           .order('data', { ascending: false });
         
         if (error) { console.error('[Pendencias] Erro:', error); return []; }
-        
-        return (data || []).map(r => ({
+
+        // 🔒 Pendência já processada não pode ficar na fila: código com trava
+        // (confirmada/descartada) ou já presente num lançamento do caixa
+        const linhas = data || [];
+        const ids = linhas.flatMap(r => [r.uid, r.alt_uid]);
+        const travadas = await this.travadas(ids);
+        const noCaixa = await this.jaNoCaixa(ids);
+        const ja = id => !!id && (travadas.has(id) || noCaixa.has(id));
+        const velhas = linhas.filter(r => ja(r.uid) || ja(r.alt_uid));
+        for (const r of velhas) {
+          console.warn('[Pendencias] Já processada antes; retirando da fila:', r.uid);
+          await this.confirm(r.uid);   // grava a trava (se faltava) e apaga da fila
+        }
+
+        return linhas.filter(r => !velhas.includes(r)).map(r => ({
           id: r.id, uid: r.uid, altUID: r.alt_uid,
           gerenteId: r.gerente_id, gerenteNome: r.gerente,
           valorOriginal: Number(r.valor_original) || 0,
@@ -1216,15 +1269,49 @@ function formatDate(date) {
           const s = new Set(JSON.parse(localStorage.getItem('DB_CAIXA_CONF_OK') || '[]'));
           s.add(uid);
           localStorage.setItem('DB_CAIXA_CONF_OK', JSON.stringify([...s]));
-          return;
+          return true;
         }
         const company = window.getCompany?.() || 'BSX';
-        await this.client.from('pendencias_confirmadas').upsert([{
-          uid, company, confirmed_by: window.currentUser?.nome || ''
-        }], { onConflict: 'uid' });
-        await this.delete(uid);
-        console.log('[Pendencias] ✅ Confirmada:', uid);
-      } catch(e) { console.error('[Pendencias] Erro ao confirmar:', e); }
+        const quem = window.__currentUsername?.() || window.currentUser?.nome || '';
+        // Trava primeiro, depois tira da fila; qualquer erro é devolvido (não fica silencioso)
+        for (let tentativa = 1; tentativa <= 2; tentativa++) {
+          const { error: e1 } = await this.client.from('pendencias_confirmadas')
+            .upsert([{ uid, company, confirmed_by: quem }], { onConflict: 'uid' });
+          const { error: e2 } = e1 ? { error: null }
+            : await this.client.from('pendencias').delete().eq('uid', uid);
+          if (!e1 && !e2) { console.log('[Pendencias] ✅ Confirmada:', uid); return true; }
+          console.error(`[Pendencias] Erro ao confirmar (tentativa ${tentativa}):`, e1 || e2);
+        }
+        return false;
+      } catch(e) { console.error('[Pendencias] Erro ao confirmar:', e); return false; }
+    },
+
+    // UIDs (entre os informados) que já viraram lançamento no caixa (codigo_origem)
+    async jaNoCaixa(uids) {
+      const lista = [...new Set((uids || []).filter(Boolean))];
+      const res = new Set();
+      if (!this.client || !lista.length) return res;
+      for (let i = 0; i < lista.length; i += 50) {
+        const { data, error } = await this.client.from('lancamentos')
+          .select('codigo_origem').in('codigo_origem', lista.slice(i, i + 50));
+        if (error) { if (!/codigo_origem/i.test(String(error.message || ''))) console.error('[Pendencias] Erro ao ler caixa:', error); break; }
+        (data || []).forEach(r => res.add(r.codigo_origem));
+      }
+      return res;
+    },
+
+    // UIDs (entre os informados) que já têm trava de confirmação/descarte
+    async travadas(uids) {
+      const lista = [...new Set((uids || []).filter(Boolean))];
+      const res = new Set();
+      if (!this.client || !lista.length) return res;
+      for (let i = 0; i < lista.length; i += 50) {
+        const { data, error } = await this.client.from('pendencias_confirmadas')
+          .select('uid').in('uid', lista.slice(i, i + 50));
+        if (error) { console.error('[Pendencias] Erro ao ler travas:', error); continue; }
+        (data || []).forEach(r => res.add(r.uid));
+      }
+      return res;
     },
 
     async exists(uid) {
@@ -1349,8 +1436,8 @@ window.__getConfSetAsync = async function() {
 };
 
 window.__addConf = async function(uid) {
-  if (!uid) return;
-  await PendenciasAPI.confirm(uid);
+  if (!uid) return true;
+  return await PendenciasAPI.confirm(uid);
 };
 
 window.__getLanc = function() {
@@ -1436,6 +1523,7 @@ window.__setLanc = function(novo) {
       ]);
 
       let novos = 0;
+      let removidas = 0;
 
       for (const p of prests) {
         const gerenteNome = (window.gerentes || []).find(g =>
@@ -1456,6 +1544,13 @@ window.__setLanc = function(novo) {
 
         // Pagamentos com código de origem: cada movimento (original/correção) é a própria pendência
         for (const pg of pagamentos.filter(x => x?.codigo)) {
+          // Original na fila, mas o pagamento já foi confirmado pelo formato antigo → sai da fila
+          for (const mov of window.__codigosAtivos(pg).filter(m => !m.ref && pendUIDs.has(m.codigo))) {
+            if (await window.__legadoCobre(p, pg)) {
+              console.warn('[Pendências] Já confirmado no formato antigo; retirando da fila:', mov.codigo);
+              if (await PendenciasAPI.confirm(mov.codigo)) { pendUIDs.delete(mov.codigo); confirmadosFromUID.add(mov.codigo); removidas++; }
+            }
+          }
           novos += await window.__garantirPendenciasCodificadas(p, pg, {
             gerenteNome,
             jaConhecido: uid => pendUIDs.has(uid) || confirmadosFromUID.has(uid)
@@ -1521,9 +1616,10 @@ window.__setLanc = function(novo) {
         }
       }
 
-      if (novos > 0) {
-        _pendCache = null; // Invalida cache
-        console.log('✅ Sincronizadas', novos, 'novas pendências');
+      if (novos > 0 || removidas > 0) {
+        _pendCache = await PendenciasAPI.getAll();
+        try { renderFinPendencias?.(); } catch(_){}
+        console.log('✅ Pendências sincronizadas:', novos, 'novas,', removidas, 'retiradas');
       }
       return novos;
     } catch (e) { console.error('Erro em syncPendenciasFromPrest:', e); return 0; }
@@ -1811,51 +1907,64 @@ function renderFinPendencias(){
           }
         }
 
-        // ⚡ IDEMPOTÊNCIA: verifica se já existe lançamento vindo desta pendência
-        // (defende contra dupla-confirmação mesmo com locks vencendo por refresh)
-        const codigoOrigem = window.__ehCodigoOrigem?.(p.uid) ? p.uid : null;
+        // ⚡ IDEMPOTÊNCIA (memória deste aparelho)
+        const codigoOrigem = window.__ehCodigoOrigem?.(p.uid) ? p.uid : null;   // código novo (REC/PAG)
         const jaConfirmado = (lancs || []).find(l =>
           l?.meta?.fromUID === p.uid ||
           (p.altUID && l?.meta?.fromUID === p.altUID) ||
-          (codigoOrigem && l?.codigo_origem === codigoOrigem)
+          l?.codigo_origem === p.uid ||
+          (p.altUID && l?.codigo_origem === p.altUID)
         );
-        if (jaConfirmado) {
-          console.warn('[Fin] Pendência já confirmada anteriormente:', p.uid, '→ lanc:', jaConfirmado.uid);
-          alert('⚠️ Este recebimento JÁ foi confirmado anteriormente.\n\n' +
-                `Transação: ${jaConfirmado.transaction_id || jaConfirmado.uid?.slice(0,8) || '—'}\n` +
-                'A pendência será removida da fila.');
-          // Remove a pendência zumbi
-          pend.splice(i, 1);
-          __setPendencias(pend);
-          if (window.PendenciasAPI?.delete) {
-            try { await window.PendenciasAPI.delete(p.uid); } catch(_){}
-          }
-          window.__pendConfirmLock.delete(id);
-          try { renderFinPendencias?.(); } catch(_){}
-          try { window.renderFin?.(); } catch(_){}
-          return;
-        }
 
-        // 🔒 Código de origem precisa continuar ativo na prestação (não foi corrigido/removido)
-        const retirarPendencia = async (msg) => {
+        // Retira da fila. comTrava = o valor já foi tratado no caixa (grava a trava para não voltar).
+        const retirarPendencia = async (msg, comTrava) => {
           alert(msg);
           pend.splice(i, 1);
           __setPendencias(pend);
-          try { await window.PendenciasAPI?.delete?.(p.uid); } catch(_){}
+          try {
+            if (comTrava) { await __addConf(p.uid); if (p.altUID) await __addConf(p.altUID); }
+            else await window.PendenciasAPI?.delete?.(p.uid);
+          } catch(_){}
           try { renderFinPendencias?.(); } catch(_){}
+          try { window.renderFin?.(); } catch(_){}
         };
+        const MSG_JA = (detalhe) => '⚠️ Este valor JÁ foi lançado no caixa antes.\n\n' +
+          (detalhe ? detalhe + '\n\n' : '') + 'Nada foi lançado de novo. A pendência será retirada da fila.';
         const MSG_CORRIGIDO = '⚠️ Este valor foi corrigido ou removido na prestação depois de ir para o caixa.\n\n' +
           'Nada foi lançado. A pendência será retirada; o valor correto aparece como nova pendência.';
+
+        if (jaConfirmado) {
+          console.warn('[Fin] Pendência já confirmada anteriormente:', p.uid, '→ lanc:', jaConfirmado.uid);
+          await retirarPendencia(MSG_JA(`Código do caixa: ${jaConfirmado.transaction_id || '—'}`), true);
+          return;
+        }
+
+        // 🔒 Trava no banco: este código já foi confirmado/descartado → pendência velha
+        const travas = await window.PendenciasAPI.travadas([p.uid, p.altUID]);
+        if (travas.size) {
+          await retirarPendencia(MSG_JA(`Código já processado: ${[...travas].join(', ')}`), true);
+          return;
+        }
+
+        // 🔒 Código novo: precisa continuar ativo na prestação e não pode ter sido
+        // confirmado antes pelo formato antigo (aparelho com versão antiga em cache)
         if (codigoOrigem) {
-          const ativo = await window.__codigoAtivoNaPrestacao(p.prestId, codigoOrigem);
-          if (ativo === null) {
+          const loc = await window.__localizarCodigoNaPrestacao(p.prestId, codigoOrigem);
+          if (loc.status === 'erro') {
             alert('Não foi possível verificar a prestação deste pagamento. Tente novamente.');
             btnC.disabled = false;
             btnC.dataset.processing = '';
             btnC.textContent = textoOriginal;
             return;
           }
-          if (!ativo) { await retirarPendencia(MSG_CORRIGIDO); return; }
+          if (loc.status === 'inativo') { await retirarPendencia(MSG_CORRIGIDO, false); return; }
+          if (!loc.mov.ref) {
+            const antigo = await window.__legadoCobre(loc.prest, loc.pg);
+            if (antigo) {
+              await retirarPendencia(MSG_JA(`Já confirmado pelo formato antigo: ${antigo}`), true);
+              return;
+            }
+          }
         }
 
         // 🆔 Código do caixa (CX-EMPRESA-AAMMDD-XXXX), ligado ao código de origem
@@ -1871,7 +1980,7 @@ function renderFinPendencias(){
         const novoLanc = {
           uid: uidLanc,
           transaction_id: txnId,          // 🆔 código do caixa
-          codigo_origem: codigoOrigem,    // 🆔 código do pagamento na prestação
+          codigo_origem: p.uid,           // 🆔 identidade do pagamento (único no banco: nunca entra 2x)
           codigo_referencia: p.codigoReferencia || null,  // código corrigido por este movimento
           gerente: p.gerenteNome || '',
           valor: Number(p.valorConfirm) || 0,
@@ -1895,7 +2004,7 @@ function renderFinPendencias(){
             editadoDe: Number(p.valorOriginal) || 0,
             tipoPendencia: ehSaida ? 'PAGAMENTO' : 'RECEBIMENTO',
             transaction_id: txnId,
-            codigo_origem: codigoOrigem,
+            codigo_origem: p.uid,
             // Contexto adicional
             confirmer_user: confirmerUser,
             confirmer_device: confirmerDevice,
@@ -1917,23 +2026,17 @@ function renderFinPendencias(){
         if (window.SupabaseAPI?.lancamentos?.create) {
           const criado = await window.SupabaseAPI.lancamentos.create(novoLanc);
           if (criado?.__jaExistia) {
-            alert('⚠️ Este pagamento JÁ está no caixa.\n\n' +
-                  `Código de origem: ${criado.codigo_origem || codigoOrigem || '—'}\n` +
-                  `Código do caixa: ${criado.transaction_id || '—'}\n\n` +
-                  'Nada foi lançado de novo. A pendência será removida da fila.');
-            __addConf(p.uid);
-            if (p.altUID) __addConf(p.altUID);
-            pend.splice(i, 1);
-            __setPendencias(pend);
-            try { renderFinPendencias?.(); } catch(_){}
+            await retirarPendencia(MSG_JA(`Código de origem: ${criado.codigo_origem || p.uid}\n` +
+                                          `Código do caixa: ${criado.transaction_id || '—'}`), true);
             try { await window.carregarFinanceiroSupabase?.(); } catch(_){}
             return;
           }
 
           // 🔒 Conferência pós-gravação: se a prestação foi corrigida neste mesmo instante, desfaz
-          if (codigoOrigem && await window.__codigoAtivoNaPrestacao(p.prestId, codigoOrigem) === false) {
+          if (codigoOrigem &&
+              (await window.__localizarCodigoNaPrestacao(p.prestId, codigoOrigem)).status === 'inativo') {
             try { await window.SupabaseAPI.lancamentos.delete(uidLanc); } catch(_){}
-            await retirarPendencia(MSG_CORRIGIDO);
+            await retirarPendencia(MSG_CORRIGIDO, false);
             return;
           }
         }
@@ -1958,9 +2061,12 @@ if (typeof window.saveLanc === 'function') {
           });
         }
         
-        // Marca como confirmado
-        __addConf(p.uid);
-        if (p.altUID) __addConf(p.altUID);
+        // Marca como confirmado (trava + retira da fila) — com verificação
+        const travou = await __addConf(p.uid) && (!p.altUID || await __addConf(p.altUID));
+        if (!travou) {
+          alert('⚠️ O valor FOI lançado no caixa, mas a pendência não pôde ser retirada da fila agora.\n\n' +
+                'NÃO confirme de novo. Ao atualizar a página ela some sozinha; se continuar, avise o administrador.');
+        }
     
         // Remove da fila de pendências
         pend.splice(i, 1);

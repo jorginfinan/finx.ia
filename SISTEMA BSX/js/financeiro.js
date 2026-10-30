@@ -328,43 +328,49 @@ window.__garantirPendenciasCodificadas = async function (prest, pg, { gerenteNom
   return criadas;
 };
 
-// O pagamento já foi tratado no formato ANTIGO (antes dos códigos)? Acontece quando um
-// aparelho com versão antiga em cache confirmou o pagamento pelo código antigo.
-// Devolve o UID antigo encontrado (confirmado/descartado ou na fila) ou null.
-window.__legadoCobre = async function (prest, pg) {
-  if (!prest?.id || !pg?.id || typeof window.__pgMakeUIDs !== 'function') return null;
+// Identificadores que o formato ANTIGO (sem código) usaria para este pagamento
+window.__uidsLegados = function (prest, pg) {
+  if (!prest?.id || !pg?.id || typeof window.__pgMakeUIDs !== 'function') return [];
   const orig = { ...pg, ...(pg.correcoes?.[0]?.de || {}) };   // valores de quando foi lançado
-  const ids = [];
   if (String(orig.forma || '').toUpperCase() === 'DIVIDA_PAGA') {
-    ids.push(`DIVPAG:${prest.id}:${pg.id}:${Number(orig.valor) || 0}`);
-  } else {
-    const { stable, legacy } = window.__pgMakeUIDs(prest, orig);
-    ids.push(legacy, `${stable}|I:${pg.id}`);
-    const iguais = (prest.pagamentos || []).filter(x => x?.id !== pg.id &&
-      window.__pgMakeUIDs(prest, { ...x, ...(x?.correcoes?.[0]?.de || {}) }).stable === stable);
-    if (!iguais.length) ids.push(stable);   // código estável só identifica se for único
+    return [`DIVPAG:${prest.id}:${pg.id}:${Number(orig.valor) || 0}`];
   }
-  const api = window.PendenciasAPI;
-  const travados = await api.travadas(ids);
-  for (const id of ids) {
-    if (travados.has(id) || await api.exists(id)) return id;
-  }
-  return null;
+  const { stable, legacy } = window.__pgMakeUIDs(prest, orig);
+  const ids = [legacy, `${stable}|I:${pg.id}`];
+  const iguais = (prest.pagamentos || []).filter(x => x?.id !== pg.id &&
+    window.__pgMakeUIDs(prest, { ...x, ...(x?.correcoes?.[0]?.de || {}) }).stable === stable);
+  if (!iguais.length) ids.push(stable);   // código estável só identifica se for único
+  return ids;
+};
+
+// O pagamento com código já foi CONFIRMADO/DESCARTADO pelo formato antigo (aparelho com
+// versão antiga em cache)? Devolve o UID antigo, ou null. Pendência antiga apenas
+// substituída pelo código novo (SUBSTITUIDO:) não conta.
+window.__legadoCobre = async function (prest, pg) {
+  const ids = window.__uidsLegados(prest, pg);
+  if (!ids.length) return null;
+  const info = await window.PendenciasAPI.travasInfo(ids);
+  return ids.find(id => info.has(id) && !String(info.get(id)).startsWith('SUBSTITUIDO:')) || null;
+};
+
+// Prestação salva no banco no formato usado pelos helpers ({ id, ini, fim, pagamentos }) ou null
+window.__carregarPrestacaoSalva = async function (prestId) {
+  const client = window.SupabaseAPI?.client;
+  if (!client || !prestId) throw new Error('sem conexão');
+  const { data, error } = await client.from('prestacoes')
+    .select('uid, periodo_ini, periodo_fim, dados').eq('uid', prestId).limit(1);
+  if (error) throw error;
+  const reg = data?.[0];
+  if (!reg || !Array.isArray(reg.dados?.pagamentos)) return null;
+  return { id: reg.uid, ini: reg.periodo_ini, fim: reg.periodo_fim, pagamentos: reg.dados.pagamentos };
 };
 
 // Localiza o código na prestação salva: { status: 'ativo'|'inativo'|'erro', prest, pg, mov }
 window.__localizarCodigoNaPrestacao = async function (prestId, codigo) {
   try {
-    const client = window.SupabaseAPI?.client;
-    if (!client || !prestId) return { status: 'erro' };
-    const { data, error } = await client.from('prestacoes')
-      .select('uid, periodo_ini, periodo_fim, dados').eq('uid', prestId).limit(1);
-    if (error) throw error;
-    const reg = data?.[0];
-    const pagamentos = reg?.dados?.pagamentos;
-    if (!Array.isArray(pagamentos)) return { status: 'inativo' };
-    const prest = { id: reg.uid, ini: reg.periodo_ini, fim: reg.periodo_fim, pagamentos };
-    for (const pg of pagamentos) {
+    const prest = await window.__carregarPrestacaoSalva(prestId);
+    if (!prest) return { status: 'inativo' };
+    for (const pg of prest.pagamentos) {
       const mov = window.__codigosAtivos(pg).find(m => m.codigo === codigo);
       if (mov) return { status: 'ativo', prest, pg, mov };
     }
@@ -372,6 +378,21 @@ window.__localizarCodigoNaPrestacao = async function (prestId, codigo) {
   } catch (e) {
     console.error('[Pendências] Não foi possível verificar o código na prestação:', e);
     return { status: 'erro' };
+  }
+};
+
+// Pendência no formato antigo pertence a um pagamento que JÁ TEM código?
+// { prest, pg } se sim; null se não; 'erro' se não deu para verificar
+window.__pagamentoComCodigoDoLegado = async function (prestId, uids) {
+  try {
+    const prest = await window.__carregarPrestacaoSalva(prestId);
+    if (!prest) return null;
+    const alvo = new Set((uids || []).filter(Boolean));
+    const pg = prest.pagamentos.find(x => x?.codigo && window.__uidsLegados(prest, x).some(u => alvo.has(u)));
+    return pg ? { prest, pg } : null;
+  } catch (e) {
+    console.error('[Pendências] Não foi possível verificar a prestação:', e);
+    return 'erro';
   }
 };
 
@@ -1300,6 +1321,31 @@ function formatDate(date) {
       return res;
     },
 
+    // Trava → quem/como processou (confirmed_by). "SUBSTITUIDO:<código>" = pendência no formato
+    // antigo descartada porque o pagamento tem código novo (NÃO significa que entrou no caixa).
+    async travasInfo(uids) {
+      const lista = [...new Set((uids || []).filter(Boolean))];
+      const res = new Map();
+      if (!this.client || !lista.length) return res;
+      for (let i = 0; i < lista.length; i += 50) {
+        const { data, error } = await this.client.from('pendencias_confirmadas')
+          .select('uid, confirmed_by').in('uid', lista.slice(i, i + 50));
+        if (error) throw error;
+        (data || []).forEach(r => res.set(r.uid, r.confirmed_by || ''));
+      }
+      return res;
+    },
+
+    async marcarSubstituida(uid, codigoNovo) {
+      if (!this.client || !uid) return false;
+      const { error } = await this.client.from('pendencias_confirmadas').insert([{
+        uid, company: window.getCompany?.() || 'BSX', confirmed_by: 'SUBSTITUIDO:' + codigoNovo
+      }]);
+      if (error && error.code !== '23505') { console.error('[Pendencias] Erro ao marcar substituída:', error); return false; }
+      const { error: e2 } = await this.client.from('pendencias').delete().eq('uid', uid);
+      return !e2;
+    },
+
     // UIDs (entre os informados) que já têm trava de confirmação/descarte
     async travadas(uids) {
       const lista = [...new Set((uids || []).filter(Boolean))];
@@ -1544,6 +1590,17 @@ window.__setLanc = function(novo) {
 
         // Pagamentos com código de origem: cada movimento (original/correção) é a própria pendência
         for (const pg of pagamentos.filter(x => x?.codigo)) {
+          // Pagamento com código: pendência no formato antigo para ele é sempre duplicata → sai da fila
+          for (const antigo of window.__uidsLegados(p, pg).filter(u => pendUIDs.has(u) || pendAlt.has(u))) {
+            const pAnt = pend.find(x => x.uid === antigo || x.altUID === antigo);
+            if (!pAnt) continue;
+            console.warn('[Pendências] Pendência antiga duplicada de pagamento com código; retirando:', pAnt.uid, '→', pg.codigo);
+            if (await PendenciasAPI.marcarSubstituida(pAnt.uid, pg.codigo)) {
+              if (pAnt.altUID) await PendenciasAPI.marcarSubstituida(pAnt.altUID, pg.codigo);
+              pendUIDs.delete(pAnt.uid); pendAlt.delete(pAnt.altUID);
+              removidas++;
+            }
+          }
           // Original na fila, mas o pagamento já foi confirmado pelo formato antigo → sai da fila
           for (const mov of window.__codigosAtivos(pg).filter(m => !m.ref && pendUIDs.has(m.codigo))) {
             if (await window.__legadoCobre(p, pg)) {
@@ -1944,6 +2001,37 @@ function renderFinPendencias(){
         if (travas.size) {
           await retirarPendencia(MSG_JA(`Código já processado: ${[...travas].join(', ')}`), true);
           return;
+        }
+
+        // 🔒 Pendência no formato antigo de um pagamento que já tem código (criada por aparelho
+        // com versão antiga em cache) é cópia: nunca pode ser confirmada
+        if (!codigoOrigem && p.prestId) {
+          const dono = await window.__pagamentoComCodigoDoLegado(p.prestId, [p.uid, p.altUID]);
+          if (dono === 'erro') {
+            alert('Não foi possível verificar a prestação deste pagamento. Tente novamente.');
+            btnC.disabled = false;
+            btnC.dataset.processing = '';
+            btnC.textContent = textoOriginal;
+            return;
+          }
+          if (dono) {
+            const codigoNovo = dono.pg.codigo;
+            const noCaixa = await window.PendenciasAPI.jaNoCaixa(window.__codigosAtivos(dono.pg).map(m => m.codigo));
+            await window.PendenciasAPI.marcarSubstituida(p.uid, codigoNovo);
+            if (p.altUID) await window.PendenciasAPI.marcarSubstituida(p.altUID, codigoNovo);
+            pend.splice(i, 1);
+            __setPendencias(pend);
+            alert(noCaixa.size
+              ? MSG_JA(`Este pagamento já entrou no caixa pelo código ${[...noCaixa].join(', ')}.`)
+              : `⚠️ Esta pendência é uma cópia antiga do pagamento ${codigoNovo}.\n\n` +
+                `Nada foi lançado. Confirme pela pendência com o código ${codigoNovo}.`);
+            if (!noCaixa.size) {
+              try { await window.__garantirPendenciasCodificadas(dono.prest, dono.pg, { gerenteNome: p.gerenteNome, company: p.company }); } catch(_){}
+              try { await window.__getPendenciasAsync(); } catch(_){}
+            }
+            try { renderFinPendencias?.(); } catch(_){}
+            return;
+          }
         }
 
         // 🔒 Código novo: precisa continuar ativo na prestação e não pode ter sido

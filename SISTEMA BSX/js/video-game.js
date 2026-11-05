@@ -119,8 +119,12 @@
     const ant = anteriores(uidExcluida)[0];
     return ant ? Number(ant.negativo_novo) || 0 : Number(pontoAtual()?.negativo_inicial) || 0;
   }
+  // Lista livre de comissões; as colunas antigas só valem enquanto o SQL novo não foi rodado
   function comissoesDoPonto(p) {
-    return [1, 2, 3].map(i => ({ nome: p[`comissao${i}_nome`] || `Comissão ${i}`, pct: Number(p[`comissao${i}_pct`]) || 0 }));
+    if (Array.isArray(p?.comissoes)) return p.comissoes.map(c => ({ nome: c.nome, pct: Number(c.pct) || 0 }));
+    return [1, 2, 3]
+      .map(i => ({ nome: p?.[`comissao${i}_nome`] || `Comissão ${i}`, pct: Number(p?.[`comissao${i}_pct`]) || 0 }))
+      .filter(c => c.pct > 0);
   }
 
   // ---------- formulário ----------
@@ -129,7 +133,7 @@
     st.form = {
       modo: 'nova', uid: null, data: hoje(), pagamentos: [],
       comissoes: ponto ? comissoesDoPonto(ponto) : [],
-      base: ponto?.base_comissao || 'saldo',
+      base: 'saldo',
       negativoAnterior: negativoAnterior(null),
       linhas: st.maquinas.filter(m => m.ativo).map(m => {
         const a = leituraAnterior(m, null);
@@ -157,7 +161,7 @@
     st.form = {
       modo, uid, data: String(p.data).slice(0, 10), linhas,
       pagamentos: JSON.parse(JSON.stringify(p.dados?.pagamentos || [])),
-      comissoes: p.dados?.comissoes?.length ? p.dados.comissoes.map(c => ({ nome: c.nome, pct: c.pct })) : comissoesDoPonto(pontoAtual()),
+      comissoes: Array.isArray(p.dados?.comissoes) ? p.dados.comissoes.map(c => ({ nome: c.nome, pct: c.pct })) : comissoesDoPonto(pontoAtual()),
       base: p.dados?.base || 'saldo',
       negativoAnterior: modo === 'editar' ? negativoAnterior(uid) : Number(p.negativo_anterior) || 0
     };
@@ -200,6 +204,8 @@
       .vg-rodape{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:13px}
       .vg-erro{color:#b91c1c;font-size:12px;margin-top:6px}
       .vg-zerado{display:flex;gap:6px;align-items:center;font-size:12px;margin-top:4px;color:#92400e}
+      .vg-com-linha{display:grid;grid-template-columns:minmax(0,1fr) 90px auto;gap:8px;align-items:center;margin-bottom:8px}
+      .vg-com-linha input{width:100%;min-width:0;box-sizing:border-box}
       .vg-coms{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:8px 0 12px}
       .vg-com{background:#f9fafb;border-radius:10px;padding:10px 12px}
       .vg-linha{display:flex;justify-content:space-between;gap:12px;padding:5px 0;font-size:14px}
@@ -214,7 +220,7 @@
       #vgRoot [hidden],dialog.vg-dlg [hidden]{display:none !important}
       .vg-so-celular{display:none}
       dialog.vg-dlg{border:none;border-radius:14px;padding:0;width:min(560px,94vw)}
-      dialog.vg-dlg form{margin:0}
+      dialog.vg-dlg form{margin:0;padding-top:16px !important}
       @media (max-width:560px){
         .vg-grade{grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr) minmax(0,1fr)}
         .vg-grade .vg-so-largo{display:none}
@@ -261,8 +267,8 @@
         ${!ver && podeEditar() ? `<button type="button" class="btn ghost sm" data-vg="maquina-nova">+ Adicionar video game</button>` : ''}
         <div style="border-top:1px solid #e5e7eb;margin-top:14px;padding-top:12px">
           <div class="vg-topo" style="margin-bottom:0">
-            <strong>Três comissões</strong>
-            <span class="vg-sub">${f.base === 'cascata' ? 'Em cascata' : 'Todas sobre o saldo'}${f.modo === 'nova' ? '' : ' · percentuais gravados nesta leitura'}</span>
+            <strong>Comissões</strong>
+            <span class="vg-sub">${f.base === 'cascata' ? 'Em cascata' : 'Sobre o resultado de todos os video games'}${f.modo === 'nova' ? '' : ' · percentuais gravados nesta leitura'}</span>
           </div>
           <div class="vg-coms" id="vgComs"></div>
           <div class="vg-linha"><span>Saldo do período (todos os video games)</span><span class="vg-num" id="vgSaldo"></span></div>
@@ -372,7 +378,8 @@
       if (o('zeradoBox')) o('zeradoBox').hidden = !(menor || l.zerado);
     });
     const comsBox = document.getElementById('vgComs');
-    if (comsBox) comsBox.innerHTML = r.comissoes.map(c => `<div class="vg-com"><div class="vg-sub">${esc(c.nome)} (${esc(String(c.pct).replace('.', ','))}%)</div><div style="font-weight:700">${esc(brl(c.valor))}</div></div>`).join('');
+    if (comsBox) comsBox.innerHTML = r.comissoes.map(c => `<div class="vg-com"><div class="vg-sub">${esc(c.nome)} (${esc(String(c.pct).replace('.', ','))}%)</div><div style="font-weight:700">${esc(brl(c.valor))}</div></div>`).join('')
+      || '<div class="vg-sub">Nenhuma comissão neste ponto.</div>';
     definir(document.getElementById('vgSaldo'), brl(r.saldo));
     definir(document.getElementById('vgNegAnt'), '− ' + brl(r.negativoAnterior) + ' (só na base das comissões)');
     document.getElementById('vgNegAntLinha').hidden = !r.negativoAnterior;
@@ -414,11 +421,12 @@
           <div class="form-grid">
             <label style="grid-column:1/-1">Nome do ponto<input name="nome" placeholder="ex.: Bar do João"></label>
             <label style="grid-column:1/-1">Gerente responsável<select name="gerente"></select></label>
-            ${[1, 2, 3].map(i => `
-              <label>Comissão ${i}: nome<input name="c${i}_nome" placeholder="ex.: Ponto"></label>
-              <label>Comissão ${i}: %<input name="c${i}_pct" inputmode="decimal" placeholder="0"></label>`).join('')}
-            <label style="grid-column:1/-1">Base de cálculo
-              <select name="base"><option value="saldo">Todas sobre o saldo</option><option value="cascata">Em cascata (cada uma sobre o que sobrou da anterior)</option></select></label>
+            <div style="grid-column:1/-1">
+              <div class="vg-rot" style="font-size:12px">COMISSÕES</div>
+              <div class="vg-sub" style="margin:2px 0 8px">Sobre o resultado do ponto (soma de todos os video games). Mudanças valem para as próximas leituras.</div>
+              <div id="vgComLista"></div>
+              <button type="button" class="btn ghost sm" id="vgComAdd">+ Adicionar comissão</button>
+            </div>
             <label style="grid-column:1/-1" id="vgNegIniBox">Negativo que o ponto já tinha (R$)
               <input name="negativo" inputmode="decimal" placeholder="0,00"></label>
           </div>
@@ -461,6 +469,8 @@
     wrap.addEventListener('click', e => {
       const id = e.target.closest('[data-vg-fechar]')?.getAttribute('data-vg-fechar');
       if (id) document.getElementById(id).close();
+      if (e.target.closest('#vgComAdd')) adicionarLinhaComissao().querySelector('input')?.focus();
+      e.target.closest('[data-com-remover]')?.closest('.vg-com-linha')?.remove();
     });
   }
   const numeroBR = txt => {
@@ -469,6 +479,17 @@
     const n = Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t);
     return Number.isFinite(n) ? n : NaN;
   };
+
+  function adicionarLinhaComissao(c) {
+    const linha = document.createElement('div');
+    linha.className = 'vg-com-linha';
+    linha.innerHTML = `
+      <input data-com-nome placeholder="Nome (ex.: Ponto)" aria-label="Nome da comissão" value="${esc(c?.nome || '')}">
+      <input data-com-pct inputmode="decimal" placeholder="%" aria-label="Percentual da comissão" value="${esc(c ? String(c.pct).replace('.', ',') : '')}">
+      <button type="button" class="btn ghost sm" data-com-remover aria-label="Remover comissão" title="Remover comissão">✕</button>`;
+    document.getElementById('vgComLista').appendChild(linha);
+    return linha;
+  }
 
   function abrirDialogoPonto(ponto) {
     const f = document.getElementById('formVgPonto');
@@ -481,13 +502,11 @@
     if (ponto) {
       f.nome.value = ponto.nome || '';
       f.gerente.value = ponto.gerente_id || '';
-      [1, 2, 3].forEach(i => {
-        f[`c${i}_nome`].value = ponto[`comissao${i}_nome`] || '';
-        f[`c${i}_pct`].value = String(Number(ponto[`comissao${i}_pct`]) || 0).replace('.', ',');
-      });
-      f.base.value = ponto.base_comissao || 'saldo';
       f.negativo.value = ponto.negativo_inicial ? String(ponto.negativo_inicial / 100).replace('.', ',') : '';
     }
+    document.getElementById('vgComLista').innerHTML = '';
+    const lista = ponto ? comissoesDoPonto(ponto) : [];
+    if (lista.length) lista.forEach(adicionarLinhaComissao); else adicionarLinhaComissao();
     document.getElementById('vgNegIniBox').hidden = !!(ponto && st.prestacoes.length);
     document.getElementById('dlgVgPonto').showModal();
   }
@@ -496,19 +515,18 @@
     e.preventDefault();
     const f = e.target, erro = document.getElementById('vgPontoErro');
     const nome = f.nome.value.trim(), gerenteId = f.gerente.value;
-    const pcts = [1, 2, 3].map(i => numeroBR(f[`c${i}_pct`].value));
+    const comissoes = [...document.querySelectorAll('#vgComLista .vg-com-linha')]
+      .map(l => ({ nome: l.querySelector('[data-com-nome]').value.trim(), txt: l.querySelector('[data-com-pct]').value.trim() }))
+      .filter(c => c.nome || c.txt)
+      .map((c, i) => ({ nome: c.nome || `Comissão ${i + 1}`, pct: numeroBR(c.txt) }));
     const negativo = numeroBR(f.negativo.value);
     if (!nome) { erro.textContent = 'Informe o nome do ponto.'; return; }
     if (!gerenteId) { erro.textContent = 'Selecione o gerente responsável.'; return; }
-    if (pcts.some(p => Number.isNaN(p) || p < 0 || p > 100)) { erro.textContent = 'Cada comissão precisa estar entre 0 e 100%.'; return; }
-    if (f.base.value === 'saldo' && pcts.reduce((a, b) => a + b, 0) > 100) { erro.textContent = 'As comissões somam mais de 100% do saldo.'; return; }
+    if (comissoes.some(c => Number.isNaN(c.pct) || c.pct <= 0 || c.pct > 100)) { erro.textContent = 'Informe em cada comissão um percentual maior que 0 e até 100.'; return; }
+    if (comissoes.reduce((a, c) => a + c.pct, 0) > 100) { erro.textContent = 'As comissões somam mais de 100% do resultado.'; return; }
     if (Number.isNaN(negativo) || negativo < 0) { erro.textContent = 'Negativo inválido.'; return; }
     const g = (window.gerentes || []).find(x => String(x.uid || x.id) === String(gerenteId));
-    const row = { nome, gerente_id: gerenteId, gerente_nome: g?.nome || '', base_comissao: f.base.value };
-    [1, 2, 3].forEach((i, k) => {
-      row[`comissao${i}_nome`] = f[`c${i}_nome`].value.trim() || `Comissão ${i}`;
-      row[`comissao${i}_pct`] = pcts[k];
-    });
+    const row = { nome, gerente_id: gerenteId, gerente_nome: g?.nome || '', base_comissao: 'saldo', comissoes };
     const id = f.dataset.id;
     if (!id || !st.prestacoes.length) row.negativo_inicial = Math.round(negativo * 100);
     try {
@@ -526,7 +544,9 @@
       aviso('Ponto salvo', 'success');
     } catch (err) {
       console.error('[VideoGame] salvar ponto:', err);
-      erro.textContent = 'Não foi possível salvar o ponto: ' + (err.message || err);
+      erro.textContent = /comissoes/i.test(String(err.message || ''))
+        ? 'Falta atualizar o banco: rode o arquivo db/video-game-comissoes.sql no Supabase.'
+        : 'Não foi possível salvar o ponto: ' + (err.message || err);
     }
   }
 

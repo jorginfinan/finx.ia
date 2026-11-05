@@ -2669,3 +2669,6 @@ tr.tr-det td.td-info-indent {
   font-size: 13px;
   font-weight: 600;
 }
+
+/* Título dos diálogos: a regra geral de header deixa o texto branco sobre o card branco */
+dialog > header.card { color: #111827; }

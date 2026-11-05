@@ -1459,9 +1459,9 @@ function __novoMovimento(pg, valor, { ref, gerenteNome } = {}) {
   };
 }
 
-function __iniciarCodigos(pg) {
+function __iniciarCodigos(pg, gerenteNome) {
   if (!__vaiAoCaixa(pg) || typeof window.__gerarCodigoOrigem !== 'function') return pg;
-  const mov = __novoMovimento(pg, pg.valor);
+  const mov = __novoMovimento(pg, pg.valor, { gerenteNome });
   pg.codigos = [mov];
   pg.codigo = mov.codigo;
   pg.lancadoPor = mov.lancadoPor;
@@ -1544,7 +1544,7 @@ async function __bloqueioRemocaoPagamentos(lista) {
     try { noCaixa = await __valoresNoCaixa(pg, codigos); }
     catch (_) { return 'Não foi possível verificar no caixa se este pagamento já foi confirmado. Tente novamente.'; }
     if (noCaixa.size) {
-      return `O pagamento de ${fmtBRL(pg.valor)} (${fmtData(pg.data || '')}) já foi confirmado no caixa.\n\n` +
+      return `O pagamento de ${fmtBRL(pg.valor)} (${fmtData(pg.data || '')}) já tem valor confirmado no caixa.\n\n` +
              `Código: ${[...noCaixa.keys()].join(', ')}\n\n` +
              'Ele não pode ser excluído. Use "Editar" para corrigir o valor: o sistema marca a correção ' +
              'e gera um novo código só com a diferença para o caixa.';

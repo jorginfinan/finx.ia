@@ -720,6 +720,7 @@
     const matchGerente = criarMatcherGerente(gerenteNome);
     
     lancamentos.forEach(f => {
+      if ((f.modalidade || 'JB') !== 'JB') return;   // esta análise é da prestação JB
       if (!matchGerente(f.gerente)) return;
       
       const dataF = f.data || '';

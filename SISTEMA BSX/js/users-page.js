@@ -35,6 +35,10 @@
       ['financeiro_view','Financeiro (ver)'],
       ['financeiro_edit','Financeiro (editar)'],
     ]},
+    { title: 'Video game', items: [
+      ['vg_view','Video game (ver)'],
+      ['vg_edit','Video game (lançar e configurar)'],
+    ]},
     { title: 'Despesas', items: [
       ['despesas_view','Despesas (ver)'],
       ['despesas_edit','Despesas (editar)'],

@@ -5,6 +5,7 @@
     home:'pageInicio', inicio:'pageInicio', dashboard:'pageInicio',
     cad:'pageCadastros', fich:'pageFichas',
     prest:'pagePrestacoes', 'prest-rel':'pagePrestRel', 'prest-fech':'pagePrestFech',
+    'prest-vg':'pageVideoGame',
     fin:'pageFinanceiro', desp:'pageDespesas',
     users:'pageUsers', usuarios:'pageUsers','prest-vales':'pagePrestVales',
     historico: 'pageHistorico',
@@ -88,6 +89,10 @@
     // ✅ Inicializa página de Empresas (submenu próprio)
     if (key === 'empresas' || id === 'pageEmpresas') {
       try { window.EmpresasPage?.init?.(); } catch(_) {}
+    }
+    // ✅ Inicializa Video game (submenu Prestações)
+    if (key === 'prest-vg' || id === 'pageVideoGame') {
+      try { window.VideoGame?.init?.(); } catch(_) {}
     }
     // ✅ Inicializa Mapa de uso (submenu Máquinas → Mapa)
     if (key === 'maquinas-mapa' || id === 'pageMapa') {

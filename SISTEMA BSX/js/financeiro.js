@@ -224,6 +224,38 @@ window.__currentUsername = function () {
   } catch (_) { return 'Sistema'; }
 };
 
+// ===== MODALIDADES DO CAIXA (caixa único, com filtro por modalidade) =====
+const __MODALIDADES = { TODAS: 'Todas', JB: 'JB', VG: 'Video game' };
+window.__modalidadeNome = m => __MODALIDADES[m] || m || 'JB';
+window.__finModalidade = function () {
+  try {
+    const m = localStorage.getItem('bsx_fin_modalidade');
+    return __MODALIDADES[m] ? m : 'TODAS';
+  } catch (_) { return 'TODAS'; }
+};
+// Marca a aba ativa e mostra quantas pendências cada modalidade tem
+window.__finAtualizarAbas = function (pendentes) {
+  const lista = pendentes || (window.__getPendencias?.() || []).filter(p => p.status === 'PENDENTE');
+  const ativa = window.__finModalidade();
+  document.querySelectorAll('#finModalidadeTabs [data-fin-mod]').forEach(b => {
+    const m = b.getAttribute('data-fin-mod');
+    const n = lista.filter(p => m === 'TODAS' || (p.modalidade || 'JB') === m).length;
+    b.textContent = window.__modalidadeNome(m) + (n ? ` (${n})` : '');
+    const ligada = m === ativa;
+    b.setAttribute('aria-pressed', ligada ? 'true' : 'false');
+    b.style.borderBottomColor = ligada ? '#2563eb' : 'transparent';
+    b.style.color = ligada ? '#1d4ed8' : '#374151';
+  });
+};
+document.addEventListener('click', function (ev) {
+  const btn = ev.target.closest?.('#finModalidadeTabs [data-fin-mod]');
+  if (!btn) return;
+  try { localStorage.setItem('bsx_fin_modalidade', btn.getAttribute('data-fin-mod')); } catch (_) {}
+  try { window.renderFinPendencias?.(); } catch (_) {}
+  try { window.renderFin?.(); } catch (_) {}
+  window.__finAtualizarAbas();
+});
+
 // ===== CÓDIGOS DE TRANSAÇÃO =====
 // Origem: DIR-EMPRESA-ROTA-AAMMDD-XXXX  (ex.: REC-BSX-041-261016-K7Q2)
 //   DIR: REC = gerente → empresa · PAG = empresa → gerente · MAN = lançado direto no caixa
@@ -278,12 +310,12 @@ window.__codigosAtivos = function (pg) {
 };
 
 // Cria (se faltar) a pendência de cada movimento ativo do pagamento. Idempotente.
-window.__garantirPendenciasCodificadas = async function (prest, pg, { gerenteNome, company, jaConhecido } = {}) {
+window.__garantirPendenciasCodificadas = async function (prest, pg, { gerenteNome, company, jaConhecido, modalidade, infoBase } = {}) {
   const ehDivida = String(pg?.forma || '').toUpperCase() === 'DIVIDA_PAGA';
   const base = ehDivida ? 'PAGO' : 'RECEBIDO';
   const oposto = ehDivida ? 'RECEBIDO' : 'PAGO';
   const dm = iso => String(iso || '').slice(5).split('-').reverse().join('/');
-  const periodo = `${ehDivida ? 'Dívida ' : ''}Prest. ${dm(prest?.ini)}–${dm(prest?.fim)}`;
+  const periodo = infoBase || `${ehDivida ? 'Dívida ' : ''}Prest. ${dm(prest?.ini)}–${dm(prest?.fim)}`;
   let criadas = 0;
 
   for (const mov of window.__codigosAtivos(pg)) {
@@ -315,6 +347,7 @@ window.__garantirPendenciasCodificadas = async function (prest, pg, { gerenteNom
         tipoCaixa,
         tipo: tipoCaixa === 'PAGO' ? 'PAGAR' : 'RECEBER',
         company: company || undefined,
+        modalidade: modalidade || 'JB',
         codigoReferencia: mov.ref || null,
         originator_user: mov.lancadoPor || null,
         originator_at: mov.lancadoEm || null,
@@ -361,7 +394,14 @@ window.__carregarPrestacaoSalva = async function (prestId) {
     .select('uid, periodo_ini, periodo_fim, dados').eq('uid', prestId).limit(1);
   if (error) throw error;
   const reg = data?.[0];
-  if (!reg || !Array.isArray(reg.dados?.pagamentos)) return null;
+  if (!reg) {
+    const { data: vg, error: eVg } = await client.from('vg_prestacoes').select('uid, data, dados').eq('uid', prestId).limit(1);
+    if (eVg) { if (/vg_prestacoes/i.test(String(eVg.message || ''))) return null; throw eVg; }
+    const r = vg?.[0];
+    return r && Array.isArray(r.dados?.pagamentos)
+      ? { id: r.uid, ini: r.data, fim: r.data, pagamentos: r.dados.pagamentos } : null;
+  }
+  if (!Array.isArray(reg.dados?.pagamentos)) return null;
   return { id: reg.uid, ini: reg.periodo_ini, fim: reg.periodo_fim, pagamentos: reg.dados.pagamentos };
 };
 
@@ -479,6 +519,7 @@ window.abrirComprovante = function (uid) {
     set('cmpOrigTipo', dec
       ? `${dec.tipo} · ${dec.empresa}${dec.rota !== '000' ? ' · rota ' + dec.rota : ''} · ${dec.data}`
       : (/prest/i.test(item.categoria || '') ? 'Prestação de contas' : 'Lançamento no caixa'));
+    set('cmpModalidade', window.__modalidadeNome(item.modalidade || 'JB'));
     set('cmpGerente', item.gerente || '—');
     set('cmpForma', item.forma || '—');
     set('cmpCategoria', item.categoria || '—');
@@ -736,6 +777,7 @@ window.__fin_saveFromForm = async function(){
     const disp = window.__detectDevice?.() || 'desktop';
     const novoManual = {
       uid: newId, ...reg,
+      modalidade: window.__finModalidade() === 'VG' ? 'VG' : 'JB',
       codigo_origem: window.__gerarCodigoOrigem('MAN', { gerenteNome: reg.gerente, data: reg.data }),
       transaction_id: window.__gerarCodigoCaixa(),
       device: disp, user_agent: window.__uaShort?.() || '',
@@ -871,8 +913,11 @@ function applyFilters(rows){
   const buscaI = normalize(document.getElementById('busca')?.value||'');
   const de     = (document.getElementById('dataDe')?.value||'').trim();   // YYYY-MM-DD
   const ate    = (document.getElementById('dataAte')?.value||'').trim();  // YYYY-MM-DD
+  const modalidade = window.__finModalidade();
 
   return (rows||[]).filter(r=>{
+    if (modalidade !== 'TODAS' && (r.modalidade || 'JB') !== modalidade) return false;
+
     const d  = (r.data||'').slice(0,10);         // garantir YYYY-MM-DD
     const yy = d ? d.slice(0,4) : '';
     const mm = d ? d.slice(5,7) : '';
@@ -1202,7 +1247,8 @@ function formatDate(date) {
           originator_user: r.originator_user || null,
           originator_at: r.originator_at || null,
           originator_device: r.originator_device || null,
-          codigoReferencia: r.codigo_referencia || null
+          codigoReferencia: r.codigo_referencia || null,
+          modalidade: r.modalidade || 'JB'
         }));
       } catch(e) { console.error('[Pendencias] Erro:', e); return []; }
     },
@@ -1238,6 +1284,7 @@ function formatDate(date) {
         if (item.originator_at)     payload.originator_at     = item.originator_at;
         if (item.originator_device) payload.originator_device = item.originator_device;
         if (item.codigoReferencia)  payload.codigo_referencia = item.codigoReferencia;
+        if (item.modalidade && item.modalidade !== 'JB') payload.modalidade = item.modalidade;
 
         let { error: errIns } = await this.client.from('pendencias').insert([payload]);
         // Fallback enquanto o SQL não foi rodado: tenta sem as colunas opcionais
@@ -1673,6 +1720,13 @@ window.__setLanc = function(novo) {
         }
       }
 
+      // Video game: segunda garantia caso a pendência não tenha nascido ao salvar a prestação
+      try {
+        novos += await window.VideoGame?.garantirPendencias?.({
+          jaConhecido: uid => pendUIDs.has(uid) || confirmadosFromUID.has(uid)
+        }) || 0;
+      } catch (e) { console.error('[syncPendenciasFromPrest] Video game:', e); }
+
       if (novos > 0 || removidas > 0) {
         _pendCache = await PendenciasAPI.getAll();
         try { renderFinPendencias?.(); } catch(_){}
@@ -1711,7 +1765,10 @@ function renderFinPendencias(){
   const box = document.getElementById('finPendenciasBox');
   if(!box) return;
 
-  const pend = __getPendencias().filter(p => p.status === 'PENDENTE');
+  const modalidadeAba = window.__finModalidade();
+  const todasPendentes = __getPendencias().filter(p => p.status === 'PENDENTE');
+  window.__finAtualizarAbas?.(todasPendentes);
+  const pend = todasPendentes.filter(p => modalidadeAba === 'TODAS' || (p.modalidade || 'JB') === modalidadeAba);
   
   // Separa recebimentos e pagamentos
   const recebimentos = pend.filter(p => p.tipoCaixa === 'RECEBIDO' || p.tipo === 'RECEBER');
@@ -2074,7 +2131,8 @@ function renderFinPendencias(){
           valor: Number(p.valorConfirm) || 0,
           status: statusFinal,
           forma: p.forma || (ehSaida ? 'PIX' : 'PRESTAÇÃO'),
-          categoria: ehSaida ? 'Prestação de contas (SAÍDA)' : 'Prestação de contas (ENTRADA)',
+          categoria: (p.modalidade === 'VG' ? 'Video game' : 'Prestação de contas') + (ehSaida ? ' (SAÍDA)' : ' (ENTRADA)'),
+          modalidade: p.modalidade || 'JB',
           data: p.data || (new Date()).toISOString().slice(0,10),
           // ✅ CRÍTICO: herda a company da pendência para não gravar no caixa errado
           company: p.company || (window.getCompany?.() || 'BSX'),
@@ -2486,6 +2544,7 @@ function __fin_printCaixa(){
     periodoTxt = 'Todos os lançamentos';
   }
   const filtrosExtras = [];
+  if (window.__finModalidade() !== 'TODAS') filtrosExtras.push(`Modalidade: ${window.__modalidadeNome(window.__finModalidade())}`);
   if (forma) filtrosExtras.push(`Forma: ${forma}`);
   if (busca) filtrosExtras.push(`Busca: "${busca}"`);
 
@@ -3101,7 +3160,8 @@ console.log('[Financeiro] Módulo carregado e pronto');
           originator_at: r.originator_at || null,
           originator_device: r.originator_device || '',
           codigo_origem: r.codigo_origem || '',
-          codigo_referencia: r.codigo_referencia || ''
+          codigo_referencia: r.codigo_referencia || '',
+          modalidade: r.modalidade || 'JB'
         }));
       },
 
@@ -3147,6 +3207,7 @@ console.log('[Financeiro] Módulo carregado e pronto');
         if (txnId)     payload.transaction_id = txnId;
         if (codOrigem) payload.codigo_origem  = codOrigem;
         if (item.codigo_referencia) payload.codigo_referencia = item.codigo_referencia;
+        if (item.modalidade && item.modalidade !== 'JB') payload.modalidade = item.modalidade;
 
         // ✅ Metadados de comprovante
         if (item.device)            payload.device            = item.device;

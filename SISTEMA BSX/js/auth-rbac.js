@@ -340,6 +340,10 @@ console.log('📦 Script de correções carregado. Execute as funções conforme
     'financeiro_view':   ['financeiro_view','financeiro'],
     'financeiro_edit':   ['financeiro_edit'],
 
+    // Video game
+    'vg_view':           ['vg_view'],
+    'vg_edit':           ['vg_edit'],
+
     // Despesas
     'despesas_view':     ['despesas_view','despesas'],
     'despesas_edit':     ['despesas_edit'],

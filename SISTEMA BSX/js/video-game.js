@@ -35,6 +35,13 @@
     if (window.showNotification) window.showNotification(msg, tipo || 'info');
     else if (tipo === 'error') alert(msg);
   }
+  // Os dígitos entram pela direita, como no totalizador: 18100 → 181,00
+  const centavosTxt = c => (Number(c) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  function mascarar(input) {
+    const dig = input.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+    input.value = dig ? centavosTxt(Number(dig)) : '';
+    return dig;
+  }
   function leituraInt(txt) {
     const limpo = String(txt ?? '').replace(/\D/g, '');
     if (!limpo) return null;
@@ -137,7 +144,7 @@
       negativoAnterior: negativoAnterior(null),
       linhas: st.maquinas.filter(m => m.ativo).map(m => {
         const a = leituraAnterior(m, null);
-        return { maquina_id: m.id, nome: m.nome, di_anterior: a.di, ds_anterior: a.ds, diTxt: '', dsTxt: '', zerado: false };
+        return { maquina_id: m.id, nome: m.nome, jogo: m.jogo || '', di_anterior: a.di, ds_anterior: a.ds, diTxt: '', dsTxt: '', zerado: false };
       })
     };
   }
@@ -150,12 +157,12 @@
     const linhas = salvas.map(l => {
       const maq = st.maquinas.find(m => m.id === l.maquina_id);
       const a = modo === 'editar' && maq ? leituraAnterior(maq, uid) : { di: l.di_anterior, ds: l.ds_anterior };
-      return { maquina_id: l.maquina_id, nome: l.nome, di_anterior: a.di, ds_anterior: a.ds, diTxt: String(l.di), dsTxt: String(l.ds), zerado: !!l.zerado };
+      return { maquina_id: l.maquina_id, nome: l.nome, jogo: l.jogo || maq?.jogo || '', di_anterior: a.di, ds_anterior: a.ds, diTxt: String(l.di), dsTxt: String(l.ds), zerado: !!l.zerado };
     });
     if (modo === 'editar') {
       st.maquinas.filter(m => m.ativo && !salvas.some(l => l.maquina_id === m.id)).forEach(m => {
         const a = leituraAnterior(m, uid);
-        linhas.push({ maquina_id: m.id, nome: m.nome, di_anterior: a.di, ds_anterior: a.ds, diTxt: '', dsTxt: '', zerado: false });
+        linhas.push({ maquina_id: m.id, nome: m.nome, jogo: m.jogo || '', di_anterior: a.di, ds_anterior: a.ds, diTxt: '', dsTxt: '', zerado: false });
       });
     }
     st.form = {
@@ -175,10 +182,10 @@
       const di = leituraInt(l.diTxt), ds = leituraInt(l.dsTxt);
       if (di === null || ds === null) { erros[l.maquina_id] = 'Informe as duas leituras atuais.'; return; }
       if (!l.zerado && (di < l.di_anterior || ds < l.ds_anterior)) {
-        erros[l.maquina_id] = 'Leitura menor que a anterior. Se o video game foi zerado ou trocado, marque abaixo.';
+        erros[l.maquina_id] = 'Leitura menor que a anterior. Se o video game foi zerado, marque abaixo. Para troca de ponto ou de jogo, use os botões Trocar.';
         return;
       }
-      validas.push({ maquina_id: l.maquina_id, nome: l.nome, di_anterior: l.di_anterior, ds_anterior: l.ds_anterior, di, ds, zerado: !!l.zerado });
+      validas.push({ maquina_id: l.maquina_id, nome: l.nome, jogo: l.jogo || '', di_anterior: l.di_anterior, ds_anterior: l.ds_anterior, di, ds, zerado: !!l.zerado });
     });
     return { validas, erros };
   }
@@ -204,6 +211,8 @@
       .vg-rodape{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:13px}
       .vg-erro{color:#b91c1c;font-size:12px;margin-top:6px}
       .vg-zerado{display:flex;gap:6px;align-items:center;font-size:12px;margin-top:4px;color:#92400e}
+      .vg-maq-btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+      .vg-aviso{background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0;padding:8px 10px;font-size:13px;color:#92400e;margin:0 0 10px}
       .vg-com-linha{display:grid;grid-template-columns:minmax(0,1fr) 90px auto;gap:8px;align-items:center;margin-bottom:8px}
       .vg-com-linha input{width:100%;min-width:0;box-sizing:border-box}
       .vg-coms{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:8px 0 12px}
@@ -298,21 +307,24 @@
     const dis = ver ? 'disabled' : '';
     return `
       <div class="vg-maq" data-maq="${id}">
-        <div class="vg-maq-topo"><span>🎮 ${esc(l.nome)}</span>
-          ${!ver && podeEditar() ? `<button type="button" class="btn ghost sm" data-vg="maquina-remover" data-id="${id}" title="Retirar este video game do ponto">Retirar</button>` : ''}
+        <div class="vg-maq-topo"><span>🎮 ${esc(l.nome)}${l.jogo ? ` <span class="vg-sub">· ${esc(l.jogo)}</span>` : ''}</span>
+          ${st.form.modo === 'nova' && podeEditar() ? `<span class="vg-maq-btns">
+            <button type="button" class="btn ghost sm" data-vg="maquina-trocar-ponto" data-id="${id}" title="Levar este video game para outro ponto">Trocar ponto</button>
+            <button type="button" class="btn ghost sm" data-vg="maquina-trocar-jogo" data-id="${id}" title="Trocar o jogo deste video game">Trocar jogo</button>
+            <button type="button" class="btn ghost sm" data-vg="maquina-remover" data-id="${id}" title="Retirar este video game do ponto">Retirar</button></span>` : ''}
         </div>
-        <div class="vg-sub vg-so-celular">Anterior: di ${esc(l.di_anterior)} · ds ${esc(l.ds_anterior)}</div>
+        <div class="vg-sub vg-so-celular">Anterior: di ${esc(centavosTxt(l.di_anterior))} · ds ${esc(centavosTxt(l.ds_anterior))}</div>
         <div class="vg-grade">
           <span class="vg-so-largo"></span><span class="vg-rot vg-num vg-so-largo">Anterior</span><span class="vg-rot vg-num vg-so-largo">Atual</span><span class="vg-rot vg-num vg-so-largo">No período</span>
-          <span>di (venda)</span><span class="vg-num vg-so-largo" title="${esc(brl(l.di_anterior))}">${esc(l.di_anterior)}</span>
-          <input inputmode="numeric" autocomplete="off" data-leitura="diTxt" data-id="${id}" value="${esc(l.diTxt)}" placeholder="ex.: 150700" aria-label="di atual de ${esc(l.nome)}" ${dis}>
+          <span>di (venda)</span><span class="vg-num vg-so-largo">${esc(centavosTxt(l.di_anterior))}</span>
+          <input inputmode="numeric" autocomplete="off" data-leitura="diTxt" data-id="${id}" value="${esc(l.diTxt ? centavosTxt(l.diTxt) : '')}" placeholder="ex.: 1.507,00" aria-label="di atual de ${esc(l.nome)}" ${dis}>
           <span class="vg-num" data-o="venda"></span>
-          <span>ds (prêmios)</span><span class="vg-num vg-so-largo" title="${esc(brl(l.ds_anterior))}">${esc(l.ds_anterior)}</span>
-          <input inputmode="numeric" autocomplete="off" data-leitura="dsTxt" data-id="${id}" value="${esc(l.dsTxt)}" placeholder="ex.: 66470" aria-label="ds atual de ${esc(l.nome)}" ${dis}>
+          <span>ds (prêmios)</span><span class="vg-num vg-so-largo">${esc(centavosTxt(l.ds_anterior))}</span>
+          <input inputmode="numeric" autocomplete="off" data-leitura="dsTxt" data-id="${id}" value="${esc(l.dsTxt ? centavosTxt(l.dsTxt) : '')}" placeholder="ex.: 664,70" aria-label="ds atual de ${esc(l.nome)}" ${dis}>
           <span class="vg-num" data-o="premios" style="color:#b91c1c"></span>
         </div>
         <div class="vg-rodape"><span class="vg-sub" data-o="acum"></span><strong>Saldo <span data-o="saldo"></span></strong></div>
-        <label class="vg-zerado" data-o="zeradoBox" hidden><input type="checkbox" data-zerado data-id="${id}" ${l.zerado ? 'checked' : ''} ${dis}> Video game zerado ou trocado: contar a partir de zero</label>
+        <label class="vg-zerado" data-o="zeradoBox" hidden><input type="checkbox" data-zerado data-id="${id}" ${l.zerado ? 'checked' : ''} ${dis}> Video game foi zerado: contar a partir de zero</label>
         <div class="vg-erro" data-o="erro"></div>
       </div>`;
   }
@@ -437,14 +449,34 @@
       <dialog id="dlgVgMaquina" class="vg-dlg">
         <header class="card"><strong>Adicionar video game</strong></header>
         <form id="formVgMaquina" class="card" novalidate>
-          <p class="vg-sub" style="margin:0 0 10px">Digite os números que estão na tela agora. A primeira leitura conta a partir deles.</p>
+          <p class="vg-sub" style="margin:0 0 10px">Digite os números da tela depois do teste do aplicador. Esse saldo inicial não conta como venda: a primeira leitura parte dele.</p>
           <div class="form-grid">
-            <label style="grid-column:1/-1">Nome<input name="nome"></label>
-            <label>di atual (como na tela)<input name="di" inputmode="numeric" placeholder="ex.: 150700"></label>
-            <label>ds atual (como na tela)<input name="ds" inputmode="numeric" placeholder="ex.: 66470"></label>
+            <label>Nome ou número<input name="nome" placeholder="ex.: 411"></label>
+            <label>Jogo<input name="jogo" placeholder="ex.: Bingo"></label>
+            <label>Instalado em<input name="instalada" type="date"></label>
+            <span></span>
+            <label>di de partida<input name="di" data-mascara inputmode="numeric" placeholder="ex.: 9,00"></label>
+            <label>ds de partida<input name="ds" data-mascara inputmode="numeric" placeholder="ex.: 1,00"></label>
           </div>
           <div class="vg-erro" id="vgMaquinaErro" role="alert"></div>
           <div class="vg-acoes"><button type="button" class="btn ghost" data-vg-fechar="dlgVgMaquina">Cancelar</button><button type="submit" class="btn">Adicionar</button></div>
+        </form>
+      </dialog>
+      <dialog id="dlgVgTroca" class="vg-dlg">
+        <header class="card"><strong id="dlgVgTrocaTitulo">Trocar</strong></header>
+        <form id="formVgTroca" class="card" novalidate>
+          <p class="vg-sub" id="vgTrocaInfo" style="margin:0 0 8px"></p>
+          <p class="vg-aviso" id="vgTrocaAviso"></p>
+          <div class="form-grid">
+            <label style="grid-column:1/-1" id="vgTrocaDestinoBox">Ponto de destino<select name="destino"></select></label>
+            <label>Jogo<input name="jogo" placeholder="ex.: Bingo"></label>
+            <label>Data da troca<input name="data" type="date"></label>
+            <p class="vg-sub" style="grid-column:1/-1;margin:4px 0 0">Na troca o video game é zerado. Digite os números da tela depois do teste do aplicador: a próxima leitura parte deles.</p>
+            <label>di de partida<input name="di" data-mascara inputmode="numeric" placeholder="ex.: 9,00"></label>
+            <label>ds de partida<input name="ds" data-mascara inputmode="numeric" placeholder="ex.: 1,00"></label>
+          </div>
+          <div class="vg-erro" id="vgTrocaErro" role="alert"></div>
+          <div class="vg-acoes"><button type="button" class="btn ghost" data-vg-fechar="dlgVgTroca">Cancelar</button><button type="submit" class="btn">Confirmar troca</button></div>
         </form>
       </dialog>
       <dialog id="dlgVgPagamento" class="vg-dlg">
@@ -466,6 +498,8 @@
     document.getElementById('formVgPonto').addEventListener('submit', salvarPonto);
     document.getElementById('formVgMaquina').addEventListener('submit', salvarMaquina);
     document.getElementById('formVgPagamento').addEventListener('submit', salvarPagamento);
+    document.getElementById('formVgTroca').addEventListener('submit', salvarTroca);
+    wrap.addEventListener('input', e => { if (e.target.hasAttribute('data-mascara')) mascarar(e.target); });
     wrap.addEventListener('click', e => {
       const id = e.target.closest('[data-vg-fechar]')?.getAttribute('data-vg-fechar');
       if (id) document.getElementById(id).close();
@@ -555,37 +589,115 @@
     f.reset();
     document.getElementById('vgMaquinaErro').textContent = '';
     f.nome.value = 'Video game ' + (st.maquinas.filter(m => m.ativo).length + 1);
+    f.instalada.value = hoje();
     document.getElementById('dlgVgMaquina').showModal();
   }
   async function salvarMaquina(e) {
     e.preventDefault();
     const f = e.target, erro = document.getElementById('vgMaquinaErro');
     const di = leituraInt(f.di.value), ds = leituraInt(f.ds.value);
-    if (!f.nome.value.trim()) { erro.textContent = 'Informe o nome.'; return; }
-    if (di === null || ds === null) { erro.textContent = 'Informe di e ds como aparecem na tela.'; return; }
+    if (!f.nome.value.trim()) { erro.textContent = 'Informe o nome ou número.'; return; }
+    if (!f.instalada.value) { erro.textContent = 'Informe a data da instalação.'; return; }
+    if (di === null || ds === null) { erro.textContent = 'Informe di e ds de partida (pode ser 0,00).'; return; }
     try {
       const { data, error } = await client().from('vg_maquinas').insert([{
-        empresa_id: await empresaId(), ponto_id: st.pontoId, nome: f.nome.value.trim(), di_inicial: di, ds_inicial: ds
+        empresa_id: await empresaId(), ponto_id: st.pontoId, nome: f.nome.value.trim(),
+        jogo: f.jogo.value.trim() || null, di_inicial: di, ds_inicial: ds, instalada_em: f.instalada.value
       }]).select().single();
       if (error) throw error;
       st.maquinas.push(data);
-      st.form.linhas.push({ maquina_id: data.id, nome: data.nome, di_anterior: di, ds_anterior: ds, diTxt: '', dsTxt: '', zerado: false });
+      st.form.linhas.push({ maquina_id: data.id, nome: data.nome, jogo: data.jogo || '', di_anterior: di, ds_anterior: ds, diTxt: '', dsTxt: '', zerado: false });
       document.getElementById('dlgVgMaquina').close();
       render();
     } catch (err) {
       console.error('[VideoGame] salvar video game:', err);
-      erro.textContent = 'Não foi possível salvar: ' + (err.message || err);
+      erro.textContent = msgErroMaquina(err);
     }
   }
+  const msgErroMaquina = err => /jogo|instalada_em|retirada_em|motivo_saida|origem_id/i.test(String(err?.message || ''))
+    ? 'Falta atualizar o banco: rode o arquivo db/video-game-maquinas.sql no Supabase.'
+    : 'Não foi possível salvar: ' + (err?.message || err);
+  const ultimaLeituraNoPonto = maqId => st.prestacoes.find(p => (p.dados?.leituras || []).some(l => l.maquina_id === maqId)) || null;
+
   async function removerMaquina(id) {
     const l = st.form.linhas.find(x => x.maquina_id === id);
     if (!l || !confirm(`Retirar "${l.nome}" deste ponto? As leituras antigas continuam no histórico.`)) return;
-    const { error } = await client().from('vg_maquinas').update({ ativo: false }).eq('id', id);
-    if (error) { aviso('Não foi possível retirar: ' + error.message, 'error'); return; }
+    const { error } = await client().from('vg_maquinas').update({ ativo: false, retirada_em: hoje(), motivo_saida: 'retirada' }).eq('id', id);
+    if (error) { aviso(msgErroMaquina(error), 'error'); return; }
     const m = st.maquinas.find(x => x.id === id);
     if (m) m.ativo = false;
     st.form.linhas = st.form.linhas.filter(x => x.maquina_id !== id);
     render();
+  }
+
+  function abrirDialogoTroca(id, tipo) {
+    const m = st.maquinas.find(x => x.id === id);
+    const l = st.form.linhas.find(x => x.maquina_id === id);
+    if (!m) return;
+    if (l && (l.diTxt || l.dsTxt)) {
+      alert('Há leitura digitada para este video game. Salve a prestação ou apague os números antes de trocar.');
+      return;
+    }
+    const destinos = st.pontos.filter(p => p.id !== st.pontoId);
+    if (tipo === 'ponto' && !destinos.length) { alert('Cadastre primeiro o ponto de destino.'); return; }
+    const f = document.getElementById('formVgTroca');
+    f.reset();
+    document.getElementById('vgTrocaErro').textContent = '';
+    f.dataset.id = id;
+    f.dataset.tipo = tipo;
+    document.getElementById('dlgVgTrocaTitulo').textContent = tipo === 'ponto' ? `Trocar ${m.nome} de ponto` : `Trocar o jogo de ${m.nome}`;
+    document.getElementById('vgTrocaInfo').textContent = `Ponto atual: ${pontoAtual()?.nome || '—'} · Jogo atual: ${m.jogo || 'não informado'}`;
+    const ult = ultimaLeituraNoPonto(id);
+    document.getElementById('vgTrocaAviso').textContent = ult
+      ? `Última leitura neste ponto: ${dataBR(ult.data)}. O que foi vendido depois dela fica de fora. Se ainda não fez a leitura final, faça antes de trocar.`
+      : 'Este video game ainda não tem leitura neste ponto. Se já vendeu algo aqui, faça a leitura antes de trocar.';
+    f.destino.innerHTML = destinos.map(p => `<option value="${esc(p.id)}">${esc(p.nome)}${p.gerente_nome ? ' — ' + esc(p.gerente_nome) : ''}</option>`).join('');
+    document.getElementById('vgTrocaDestinoBox').hidden = tipo !== 'ponto';
+    f.jogo.value = tipo === 'ponto' ? (m.jogo || '') : '';
+    f.data.value = hoje();
+    document.getElementById('dlgVgTroca').showModal();
+  }
+
+  // Troca = encerra a instalação atual e abre outra no destino, a partir da leitura de partida
+  async function salvarTroca(e) {
+    e.preventDefault();
+    const f = e.target, erro = document.getElementById('vgTrocaErro');
+    const tipo = f.dataset.tipo;
+    const m = st.maquinas.find(x => x.id === f.dataset.id);
+    const destino = tipo === 'ponto' ? f.destino.value : st.pontoId;
+    const jogo = f.jogo.value.trim();
+    const di = leituraInt(f.di.value), ds = leituraInt(f.ds.value);
+    const ult = ultimaLeituraNoPonto(m?.id);
+    if (!m) return;
+    if (!destino) { erro.textContent = 'Selecione o ponto de destino.'; return; }
+    if (tipo === 'jogo' && !jogo) { erro.textContent = 'Informe o novo jogo.'; return; }
+    if (tipo === 'jogo' && jogo.toLowerCase() === String(m.jogo || '').toLowerCase()) { erro.textContent = 'O novo jogo é igual ao atual.'; return; }
+    if (!f.data.value) { erro.textContent = 'Informe a data da troca.'; return; }
+    if (ult && f.data.value < String(ult.data).slice(0, 10)) { erro.textContent = `A troca não pode ser antes da última leitura (${dataBR(ult.data)}).`; return; }
+    if (di === null || ds === null) { erro.textContent = 'Informe di e ds de partida (pode ser 0,00).'; return; }
+    try {
+      const { data: nova, error } = await client().from('vg_maquinas').insert([{
+        empresa_id: await empresaId(), ponto_id: destino, nome: m.nome, jogo: jogo || null,
+        di_inicial: di, ds_inicial: ds, origem_id: m.id, instalada_em: f.data.value
+      }]).select().single();
+      if (error) throw error;
+      const { error: e2 } = await client().from('vg_maquinas')
+        .update({ ativo: false, retirada_em: f.data.value, motivo_saida: tipo === 'ponto' ? 'troca_ponto' : 'troca_jogo' })
+        .eq('id', m.id);
+      if (e2) {
+        await client().from('vg_maquinas').delete().eq('id', nova.id);
+        throw e2;
+      }
+      document.getElementById('dlgVgTroca').close();
+      await carregarDoPonto();
+      novoFormulario();
+      render();
+      const destinoNome = st.pontos.find(p => p.id === destino)?.nome || '';
+      aviso(tipo === 'ponto' ? `${m.nome} agora está em ${destinoNome}` : `Jogo de ${m.nome} trocado para ${jogo}`, 'success');
+    } catch (err) {
+      console.error('[VideoGame] troca:', err);
+      erro.textContent = msgErroMaquina(err);
+    }
   }
 
   function abrirDialogoPagamento(id) {
@@ -696,6 +808,12 @@
           return falha(`A data precisa ser depois da leitura anterior (${dataBR(penultima.data)}).`);
         }
       }
+      const antesDaInstalacao = f.linhas
+        .map(l => st.maquinas.find(m => m.id === l.maquina_id))
+        .find(m => m?.instalada_em && f.data < String(m.instalada_em).slice(0, 10));
+      if (antesDaInstalacao) {
+        return falha(`A data da leitura é anterior à instalação de ${antesDaInstalacao.nome} neste ponto (${dataBR(antesDaInstalacao.instalada_em)}).`);
+      }
       f.negativoAnterior = negativoAnterior(f.uid);
       f.linhas.forEach(l => {
         const maq = st.maquinas.find(m => m.id === l.maquina_id);
@@ -789,9 +907,7 @@
       if (!campo) return;
       const l = st.form.linhas.find(x => x.maquina_id === e.target.getAttribute('data-id'));
       if (!l) return;
-      const limpo = e.target.value.replace(/\D/g, '');
-      if (limpo !== e.target.value) e.target.value = limpo;
-      l[campo] = limpo;
+      l[campo] = mascarar(e.target);
       l.tocado = true;
       recalcular();
     });
@@ -818,6 +934,8 @@
         'ponto-editar': () => abrirDialogoPonto(pontoAtual()),
         'maquina-nova': abrirDialogoMaquina,
         'maquina-remover': () => removerMaquina(id),
+        'maquina-trocar-ponto': () => abrirDialogoTroca(id, 'ponto'),
+        'maquina-trocar-jogo': () => abrirDialogoTroca(id, 'jogo'),
         'pagamento-novo': () => abrirDialogoPagamento(null),
         'pagamento-editar': () => abrirDialogoPagamento(id),
         'pagamento-excluir': () => excluirPagamento(id),

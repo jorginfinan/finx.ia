@@ -224,38 +224,6 @@ window.__currentUsername = function () {
   } catch (_) { return 'Sistema'; }
 };
 
-// ===== MODALIDADES DO CAIXA (caixa único, com filtro por modalidade) =====
-const __MODALIDADES = { TODAS: 'Todas', JB: 'JB', VG: 'Video game' };
-window.__modalidadeNome = m => __MODALIDADES[m] || m || 'JB';
-window.__finModalidade = function () {
-  try {
-    const m = localStorage.getItem('bsx_fin_modalidade');
-    return __MODALIDADES[m] ? m : 'TODAS';
-  } catch (_) { return 'TODAS'; }
-};
-// Marca a aba ativa e mostra quantas pendências cada modalidade tem
-window.__finAtualizarAbas = function (pendentes) {
-  const lista = pendentes || (window.__getPendencias?.() || []).filter(p => p.status === 'PENDENTE');
-  const ativa = window.__finModalidade();
-  document.querySelectorAll('#finModalidadeTabs [data-fin-mod]').forEach(b => {
-    const m = b.getAttribute('data-fin-mod');
-    const n = lista.filter(p => m === 'TODAS' || (p.modalidade || 'JB') === m).length;
-    b.textContent = window.__modalidadeNome(m) + (n ? ` (${n})` : '');
-    const ligada = m === ativa;
-    b.setAttribute('aria-pressed', ligada ? 'true' : 'false');
-    b.style.borderBottomColor = ligada ? '#2563eb' : 'transparent';
-    b.style.color = ligada ? '#1d4ed8' : '#374151';
-  });
-};
-document.addEventListener('click', function (ev) {
-  const btn = ev.target.closest?.('#finModalidadeTabs [data-fin-mod]');
-  if (!btn) return;
-  try { localStorage.setItem('bsx_fin_modalidade', btn.getAttribute('data-fin-mod')); } catch (_) {}
-  try { window.renderFinPendencias?.(); } catch (_) {}
-  try { window.renderFin?.(); } catch (_) {}
-  window.__finAtualizarAbas();
-});
-
 // ===== CÓDIGOS DE TRANSAÇÃO =====
 // Origem: DIR-EMPRESA-ROTA-AAMMDD-XXXX  (ex.: REC-BSX-041-261016-K7Q2)
 //   DIR: REC = gerente → empresa · PAG = empresa → gerente · MAN = lançado direto no caixa
@@ -519,7 +487,6 @@ window.abrirComprovante = function (uid) {
     set('cmpOrigTipo', dec
       ? `${dec.tipo} · ${dec.empresa}${dec.rota !== '000' ? ' · rota ' + dec.rota : ''} · ${dec.data}`
       : (/prest/i.test(item.categoria || '') ? 'Prestação de contas' : 'Lançamento no caixa'));
-    set('cmpModalidade', window.__modalidadeNome(item.modalidade || 'JB'));
     set('cmpGerente', item.gerente || '—');
     set('cmpForma', item.forma || '—');
     set('cmpCategoria', item.categoria || '—');
@@ -777,7 +744,7 @@ window.__fin_saveFromForm = async function(){
     const disp = window.__detectDevice?.() || 'desktop';
     const novoManual = {
       uid: newId, ...reg,
-      modalidade: window.__finModalidade() === 'VG' || (window.__finModalidade() === 'TODAS' && window.RamoEmpresa?.atual?.() === 'VG') ? 'VG' : 'JB',
+      modalidade: window.RamoEmpresa?.atual?.() === 'VG' ? 'VG' : 'JB',
       codigo_origem: window.__gerarCodigoOrigem('MAN', { gerenteNome: reg.gerente, data: reg.data }),
       transaction_id: window.__gerarCodigoCaixa(),
       device: disp, user_agent: window.__uaShort?.() || '',
@@ -913,10 +880,8 @@ function applyFilters(rows){
   const buscaI = normalize(document.getElementById('busca')?.value||'');
   const de     = (document.getElementById('dataDe')?.value||'').trim();   // YYYY-MM-DD
   const ate    = (document.getElementById('dataAte')?.value||'').trim();  // YYYY-MM-DD
-  const modalidade = window.__finModalidade();
 
   return (rows||[]).filter(r=>{
-    if (modalidade !== 'TODAS' && (r.modalidade || 'JB') !== modalidade) return false;
 
     const d  = (r.data||'').slice(0,10);         // garantir YYYY-MM-DD
     const yy = d ? d.slice(0,4) : '';
@@ -1765,10 +1730,7 @@ function renderFinPendencias(){
   const box = document.getElementById('finPendenciasBox');
   if(!box) return;
 
-  const modalidadeAba = window.__finModalidade();
-  const todasPendentes = __getPendencias().filter(p => p.status === 'PENDENTE');
-  window.__finAtualizarAbas?.(todasPendentes);
-  const pend = todasPendentes.filter(p => modalidadeAba === 'TODAS' || (p.modalidade || 'JB') === modalidadeAba);
+  const pend = __getPendencias().filter(p => p.status === 'PENDENTE');
   
   // Separa recebimentos e pagamentos
   const recebimentos = pend.filter(p => p.tipoCaixa === 'RECEBIDO' || p.tipo === 'RECEBER');
@@ -2544,7 +2506,6 @@ function __fin_printCaixa(){
     periodoTxt = 'Todos os lançamentos';
   }
   const filtrosExtras = [];
-  if (window.__finModalidade() !== 'TODAS') filtrosExtras.push(`Modalidade: ${window.__modalidadeNome(window.__finModalidade())}`);
   if (forma) filtrosExtras.push(`Forma: ${forma}`);
   if (busca) filtrosExtras.push(`Busca: "${busca}"`);
 

@@ -131,6 +131,16 @@
       return;
     }
   
+    // Página de outro ramo (JB / Video game / Futebol) não abre: volta para o início
+    if (window.RamoEmpresa && !window.RamoEmpresa.permite(el)) {
+      console.warn('[router] página de outro ramo:', key);
+      if (key !== 'inicio') {
+        try { history.replaceState({}, '', '#inicio'); } catch(_){}
+        return showPage('inicio');
+      }
+      return;
+    }
+
     // pode: agora sim mostra
     hideAll();
     el.classList.remove('hidden');

@@ -777,7 +777,7 @@ window.__fin_saveFromForm = async function(){
     const disp = window.__detectDevice?.() || 'desktop';
     const novoManual = {
       uid: newId, ...reg,
-      modalidade: window.__finModalidade() === 'VG' ? 'VG' : 'JB',
+      modalidade: window.__finModalidade() === 'VG' || (window.__finModalidade() === 'TODAS' && window.RamoEmpresa?.atual?.() === 'VG') ? 'VG' : 'JB',
       codigo_origem: window.__gerarCodigoOrigem('MAN', { gerenteNome: reg.gerente, data: reg.data }),
       transaction_id: window.__gerarCodigoCaixa(),
       device: disp, user_agent: window.__uaShort?.() || '',

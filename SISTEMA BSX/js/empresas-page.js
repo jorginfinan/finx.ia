@@ -79,6 +79,12 @@
     setTxt('kpiEmpPrestMes', prestMes);
   }
 
+  function ramoBadge(id) {
+    const ramo = __cache.find(c => c.id === id)?.ramo;
+    if (!ramo) return '';
+    return `<span title="Prestação de contas liberada" style="background:#eef2ff; color:#3730a3; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600;">${esc(window.RamoEmpresa?.nome?.(ramo) || ramo)}</span>`;
+  }
+
   function renderResumoCards() {
     const wrap = document.getElementById('empresasResumoCards');
     if (!wrap) return;
@@ -107,6 +113,7 @@
             <div style="display:flex; align-items:center; gap:8px;">
               <span style="font-size:28px;">${esc(s.emoji || (window.EMPRESA_EMOJI_FALLBACK||{})[String(s.nome).toUpperCase()] || '🏢')}</span>
               <strong style="font-size:16px;">${esc(s.nome)}</strong>
+              ${ramoBadge(s.id)}
             </div>
             ${statusBadge}
           </div>
@@ -197,6 +204,7 @@
     f.nome.value = emp.nome || '';
     popularSelectEmoji(emp.emoji || '🏢');
     f.querySelector('#empAtivo').checked = !!emp.ativo;
+    if (f.ramo) f.ramo.value = emp.ramo || 'JB';
     document.getElementById('btnSalvarEmpresa').textContent = 'Atualizar Empresa';
     f.scrollIntoView({ behavior:'smooth', block:'center' });
   }
@@ -209,21 +217,25 @@
     const nome  = String(fd.get('nome') || '').trim();
     const emoji = String(fd.get('emoji') || '🏢').trim() || '🏢';
     const ativo = !!fd.get('ativo');
+    const ramo  = String(fd.get('ramo') || 'JB');
     if (!nome) { notify('Informe o nome.', 'error'); return; }
 
     try {
       if (__editingId) {
-        await window.SupabaseAPI.empresas.update(__editingId, { nome, emoji, ativo });
+        await window.SupabaseAPI.empresas.update(__editingId, { nome, emoji, ativo, ramo });
         notify('Empresa atualizada!', 'success');
       } else {
-        await window.SupabaseAPI.empresas.create({ nome, emoji, ativo });
+        await window.SupabaseAPI.empresas.create({ nome, emoji, ativo, ramo });
         notify('Empresa cadastrada!', 'success');
       }
       resetForm();
       await render();
       try { window.__reloadEmpresaSelector?.(); } catch(_){}
+      try { window.RamoEmpresa?.recarregar?.(); } catch(_){}
     } catch (err) {
-      alert('⚠️ ' + (err.message || 'Erro ao salvar'));
+      alert('⚠️ ' + (/ramo/i.test(String(err.message || ''))
+        ? 'Falta atualizar o banco: rode o arquivo db/empresas-ramo.sql no Supabase.'
+        : (err.message || 'Erro ao salvar')));
     }
   }
 

@@ -2019,7 +2019,7 @@
       if (!ok) throw new Error('Somente administradores podem alterar empresas.');
     }
 
-    async create({ nome, emoji, ativo = true }) {
+    async create({ nome, emoji, ativo = true, ramo }) {
       try {
         this._requireAdmin();
         const nomeLimpo = String(nome || '').trim();
@@ -2037,6 +2037,7 @@
           emoji: String(emoji || '🏢').slice(0, 8),
           ativo: !!ativo
         };
+        if (ramo) payload.ramo = ramo;
         const { data, error } = await this.client
           .from(this.table).insert([payload]).select().single();
         if (error) throw error;
@@ -2057,6 +2058,7 @@
         if (patch.nome !== undefined) p.nome = String(patch.nome).trim();
         if (patch.emoji !== undefined) p.emoji = String(patch.emoji || '🏢').slice(0, 8);
         if (patch.ativo !== undefined) p.ativo = !!patch.ativo;
+        if (patch.ramo !== undefined) p.ramo = patch.ramo;
 
         const { data, error } = await this.client
           .from(this.table).update(p).eq('id', id).select().single();

@@ -273,9 +273,8 @@
       ${st.erroSetup ? `<div class="vg-setup">${esc(st.erroSetup)}</div>` : ''}
       <div class="vg-barra">
         <label>GERENTE<select id="vgPonto">${opcoesGerentes()}</select></label>
-        <button type="button" class="btn ghost" data-tab="vg-cadastro">Cadastro video game</button>
       </div>
-      ${ponto ? htmlFormulario(ponto) + htmlHistorico() : `<div class="vg-card vg-vazio">Cadastre o gerente e os video games dele em <strong>Cadastro video game</strong> para lançar a prestação.</div>`}
+      ${ponto ? htmlFormulario(ponto) + htmlHistorico() : `<div class="vg-card vg-vazio">Cadastre o gerente e os video games dele no menu <strong>Prestações → Cadastro video game</strong> para lançar a prestação.</div>`}
     `;
     if (ponto) { recalcular(); atualizarStatusPagamentos(); }
   }
@@ -298,8 +297,8 @@
           <label class="vg-sub" style="display:flex;flex-direction:column;gap:4px;font-weight:600">DATA DA LEITURA
             <input type="date" id="vgData" value="${esc(f.data)}" ${ver ? 'disabled' : ''}></label>
         </div>
-        ${f.linhas.length ? f.linhas.map(l => htmlMaquina(l, ver)).join('') : `<div class="vg-vazio">Este gerente ainda não tem video game. Cadastre em <strong>Cadastro video game</strong>.</div>`}
-        ${f.modo === 'nova' && podeEditar() ? `<div class="vg-sub">Para adicionar, trocar ou retirar video game, use o <a href="#vg-cadastro" data-tab="vg-cadastro">Cadastro video game</a>.</div>` : ''}
+        ${f.linhas.length ? f.linhas.map(l => htmlMaquina(l, ver)).join('') : `<div class="vg-vazio">Este gerente ainda não tem video game. Cadastre no menu <strong>Prestações → Cadastro video game</strong>.</div>`}
+        ${f.modo === 'nova' && podeEditar() ? `<div class="vg-sub">Para adicionar, trocar ou retirar video game, use o menu <strong>Prestações → Cadastro video game</strong>.</div>` : ''}
         <div style="border-top:1px solid #e5e7eb;margin-top:14px;padding-top:12px">
           <div class="vg-topo" style="margin-bottom:0">
             <strong>Comissões</strong>
@@ -1093,7 +1092,6 @@
       <div class="vg-barra">
         <label>GERENTE<select id="vgCadPonto">${opcoesGerentes()}</select></label>
         ${editar ? `<button type="button" class="btn" data-vg="ger-novo">Novo gerente</button>` : ''}
-        <button type="button" class="btn ghost" data-tab="prest-vg">Ir para a prestação</button>
       </div>
       ${ponto ? htmlCadGerente(ponto, editar) : `<div class="vg-card vg-vazio">Nenhum gerente no video game ainda.${editar ? ' Clique em <strong>Novo gerente</strong> para começar.' : ''}</div>`}
       ${htmlCadResumo()}

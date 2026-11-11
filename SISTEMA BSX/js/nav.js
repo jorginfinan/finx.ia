@@ -6,6 +6,7 @@
     cad:'pageCadastros', fich:'pageFichas',
     prest:'pagePrestacoes', 'prest-rel':'pagePrestRel', 'prest-fech':'pagePrestFech',
     'prest-vg':'pageVideoGame',
+    'vg-cadastro':'pageVgCadastro',
     fin:'pageFinanceiro', desp:'pageDespesas',
     users:'pageUsers', usuarios:'pageUsers','prest-vales':'pagePrestVales',
     historico: 'pageHistorico',
@@ -93,6 +94,10 @@
     // ✅ Inicializa Video game (submenu Prestações)
     if (key === 'prest-vg' || id === 'pageVideoGame') {
       try { window.VideoGame?.init?.(); } catch(_) {}
+    }
+    // ✅ Inicializa Cadastro do video game (gerentes e video games)
+    if (key === 'vg-cadastro' || id === 'pageVgCadastro') {
+      try { window.VideoGame?.initCadastro?.(); } catch(_) {}
     }
     // ✅ Inicializa Mapa de uso (submenu Máquinas → Mapa)
     if (key === 'maquinas-mapa' || id === 'pageMapa') {

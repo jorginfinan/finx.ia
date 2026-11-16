@@ -379,6 +379,7 @@ window.EMPRESA_EMOJI_OPTIONS = [
   { emoji: '🏢', label: 'Prédio' },
   { emoji: '📺', label: 'TV' },
   { emoji: '🎮', label: 'Game' },
+  { emoji: '🎰', label: 'Caça-níquel' },
   { emoji: '👤', label: 'Pessoa' },
   { emoji: '🏬', label: 'Loja' },
   { emoji: '🏭', label: 'Fábrica' },

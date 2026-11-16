@@ -14,7 +14,8 @@
     pronto: false, empresaNome: null, empresaId: null,
     pontos: [], pontoId: null, maquinas: [], prestacoes: [],
     form: null, salvando: false, erroSetup: '',
-    cadPronto: false, contagem: {}, listaGerentes: [], imagem: null, salvandoCad: false
+    cadPronto: false, contagem: {}, listaGerentes: [], imagem: null, salvandoCad: false,
+    todas: [], erroMapa: '', periodo: '3m'
   };
 
   // ---------- helpers ----------
@@ -33,6 +34,11 @@
   const rotuloDe = (gerenteNome, pontoNome) =>
     gerenteNome && pontoNome && norm(gerenteNome) !== norm(pontoNome) ? `${gerenteNome} · ${pontoNome}` : (gerenteNome || pontoNome || '');
   const rotuloPonto = p => (p ? rotuloDe(p.gerente_nome, p.nome) : '');
+  // Leituras antigas do caderno: só leitura (sem comissão, sem pagamento e sem caixa)
+  const ehHistorico = p => p?.dados?.historico === true;
+  const dia = s => String(s || '').slice(0, 10);
+  const pad2 = n => String(n).padStart(2, '0');
+  const isoDe = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
   function hoje() {
     const d = new Date();
@@ -128,6 +134,24 @@
     st.contagem = {};
     (data || []).forEach(m => { st.contagem[m.ponto_id] = (st.contagem[m.ponto_id] || 0) + 1; });
   }
+  // Todas as prestações da empresa (para o mapa de prestações)
+  async function carregarMapa() {
+    const id = await empresaId();
+    const { data, error } = await client().from('vg_prestacoes')
+      .select('uid, ponto_id, data, saldo, total_comissoes, liquido, dados')
+      .eq('empresa_id', id).order('data', { ascending: false });
+    if (error) throw error;
+    st.todas = data || [];
+    await carregarContagem();
+  }
+  async function atualizarMapa() {
+    st.erroMapa = '';
+    try { await carregarMapa(); } catch (err) {
+      console.error('[VideoGame] mapa:', err);
+      st.todas = [];
+      st.erroMapa = 'Não foi possível carregar o mapa: ' + (err.message || err);
+    }
+  }
   const anteriores = uidExcluida => st.prestacoes.filter(p => p.uid !== uidExcluida);
 
   function leituraAnterior(maq, uidExcluida) {
@@ -138,7 +162,7 @@
     return { di: Number(maq.di_inicial) || 0, ds: Number(maq.ds_inicial) || 0 };
   }
   function negativoAnterior(uidExcluida) {
-    const ant = anteriores(uidExcluida)[0];
+    const ant = anteriores(uidExcluida).find(p => !ehHistorico(p));
     return ant ? Number(ant.negativo_novo) || 0 : Number(pontoAtual()?.negativo_inicial) || 0;
   }
   // Lista livre de comissões; as colunas antigas só valem enquanto o SQL novo não foi rodado
@@ -166,6 +190,7 @@
   function abrirPrestacao(uid) {
     const p = st.prestacoes.find(x => x.uid === uid);
     if (!p) return;
+    if (ehHistorico(p)) { aviso('Leitura do caderno: confira no mapa. Para alterar, use Histórico no Cadastro video game.'); return; }
     const ultima = st.prestacoes[0]?.uid === uid;
     const modo = ultima && podeEditar() ? 'editar' : 'ver';
     const salvas = p.dados?.leituras || [];
@@ -254,7 +279,44 @@
       .vg-dica{font-size:13px;color:#4b5563;background:#f9fafb;border:1px dashed #d1d5db;border-radius:10px;padding:10px 12px;margin-top:6px}
       dialog#dlgVgImagem{width:min(640px,96vw)}
       .vg-img-prev{display:block;width:100%;max-height:68vh;object-fit:contain;border:1px solid #e5e7eb;border-radius:8px;background:#f8fafc}
+      .vg-resumo{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:2px 0 14px}
+      .vg-kpi{background:#f9fafb;border:1px solid #eef0f3;border-radius:10px;padding:10px 12px}
+      .vg-kpi .vg-v{font-size:18px;font-weight:700;color:#111827;font-variant-numeric:tabular-nums;margin-top:2px}
+      table.vg-mapa{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;overflow:visible}
+      table.vg-mapa th{white-space:nowrap;vertical-align:bottom;padding:9px 8px !important;letter-spacing:.3px !important}
+      table.vg-mapa td{padding:8px !important;vertical-align:top}
+      table.vg-mapa thead .vg-mini{color:#cbd5e1}
+      table.vg-fixa tr > :first-child{position:sticky;left:0;z-index:1;background:#fff}
+      table.vg-fixa thead tr > :first-child{z-index:3}
+      table.vg-fixa tr.vg-sel > :first-child{background:#eff6ff}
+      table.vg-fixa tfoot tr > :first-child{background:#f9fafb}
+      .vg-acoes-mini{display:flex;flex-wrap:wrap;gap:4px;width:170px}
+      table.vg-mapa .vg-num{text-align:right;white-space:nowrap}
+      table.vg-mapa tfoot td{font-weight:700;border-top:2px solid #e5e7eb;border-bottom:none;background:#f9fafb}
+      table.vg-mapa tr.vg-sel td{background:#eff6ff}
+      table.vg-mapa tr.vg-cad td{color:#4b5563}
+      .vg-mini{display:block;font-size:11px;color:#6b7280;font-weight:400;white-space:nowrap;text-transform:none;letter-spacing:0}
+      .vg-datas{display:flex;flex-wrap:wrap;gap:4px;max-width:260px}
+      .vg-dt{font-size:11px;padding:1px 6px;border-radius:6px;background:#eef2ff;color:#3730a3;white-space:nowrap}
+      .vg-dt.cad{background:#f3f4f6;color:#6b7280}
+      .vg-dias-ok{color:#166534}.vg-dias-esp{color:#92400e}.vg-dias-atr{color:#b91c1c;font-weight:700}
+      .vg-neg{color:#b91c1c}
+      .vg-mapa-topo{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+      .vg-mapa-topo label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:#6b7280}
+      dialog#dlgVgHist{width:min(800px,96vw)}
+      table.vg-hist-tab{width:100%;border-collapse:collapse;font-size:13px}
+      table.vg-hist-tab th{white-space:nowrap;padding:8px 6px !important}
+      table.vg-hist-tab td{padding:4px !important;vertical-align:middle}
+      table.vg-hist-tab input{width:100%;min-width:0;box-sizing:border-box;padding:5px 6px}
+      table.vg-hist-tab input[type=date]{min-width:128px}
+      table.vg-hist-tab tr.vg-hist-erro td{background:#fef2f2}
+      table.vg-hist-tab tfoot td{font-weight:700;border-top:1px solid #e5e7eb;padding-top:6px}
+      #vgHistColar{width:100%;box-sizing:border-box;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;margin:6px 0}
       @media (max-width:560px){
+        table.vg-hist-tab .vg-so-largo{display:none}
+        .vg-resumo{grid-template-columns:1fr 1fr;gap:8px}
+        .vg-kpi{padding:8px 10px}
+        .vg-kpi .vg-v{font-size:15px}
         .vg-grade{grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr) minmax(0,1fr)}
         .vg-grade .vg-so-largo{display:none}
         .vg-so-celular{display:block;margin-bottom:6px}
@@ -271,12 +333,166 @@
     root.innerHTML = `
       <h2>Video game</h2>
       ${st.erroSetup ? `<div class="vg-setup">${esc(st.erroSetup)}</div>` : ''}
+      ${st.erroSetup ? '' : htmlMapaGeral()}
       <div class="vg-barra">
         <label>GERENTE<select id="vgPonto">${opcoesGerentes()}</select></label>
       </div>
-      ${ponto ? htmlFormulario(ponto) + htmlHistorico() : `<div class="vg-card vg-vazio">Cadastre o gerente e os video games dele no menu <strong>Prestações → Cadastro video game</strong> para lançar a prestação.</div>`}
+      ${ponto ? htmlFormulario(ponto) + htmlMapaGerente(ponto) : `<div class="vg-card vg-vazio">Cadastre o gerente e os video games dele no menu <strong>Prestações → Cadastro video game</strong> para lançar a prestação.</div>`}
     `;
     if (ponto) { recalcular(); atualizarStatusPagamentos(); }
+  }
+
+  // ---------- mapa de prestações ----------
+  const PERIODOS = { mes: 'Este mês', ant: 'Mês passado', '3m': 'Últimos 3 meses', '6m': 'Últimos 6 meses', tudo: 'Tudo' };
+  function intervaloPeriodo(k) {
+    const d = new Date(), y = d.getFullYear(), m = d.getMonth();
+    if (k === 'mes') return [isoDe(new Date(y, m, 1)), null];
+    if (k === 'ant') return [isoDe(new Date(y, m - 1, 1)), isoDe(new Date(y, m, 0))];
+    if (k === '3m') return [isoDe(new Date(y, m - 2, 1)), null];
+    if (k === '6m') return [isoDe(new Date(y, m - 5, 1)), null];
+    return [null, null];
+  }
+  const noPeriodo = (data, [ini, fim]) => (!ini || dia(data) >= ini) && (!fim || dia(data) <= fim);
+  function diasDesde(s) {
+    const [y, m, d] = dia(s).split('-').map(Number);
+    const t = new Date();
+    return Math.round((Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()) - Date.UTC(y, m - 1, d)) / 86400000);
+  }
+  const somar = (arr, f) => arr.reduce((a, x) => a + (Number(f(x)) || 0), 0);
+  const restamDe = p => (ehHistorico(p) ? 0 : (Number(p.liquido) || 0) - totalPago(p.dados?.pagamentos));
+  const vendaDe = l => (Number.isFinite(l.venda) ? l.venda : l.di - (l.zerado ? 0 : l.di_anterior));
+  const premiosDe = l => (Number.isFinite(l.premios) ? l.premios : l.ds - (l.zerado ? 0 : l.ds_anterior));
+  const dataCurta = s => dataBR(s).slice(0, 5);
+
+  function resumoGerente(p, intervalo) {
+    const lista = st.todas.filter(x => x.ponto_id === p.id);
+    const doPeriodo = lista.filter(x => noPeriodo(x.data, intervalo));
+    const sistema = doPeriodo.filter(x => !ehHistorico(x));
+    return {
+      vgs: st.contagem[p.id] || 0, ult: lista[0] || null,
+      datas: doPeriodo.slice().reverse(),
+      saldo: somar(doPeriodo, x => x.saldo),
+      comissoes: somar(sistema, x => x.total_comissoes),
+      liquido: somar(sistema, x => x.liquido),
+      restam: somar(lista, restamDe)
+    };
+  }
+  function htmlDias(ult) {
+    if (!ult) return '<span class="vg-dias-atr">sem prestação</span>';
+    const n = diasDesde(ult.data);
+    const cls = n <= 20 ? 'vg-dias-ok' : n <= 35 ? 'vg-dias-esp' : 'vg-dias-atr';
+    return `${esc(dataBR(ult.data))}<span class="vg-mini ${cls}">${n <= 0 ? 'hoje' : `há ${n} dia${n === 1 ? '' : 's'}`}</span>`;
+  }
+  function htmlRestam(v) {
+    if (!v) return `<span class="vg-sub">${esc(brl(0))}</span>`;
+    return v > 0 ? esc(brl(v)) : `<span class="vg-neg">${esc(brl(-v))}</span><span class="vg-mini">empresa deve</span>`;
+  }
+
+  function htmlMapaGeral() {
+    if (!st.pontos.length) return '';
+    const intervalo = intervaloPeriodo(st.periodo);
+    const linhas = st.pontos.map(p => ({ p, r: resumoGerente(p, intervalo) }));
+    const receber = somar(linhas, x => Math.max(x.r.restam, 0));
+    const deve = somar(linhas, x => Math.max(-x.r.restam, 0));
+    const atrasados = linhas.filter(x => !x.r.ult || diasDesde(x.r.ult.data) > 20).length;
+    const temCaderno = linhas.some(x => x.r.datas.some(ehHistorico));
+    return `
+      <div class="vg-card">
+        <div class="vg-mapa-topo">
+          <div><div class="vg-titulo">🎰 Mapa de prestações</div><div class="vg-sub">Todos os gerentes do video game · clique em Abrir para lançar ou conferir</div></div>
+          <label>PERÍODO<select id="vgPeriodo">${Object.entries(PERIODOS).map(([k, t]) => `<option value="${k}"${k === st.periodo ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+        </div>
+        ${st.erroMapa ? `<div class="vg-erro" style="margin-bottom:8px">${esc(st.erroMapa)}</div>` : ''}
+        <div class="vg-resumo">
+          <div class="vg-kpi"><div class="vg-sub">Gerentes</div><div class="vg-v">${st.pontos.length}</div></div>
+          <div class="vg-kpi"><div class="vg-sub">Video games ativos</div><div class="vg-v">${somar(linhas, x => x.r.vgs)}</div></div>
+          <div class="vg-kpi"><div class="vg-sub">Saldo no período</div><div class="vg-v">${esc(brl(somar(linhas, x => x.r.saldo)))}</div></div>
+          <div class="vg-kpi"><div class="vg-sub">Gerentes devem</div><div class="vg-v">${esc(brl(receber))}</div>${deve ? `<div class="vg-mini vg-neg">Empresa deve ${esc(brl(deve))}</div>` : ''}</div>
+          <div class="vg-kpi"><div class="vg-sub">Sem prestação há +20 dias</div><div class="vg-v${atrasados ? ' vg-neg' : ''}">${atrasados}</div></div>
+        </div>
+        <div class="vg-tabela"><table class="vg-mapa vg-fixa">
+          <thead><tr><th>Gerente</th><th class="vg-num">Video games</th><th>Prestações no período</th><th class="vg-num">Saldo</th><th class="vg-num">Comissões</th><th class="vg-num">Líquido</th><th class="vg-num">A acertar</th><th>Última</th><th></th></tr></thead>
+          <tbody>${linhas.map(({ p, r }) => `<tr${p.id === st.pontoId ? ' class="vg-sel"' : ''}>
+            <td><strong>${esc(rotuloPonto(p))}</strong></td>
+            <td class="vg-num">${r.vgs}</td>
+            <td>${r.datas.length ? `<div class="vg-datas">${r.datas.map(x => `<span class="vg-dt${ehHistorico(x) ? ' cad' : ''}" title="${ehHistorico(x) ? 'Caderno' : 'Sistema'} · saldo ${esc(brl(x.saldo))}">${esc(dataCurta(x.data))}</span>`).join('')}</div>` : '<span class="vg-sub">—</span>'}</td>
+            <td class="vg-num">${esc(brl(r.saldo))}</td>
+            <td class="vg-num">${esc(brl(r.comissoes))}</td>
+            <td class="vg-num">${esc(brl(r.liquido))}</td>
+            <td class="vg-num">${htmlRestam(r.restam)}</td>
+            <td style="white-space:nowrap">${htmlDias(r.ult)}</td>
+            <td><button type="button" class="btn ghost sm" data-vg="mapa-abrir" data-id="${esc(p.id)}">Abrir</button></td>
+          </tr>`).join('')}</tbody>
+        </table></div>
+        <div class="vg-sub" style="margin-top:6px">A acertar soma todas as prestações do sistema ainda não pagas.${temCaderno ? ' Datas em cinza são do caderno: entram só no saldo (não têm comissão nem pagamento).' : ''}</div>
+      </div>`;
+  }
+
+  // Mapa do gerente: uma linha por data, uma coluna por video game (igual ao caderno)
+  function htmlMapaGerente(ponto) {
+    if (!st.prestacoes.length) return '';
+    const intervalo = intervaloPeriodo(st.periodo);
+    const rows = st.prestacoes.filter(p => noPeriodo(p.data, intervalo)).slice().reverse();
+    const ultimaUid = st.prestacoes[0]?.uid;
+    const ordem = id => { const i = st.maquinas.findIndex(m => m.id === id); return i < 0 ? 9999 : i; };
+    const ids = [];
+    rows.forEach(p => (p.dados?.leituras || []).forEach(l => { if (!ids.includes(l.maquina_id)) ids.push(l.maquina_id); }));
+    st.maquinas.filter(m => m.ativo).forEach(m => { if (!ids.includes(m.id)) ids.push(m.id); });
+    ids.sort((a, b) => ordem(a) - ordem(b));
+    const nomeMaq = id => {
+      const m = st.maquinas.find(x => x.id === id);
+      const l = rows.flatMap(p => p.dados?.leituras || []).find(x => x.maquina_id === id);
+      const nome = m?.nome || l?.nome || 'Video game';
+      const jogo = m?.jogo || l?.jogo || '';
+      return `${esc(nome)}<span class="vg-mini">${esc([jogo, m && !m.ativo ? 'retirado' : ''].filter(Boolean).join(' · ') || ' ')}</span>`;
+    };
+    const tot = { venda: 0, premios: 0, saldo: 0, com: 0, liq: 0, restam: 0, maq: {} };
+    const corpo = rows.map(p => {
+      const leituras = p.dados?.leituras || [];
+      const hist = ehHistorico(p);
+      let venda = 0, premios = 0;
+      const celulas = ids.map(id => {
+        const l = leituras.find(x => x.maquina_id === id);
+        if (!l) return '<td class="vg-num vg-sub">—</td>';
+        const v = vendaDe(l), pr = premiosDe(l);
+        venda += v; premios += pr;
+        tot.maq[id] = (tot.maq[id] || 0) + (v - pr);
+        return `<td class="vg-num">${esc(brl(v - pr))}<span class="vg-mini">v ${esc(centavosTxt(v))}</span><span class="vg-mini">p ${esc(centavosTxt(pr))}</span></td>`;
+      }).join('');
+      tot.venda += venda; tot.premios += premios; tot.saldo += venda - premios;
+      if (!hist) { tot.com += Number(p.total_comissoes) || 0; tot.liq += Number(p.liquido) || 0; tot.restam += restamDe(p); }
+      const edita = p.uid === ultimaUid && !hist && podeEditar();
+      const acoes = hist ? '<span class="vg-sub">caderno</span>' : `<div class="vg-acoes-mini">
+          <button type="button" class="btn sm" data-vg="prest-abrir" data-id="${esc(p.uid)}">${edita ? 'Alterar' : 'Ver'}</button>
+          <button type="button" class="btn ghost sm" data-vg="prest-imagem" data-id="${esc(p.uid)}" title="Imagem para enviar no grupo do gerente">Imagem</button>
+          ${edita ? `<button type="button" class="btn danger sm" data-vg="prest-excluir" data-id="${esc(p.uid)}">Excluir</button>` : ''}</div>`;
+      return `<tr${hist ? ' class="vg-cad"' : ''}${st.form?.uid === p.uid ? ' style="outline:2px solid #93c5fd"' : ''}>
+        <td style="white-space:nowrap"><strong>${esc(dataBR(p.data))}</strong>${hist ? '<span class="vg-mini">caderno</span>' : ''}</td>
+        ${celulas}
+        <td class="vg-num">${esc(brl(venda))}</td><td class="vg-num">${esc(brl(premios))}</td>
+        <td class="vg-num"><strong${venda - premios < 0 ? ' class="vg-neg"' : ''}>${esc(brl(venda - premios))}</strong></td>
+        <td class="vg-num">${hist ? '—' : esc(brl(p.total_comissoes))}</td>
+        <td class="vg-num">${hist ? '—' : esc(brl(p.liquido))}</td>
+        <td class="vg-num">${hist ? '—' : htmlRestam(restamDe(p))}</td>
+        <td>${acoes}</td></tr>`;
+    }).join('');
+    return `
+      <div class="vg-card">
+        <div class="vg-mapa-topo">
+          <div><div class="vg-titulo">Mapa de ${esc(rotuloPonto(ponto))}</div>
+          <div class="vg-sub">${esc(PERIODOS[st.periodo])} · saldo de cada video game por data (v = venda, p = prêmios)</div></div>
+        </div>
+        ${rows.length ? `<div class="vg-tabela"><table class="vg-mapa vg-fixa">
+          <thead><tr><th>Data</th>${ids.map(id => `<th class="vg-num">${nomeMaq(id)}</th>`).join('')}
+            <th class="vg-num">Venda</th><th class="vg-num">Prêmios</th><th class="vg-num">Saldo</th><th class="vg-num">Comissões</th><th class="vg-num">Líquido</th><th class="vg-num">Restam</th><th></th></tr></thead>
+          <tbody>${corpo}</tbody>
+          <tfoot><tr><td>Soma</td>${ids.map(id => `<td class="vg-num">${esc(brl(tot.maq[id] || 0))}</td>`).join('')}
+            <td class="vg-num">${esc(brl(tot.venda))}</td><td class="vg-num">${esc(brl(tot.premios))}</td><td class="vg-num">${esc(brl(tot.saldo))}</td>
+            <td class="vg-num">${esc(brl(tot.com))}</td><td class="vg-num">${esc(brl(tot.liq))}</td><td class="vg-num">${htmlRestam(tot.restam)}</td><td></td></tr></tfoot>
+        </table></div>
+        <div class="vg-sub" style="margin-top:6px">Só a prestação mais recente pode ser alterada, porque cada leitura parte da anterior.</div>`
+        : `<div class="vg-vazio">Nenhuma prestação em ${esc(PERIODOS[st.periodo].toLowerCase())}. Mude o período no mapa acima.</div>`}
+      </div>`;
   }
   function opcoesGerentes() {
     return st.pontos.map(p => `<option value="${esc(p.id)}"${p.id === st.pontoId ? ' selected' : ''}>${esc(rotuloPonto(p))}</option>`).join('')
@@ -333,7 +549,7 @@
     const dis = ver ? 'disabled' : '';
     return `
       <div class="vg-maq" data-maq="${id}">
-        <div class="vg-maq-topo"><span>🎮 ${esc(l.nome)}${[l.jogo, l.local].filter(Boolean).length ? ` <span class="vg-sub">· ${esc([l.jogo, l.local].filter(Boolean).join(' · '))}</span>` : ''}</span></div>
+        <div class="vg-maq-topo"><span>🎰 ${esc(l.nome)}${[l.jogo, l.local].filter(Boolean).length ? ` <span class="vg-sub">· ${esc([l.jogo, l.local].filter(Boolean).join(' · '))}</span>` : ''}</span></div>
         <div class="vg-sub vg-so-celular">Anterior: di ${esc(centavosTxt(l.di_anterior))} · ds ${esc(centavosTxt(l.ds_anterior))}</div>
         <div class="vg-grade">
           <span class="vg-so-largo"></span><span class="vg-rot vg-num vg-so-largo">Anterior</span><span class="vg-rot vg-num vg-so-largo">Atual</span><span class="vg-rot vg-num vg-so-largo">No período</span>
@@ -368,26 +584,6 @@
             <button type="button" class="btn danger sm" data-vg="pagamento-excluir" data-id="${esc(p.id)}">Excluir</button></td>` : ''}
         </tr>`;
       }).join('')}</tbody></table>`;
-  }
-
-  function htmlHistorico() {
-    if (!st.prestacoes.length) return '';
-    return `
-      <div class="vg-card"><div class="vg-titulo" style="margin-bottom:8px">Prestações deste gerente</div>
-      <div class="vg-tabela"><table style="width:100%">
-        <thead><tr><th>Data</th><th>Saldo</th><th>Comissões</th><th>Líquido</th><th>Restam</th><th>Ações</th></tr></thead>
-        <tbody>${st.prestacoes.map((p, i) => {
-          const restam = (Number(p.liquido) || 0) - totalPago(p.dados?.pagamentos);
-          return `<tr>
-            <td>${esc(dataBR(p.data))}</td><td>${esc(brl(p.saldo))}</td><td>${esc(brl(p.total_comissoes))}</td>
-            <td>${esc(brl(p.liquido))}</td><td>${esc(brl(restam))}</td>
-            <td style="white-space:nowrap"><button type="button" class="btn sm" data-vg="prest-abrir" data-id="${esc(p.uid)}">${i === 0 && podeEditar() ? 'Alterar' : 'Ver'}</button>
-            <button type="button" class="btn ghost sm" data-vg="prest-imagem" data-id="${esc(p.uid)}" title="Imagem para enviar no grupo do gerente">Imagem</button>
-            ${i === 0 && podeEditar() ? `<button type="button" class="btn danger sm" data-vg="prest-excluir" data-id="${esc(p.uid)}">Excluir</button>` : ''}</td>
-          </tr>`;
-        }).join('')}</tbody>
-      </table></div>
-      <div class="vg-sub" style="margin-top:6px">Só a leitura mais recente pode ser alterada, porque cada leitura parte da anterior.</div></div>`;
   }
 
   function definir(el, txt) { if (el) el.textContent = txt; }
@@ -533,6 +729,31 @@
             <button type="button" class="btn primary" id="vgImgCompartilhar" hidden>Compartilhar</button>
           </div>
         </div>
+      </dialog>
+      <dialog id="dlgVgHist" class="vg-dlg">
+        <header class="card"><strong id="dlgVgHistTitulo">Histórico do caderno</strong></header>
+        <form id="formVgHist" class="card" novalidate>
+          <p class="vg-sub" style="margin:0 0 8px">Lance as leituras anotadas no caderno, da mais antiga para a mais nova: data, entrada (vendas) e saída (prêmios) do totalizador.
+            A <strong>primeira linha é a leitura inicial</strong>; as outras ficam como prestações do caderno (sem comissão, sem pagamento e sem caixa).
+            A próxima prestação no sistema parte da última linha.</p>
+          <p class="vg-aviso" id="vgHistBloqueio" hidden></p>
+          <details class="vg-ret" id="vgHistColarBox" style="margin:0 0 8px">
+            <summary>Colar várias linhas de uma vez</summary>
+            <textarea id="vgHistColar" rows="6" placeholder="06/07 18.112,00 11.489,00&#10;21/07 25.379,00 16.129,00"></textarea>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <button type="button" class="btn ghost sm" id="vgHistColarBtn">Preencher a tabela</button>
+              <span class="vg-sub">Uma leitura por linha: data, entrada e saída. Linhas sem data são ignoradas.</span>
+            </div>
+          </details>
+          <div class="vg-tabela"><table class="vg-hist-tab">
+            <thead><tr><th>Data</th><th>Entrada (di)</th><th>Saída (ds)</th><th class="vg-num vg-so-largo">Venda</th><th class="vg-num vg-so-largo">Prêmios</th><th class="vg-num">Saldo</th><th></th></tr></thead>
+            <tbody id="vgHistLinhas"></tbody>
+            <tfoot><tr><td colspan="3">Soma do caderno</td><td class="vg-num vg-so-largo" id="vgHistTotV"></td><td class="vg-num vg-so-largo" id="vgHistTotP"></td><td class="vg-num" id="vgHistTotS"></td><td></td></tr></tfoot>
+          </table></div>
+          <button type="button" class="btn ghost sm" id="vgHistAdd" style="margin-top:6px">+ Adicionar linha</button>
+          <div class="vg-erro" id="vgHistErro" role="alert"></div>
+          <div class="vg-acoes"><button type="button" class="btn ghost" data-vg-fechar="dlgVgHist">Cancelar</button><button type="submit" class="btn" id="vgHistSalvar">Salvar histórico</button></div>
+        </form>
       </dialog>`;
     document.body.appendChild(wrap);
     document.getElementById('dlgVgImagem').addEventListener('close', limparImagem);
@@ -546,10 +767,19 @@
     document.getElementById('formVgMaquina').addEventListener('submit', salvarMaquina);
     document.getElementById('formVgPagamento').addEventListener('submit', salvarPagamento);
     document.getElementById('formVgTroca').addEventListener('submit', salvarTroca);
-    wrap.addEventListener('input', e => { if (e.target.hasAttribute('data-mascara')) mascarar(e.target); });
+    document.getElementById('formVgHist').addEventListener('submit', salvarHistorico);
+    wrap.addEventListener('input', e => {
+      if (e.target.hasAttribute('data-mascara')) mascarar(e.target);
+      if (e.target.closest('#vgHistLinhas')) recalcularHist();
+    });
+    wrap.addEventListener('change', e => { if (e.target.closest('#vgHistLinhas')) recalcularHist(); });
     wrap.addEventListener('click', e => {
       const id = e.target.closest('[data-vg-fechar]')?.getAttribute('data-vg-fechar');
       if (id) document.getElementById(id).close();
+      if (e.target.closest('#vgHistAdd')) { adicionarLinhaHist().querySelector('input')?.focus(); recalcularHist(); }
+      if (e.target.closest('#vgHistColarBtn')) colarHistorico();
+      const rem = e.target.closest('[data-hist-remover]');
+      if (rem) { rem.closest('tr')?.remove(); recalcularHist(); }
       if (e.target.closest('#vgComAdd')) adicionarLinhaComissao().querySelector('input')?.focus();
       e.target.closest('[data-com-remover]')?.closest('.vg-com-linha')?.remove();
     });
@@ -599,7 +829,7 @@
     document.getElementById('vgComLista').innerHTML = '';
     const lista = ponto ? comissoesDoPonto(ponto) : [];
     if (lista.length) lista.forEach(adicionarLinhaComissao); else adicionarLinhaComissao();
-    document.getElementById('vgNegIniBox').hidden = !!(ponto && st.prestacoes.length);
+    document.getElementById('vgNegIniBox').hidden = !!(ponto && st.prestacoes.some(p => !ehHistorico(p)));
     document.getElementById('dlgVgPonto').showModal();
     if (ponto) return;
     // Um cadastro por gerente: quem já está no video game não aparece de novo
@@ -669,7 +899,7 @@
     try {
       if (id) {
         const row = { base_comissao: 'saldo', comissoes };
-        if (!st.prestacoes.length) row.negativo_inicial = Math.round(negativo * 100);
+        if (!st.prestacoes.some(p => !ehHistorico(p))) row.negativo_inicial = Math.round(negativo * 100);
         const { error } = await client().from('vg_pontos').update(row).eq('id', id);
         if (error) throw error;
       } else {
@@ -722,7 +952,9 @@
     document.getElementById('vgMaquinaErro').textContent = '';
     document.getElementById('dlgVgMaquinaTitulo').textContent = m ? `Editar ${m.nome}` : `Adicionar video game · ${rotuloPonto(ponto)}`;
     const info = document.getElementById('vgMaquinaInfo');
-    info.textContent = travado ? 'Este video game já tem prestação: dá para mudar só o nome e o local. Para mudar o jogo, use Trocar jogo.' : '';
+    info.textContent = !travado ? ''
+      : ultimaReal(m.id) ? 'Este video game já tem prestação: dá para mudar só o nome e o local. Para mudar o jogo, use Trocar jogo.'
+      : 'Este video game tem histórico do caderno: a data de instalação e a leitura inicial mudam pelo botão Histórico. Aqui dá para mudar o nome e o local.';
     info.hidden = !travado;
     document.getElementById('vgMaquinaSalvar').textContent = m ? 'Salvar' : 'Adicionar';
     ['jogo', 'instalada', 'di', 'ds'].forEach(n => { f[n].disabled = travado; });
@@ -874,6 +1106,208 @@
       erro.textContent = msgErroMaquina(err);
     } finally {
       st.salvandoCad = false;
+    }
+  }
+
+  // ---------- histórico do caderno (leituras antigas) ----------
+  const ultimaReal = maqId => st.prestacoes.find(p => !ehHistorico(p) && (p.dados?.leituras || []).some(l => l.maquina_id === maqId)) || null;
+  const primeiraReal = maqId => st.prestacoes.filter(p => !ehHistorico(p) && (p.dados?.leituras || []).some(l => l.maquina_id === maqId)).pop() || null;
+  const historicoDaMaquina = maqId => st.prestacoes.filter(ehHistorico)
+    .map(p => ({ data: dia(p.data), l: (p.dados?.leituras || []).find(x => x.maquina_id === maqId) }))
+    .filter(x => x.l)
+    .sort((a, b) => (a.data < b.data ? -1 : a.data > b.data ? 1 : 0));
+
+  function adicionarLinhaHist(r) {
+    const num = v => (v === null || v === undefined ? '' : esc(centavosTxt(v)));
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="date" data-h="data" aria-label="Data da leitura" value="${esc(r?.data || '')}"></td>
+      <td><input data-h="di" data-mascara inputmode="numeric" autocomplete="off" placeholder="0,00" aria-label="Entrada (di)" value="${num(r?.di)}"></td>
+      <td><input data-h="ds" data-mascara inputmode="numeric" autocomplete="off" placeholder="0,00" aria-label="Saída (ds)" value="${num(r?.ds)}"></td>
+      <td class="vg-num vg-so-largo" data-ho="venda"></td><td class="vg-num vg-so-largo" data-ho="premios"></td><td class="vg-num" data-ho="saldo"></td>
+      <td><button type="button" class="btn ghost sm" data-hist-remover aria-label="Remover linha" title="Remover linha">✕</button></td>`;
+    document.getElementById('vgHistLinhas').appendChild(tr);
+    return tr;
+  }
+  function lerLinhasHist() {
+    return [...document.querySelectorAll('#vgHistLinhas tr')].map((tr, i) => ({
+      tr, n: i + 1, data: tr.querySelector('[data-h="data"]').value,
+      di: leituraInt(tr.querySelector('[data-h="di"]').value), ds: leituraInt(tr.querySelector('[data-h="ds"]').value)
+    }));
+  }
+  function recalcularHist() {
+    let ant = null, tv = 0, tp = 0;
+    lerLinhasHist().forEach(r => {
+      const o = n => r.tr.querySelector(`[data-ho="${n}"]`);
+      const ok = !!r.data && r.di !== null && r.ds !== null;
+      let erro = false;
+      if (!ok) ['venda', 'premios', 'saldo'].forEach(n => definir(o(n), ''));
+      else if (!ant) { definir(o('venda'), ''); definir(o('premios'), ''); definir(o('saldo'), 'leitura inicial'); }
+      else {
+        const v = r.di - ant.di, p = r.ds - ant.ds;
+        erro = r.data <= ant.data || v < 0 || p < 0;
+        definir(o('venda'), brl(v));
+        definir(o('premios'), brl(p));
+        definir(o('saldo'), brl(v - p));
+        if (!erro) { tv += v; tp += p; }
+      }
+      r.tr.classList.toggle('vg-hist-erro', erro);
+      if (ok) ant = r;
+    });
+    definir(document.getElementById('vgHistTotV'), brl(tv));
+    definir(document.getElementById('vgHistTotP'), brl(tp));
+    definir(document.getElementById('vgHistTotS'), brl(tv - tp));
+  }
+  function validarHist(todas) {
+    const linhas = todas.filter(r => r.data || r.di !== null || r.ds !== null);
+    if (!linhas.length) return { erro: 'Informe pelo menos a leitura inicial.' };
+    const hj = hoje();
+    for (let i = 0; i < linhas.length; i++) {
+      const r = linhas[i], ant = linhas[i - 1], n = `Linha ${r.n}`;
+      if (!r.data || r.di === null || r.ds === null) return { erro: `${n}: informe a data, a entrada e a saída.` };
+      if (r.data > hj) return { erro: `${n}: a data ${dataBR(r.data)} é no futuro.` };
+      if (ant && r.data <= ant.data) return { erro: `${n} (${dataBR(r.data)}): a data precisa ser depois da linha de cima (${dataBR(ant.data)}).` };
+      if (ant && (r.di < ant.di || r.ds < ant.ds)) return { erro: `${n} (${dataBR(r.data)}): a leitura é menor que a da linha de cima. Confira os números.` };
+    }
+    return { linhas: linhas.map(({ data, di, ds }) => ({ data, di, ds })) };
+  }
+  // "18.112,00" → 1811200 centavos; "18112" → 1811200
+  function centavosDe(t) {
+    const [int, dec = ''] = String(t).replace(/\.(?=\d{3}(?!\d))/g, '').split(',');
+    if (!/^\d+$/.test(int) || !/^\d{0,2}$/.test(dec)) return null;
+    const n = Number(int) * 100 + Number((dec + '00').slice(0, 2));
+    return Number.isSafeInteger(n) ? n : null;
+  }
+  // Uma leitura por linha: data (dd/mm ou dd/mm/aaaa), entrada e saída; o resto da linha é ignorado
+  function lerColagem(txt) {
+    const hj = hoje(), anoAtual = Number(hj.slice(0, 4)), out = [];
+    String(txt || '').split(/\r?\n/).forEach(linha => {
+      const md = linha.match(/(\d{1,2})\s*\/\s*(\d{1,2})(?:\s*\/\s*(\d{4}|\d{2}))?/);
+      if (!md) return;
+      const nums = linha.slice(md.index + md[0].length).match(/\d[\d.]*(?:,\d{1,2})?/g) || [];
+      if (nums.length < 2) return;
+      const d = Number(md[1]), m = Number(md[2]);
+      let ano = md[3] ? Number(md[3].length === 2 ? '20' + md[3] : md[3]) : anoAtual;
+      const valida = a => { const x = new Date(a, m - 1, d); return x.getFullYear() === a && x.getMonth() === m - 1 && x.getDate() === d; };
+      if (!valida(ano)) return;
+      let iso = `${ano}-${pad2(m)}-${pad2(d)}`;
+      if (!md[3] && iso > hj) { ano -= 1; if (!valida(ano)) return; iso = `${ano}-${pad2(m)}-${pad2(d)}`; }
+      const di = centavosDe(nums[0]), ds = centavosDe(nums[1]);
+      if (di === null || ds === null) return;
+      out.push({ data: iso, di, ds });
+    });
+    return out;
+  }
+  function colarHistorico() {
+    const erro = document.getElementById('vgHistErro');
+    const lidas = lerColagem(document.getElementById('vgHistColar').value);
+    if (!lidas.length) { erro.textContent = 'Nenhuma linha reconhecida. Use: data, entrada e saída (ex.: 06/07 18.112,00 11.489,00).'; return; }
+    erro.textContent = '';
+    document.getElementById('vgHistLinhas').innerHTML = '';
+    lidas.forEach(adicionarLinhaHist);
+    document.getElementById('vgHistColarBox').open = false;
+    recalcularHist();
+  }
+
+  function abrirHistorico(id) {
+    const m = st.maquinas.find(x => x.id === id);
+    if (!m || !podeEditar()) return;
+    const f = document.getElementById('formVgHist');
+    f.dataset.id = m.id;
+    document.getElementById('vgHistErro').textContent = '';
+    document.getElementById('vgHistColar').value = '';
+    document.getElementById('vgHistColarBox').open = false;
+    document.getElementById('dlgVgHistTitulo').textContent = `Histórico do caderno · ${[m.nome, m.jogo].filter(Boolean).join(' · ')}`;
+    document.getElementById('vgHistLinhas').innerHTML = '';
+    adicionarLinhaHist({ data: dia(m.instalada_em), di: Number(m.di_inicial) || 0, ds: Number(m.ds_inicial) || 0 });
+    historicoDaMaquina(m.id).forEach(x => adicionarLinhaHist({ data: x.data, di: x.l.di, ds: x.l.ds }));
+    const real = primeiraReal(m.id);
+    const bloq = document.getElementById('vgHistBloqueio');
+    bloq.hidden = !real;
+    bloq.textContent = real
+      ? `Este video game já tem prestação lançada no sistema (a primeira em ${dataBR(real.data)}). O histórico do caderno só pode ser lançado antes da primeira prestação dele no sistema.`
+      : '';
+    f.querySelectorAll('input, textarea, button:not([data-vg-fechar])').forEach(el => { el.disabled = !!real; });
+    recalcularHist();
+    document.getElementById('dlgVgHist').showModal();
+  }
+
+  // Refaz do zero as leituras do caderno deste video game (pode salvar de novo sem duplicar)
+  async function salvarHistorico(e) {
+    e.preventDefault();
+    if (st.salvandoCad) return;
+    const f = e.target, erro = document.getElementById('vgHistErro');
+    erro.textContent = '';
+    const v = validarHist(lerLinhasHist());
+    if (v.erro) { erro.textContent = v.erro; return; }
+    const linhas = v.linhas;
+    const btn = document.getElementById('vgHistSalvar');
+    st.salvandoCad = true;
+    btn.disabled = true;
+    btn.textContent = 'Salvando...';
+    try {
+      await carregarDoPonto();
+      const ponto = pontoAtual();
+      const m = st.maquinas.find(x => x.id === f.dataset.id);
+      if (!ponto || !m || !m.ativo) throw new Error('Video game não encontrado. Feche e abra de novo.');
+      const real = primeiraReal(m.id);
+      if (real) { erro.textContent = `Este video game já tem prestação lançada no sistema (${dataBR(real.data)}). O histórico só pode ser lançado antes dela.`; return; }
+      const datasSistema = new Set(st.prestacoes.filter(p => !ehHistorico(p)).map(p => dia(p.data)));
+      const choque = linhas.slice(1).find(r => datasSistema.has(r.data));
+      if (choque) { erro.textContent = `Já existe prestação deste gerente lançada no sistema em ${dataBR(choque.data)}. Confira a data do caderno.`; return; }
+
+      const ordem = id => { const i = st.maquinas.findIndex(x => x.id === id); return i < 0 ? 9999 : i; };
+      const plano = new Map();
+      st.prestacoes.filter(ehHistorico).forEach(p => plano.set(dia(p.data), { p, leituras: (p.dados?.leituras || []).filter(l => l.maquina_id !== m.id) }));
+      linhas.slice(1).forEach((r, i) => {
+        const a = linhas[i];
+        const venda = r.di - a.di, premios = r.ds - a.ds;
+        const item = plano.get(r.data) || { p: null, leituras: [] };
+        item.leituras.push({
+          maquina_id: m.id, nome: m.nome, jogo: m.jogo || '', local: m.local || '',
+          di_anterior: a.di, ds_anterior: a.ds, di: r.di, ds: r.ds, zerado: false, venda, premios, saldo: venda - premios
+        });
+        plano.set(r.data, item);
+      });
+      const eid = await empresaId();
+      const quem = window.__currentUsername?.() || '';
+      for (const [data, item] of plano) {
+        if (!item.leituras.length) {
+          const { error } = await client().from('vg_prestacoes').delete().eq('uid', item.p.uid);
+          if (error) throw error;
+          continue;
+        }
+        item.leituras.sort((a, b) => ordem(a.maquina_id) - ordem(b.maquina_id));
+        const saldo = somar(item.leituras, l => vendaDe(l) - premiosDe(l));
+        const dados = { ...(item.p?.dados || {}), historico: true, ponto_nome: ponto.nome, base: 'saldo', comissoes: [], pagamentos: [], leituras: item.leituras };
+        const { error } = item.p
+          ? await client().from('vg_prestacoes').update({ saldo, dados }).eq('uid', item.p.uid)
+          : await client().from('vg_prestacoes').insert([{
+            uid: novoId(), empresa_id: eid, ponto_id: ponto.id, data,
+            gerente_id: ponto.gerente_id, gerente_nome: ponto.gerente_nome || '',
+            saldo, negativo_anterior: 0, negativo_novo: 0, total_comissoes: 0, liquido: 0, dados, created_by: quem
+          }]);
+        if (error) throw error;
+      }
+      const ini = linhas[0];
+      if (ini.data !== dia(m.instalada_em) || ini.di !== Number(m.di_inicial) || ini.ds !== Number(m.ds_inicial)) {
+        const { error } = await client().from('vg_maquinas').update({ instalada_em: ini.data, di_inicial: ini.di, ds_inicial: ini.ds }).eq('id', m.id);
+        if (error) throw error;
+      }
+      try { window.AuditLog?.log?.('vg_historico_caderno', { maquina: m.nome, gerente: rotuloPonto(ponto), leituras: linhas.length }); } catch (_) {}
+      document.getElementById('dlgVgHist').close();
+      await aposMudarMaquinas();
+      const n = linhas.length - 1;
+      aviso(`Histórico de ${m.nome} salvo: leitura inicial + ${n} leitura${n === 1 ? '' : 's'} do caderno`, 'success');
+    } catch (err) {
+      console.error('[VideoGame] histórico:', err);
+      erro.textContent = err?.code === '23505'
+        ? 'Já existe prestação deste gerente em uma dessas datas.'
+        : `Não foi possível salvar: ${err.message || err}. Pode salvar de novo: o histórico é refeito do zero.`;
+    } finally {
+      st.salvandoCad = false;
+      btn.disabled = false;
+      btn.textContent = 'Salvar histórico';
     }
   }
 
@@ -1047,6 +1481,7 @@
 
       st.tentouSalvar = false;
       await carregarDoPonto();
+      await atualizarMapa();
       novoFormulario();
       render();
       aviso('Prestação salva', 'success');
@@ -1065,6 +1500,7 @@
     await carregarDoPonto();
     const p = st.prestacoes[0];
     if (!p || p.uid !== uid) { alert('Só a leitura mais recente pode ser excluída.'); render(); return; }
+    if (ehHistorico(p)) { alert('Leitura do caderno: altere pelo botão Histórico no Cadastro video game.'); return; }
     const bloqueio = await window.__bloqueioRemocaoPagamentos(p.dados?.pagamentos || []);
     if (bloqueio) { alert(bloqueio); return; }
     if (!confirm(`Excluir a leitura de ${dataBR(p.data)}? Os pagamentos ainda não confirmados saem da fila do caixa.`)) return;
@@ -1073,6 +1509,7 @@
     await window.__limparPendenciasOrfas({ id: uid, pagamentos: [] });
     try { await window.__getPendenciasAsync?.(); window.renderFinPendencias?.(); } catch (_) {}
     await carregarDoPonto();
+    await atualizarMapa();
     novoFormulario();
     render();
   }
@@ -1131,11 +1568,13 @@
     const id = esc(m.id);
     const ult = ultimaLeituraNoPonto(m.id);
     const lu = ult ? (ult.dados?.leituras || []).find(l => l.maquina_id === m.id) : null;
+    const cad = historicoDaMaquina(m.id);
     return `
       <div class="vg-maq">
-        <div class="vg-maq-topo"><span>🎮 ${esc(m.nome)}${m.jogo ? ` <span class="vg-sub">· ${esc(m.jogo)}</span>` : ''}</span>
+        <div class="vg-maq-topo"><span>🎰 ${esc(m.nome)}${m.jogo ? ` <span class="vg-sub">· ${esc(m.jogo)}</span>` : ''}</span>
           ${editar ? `<span class="vg-maq-btns">
             <button type="button" class="btn ghost sm" data-vg="maquina-editar" data-id="${id}">Editar</button>
+            <button type="button" class="btn ghost sm" data-vg="maquina-historico" data-id="${id}" title="Lançar as leituras antigas anotadas no caderno">Histórico</button>
             <button type="button" class="btn ghost sm" data-vg="maquina-trocar-ponto" data-id="${id}" title="Passar este video game para outro gerente">Trocar gerente</button>
             <button type="button" class="btn ghost sm" data-vg="maquina-trocar-jogo" data-id="${id}" title="Trocar o jogo deste video game">Trocar jogo</button>
             <button type="button" class="btn ghost sm" data-vg="maquina-remover" data-id="${id}" title="Retirar este video game">Retirar</button></span>` : ''}
@@ -1144,14 +1583,15 @@
           <span>Local: <b>${esc(m.local || '—')}</b></span>
           <span>Instalado em: <b>${esc(dataBR(m.instalada_em) || '—')}</b></span>
           <span>Leitura inicial: <b>di ${esc(centavosTxt(Number(m.di_inicial) || 0))} · ds ${esc(centavosTxt(Number(m.ds_inicial) || 0))}</b></span>
-          <span>Última prestação: <b>${lu ? `${esc(dataBR(ult.data))} (di ${esc(centavosTxt(lu.di))} · ds ${esc(centavosTxt(lu.ds))})` : 'ainda não tem'}</b></span>
+          <span>Última prestação: <b>${lu ? `${esc(dataBR(ult.data))}${ehHistorico(ult) ? ' (caderno)' : ''} (di ${esc(centavosTxt(lu.di))} · ds ${esc(centavosTxt(lu.ds))})` : 'ainda não tem'}</b></span>
+          ${cad.length ? `<span>Caderno: <b>${cad.length === 1 ? `1 leitura (${esc(dataBR(cad[0].data))})` : `${cad.length} leituras (${esc(dataBR(cad[0].data))} a ${esc(dataBR(cad[cad.length - 1].data))})`}</b></span>` : ''}
         </div>
       </div>`;
   }
 
   function htmlCadAntiga(m) {
     const det = [m.jogo, m.local].filter(Boolean).map(esc).join(' · ');
-    return `<div class="vg-ret-item">🎮 <strong>${esc(m.nome)}</strong>${det ? ' · ' + det : ''}
+    return `<div class="vg-ret-item">🎰 <strong>${esc(m.nome)}</strong>${det ? ' · ' + det : ''}
       — de ${esc(dataBR(m.instalada_em) || '?')} até ${esc(dataBR(m.retirada_em) || '?')} (${esc(MOTIVOS[m.motivo_saida] || 'inativo')})</div>`;
   }
 
@@ -1345,6 +1785,7 @@
   async function abrirImagem(uid) {
     const p = st.prestacoes.find(x => x.uid === uid);
     if (!p) { aviso('Prestação não encontrada. Atualize a página.', 'error'); return; }
+    if (ehHistorico(p)) { aviso('Leitura do caderno não tem imagem de prestação.'); return; }
     try {
       const info = infoImagem(p);
       const blob = await new Promise(res => desenharImagem(info).toBlob(res, 'image/png'));
@@ -1421,6 +1862,9 @@
         await carregarDoPonto();
         novoFormulario();
         render();
+      } else if (e.target.id === 'vgPeriodo') {
+        st.periodo = PERIODOS[e.target.value] ? e.target.value : '3m';
+        render();
       } else if (e.target.id === 'vgData') {
         st.form.data = e.target.value;
       } else if (e.target.hasAttribute('data-zerado')) {
@@ -1453,6 +1897,8 @@
       'maquina-remover': () => removerMaquina(id),
       'maquina-trocar-ponto': () => abrirDialogoTroca(id, 'ponto'),
       'maquina-trocar-jogo': () => abrirDialogoTroca(id, 'jogo'),
+      'maquina-historico': () => abrirHistorico(id),
+      'mapa-abrir': () => abrirGerenteNoMapa(id),
       'pagamento-novo': () => abrirDialogoPagamento(null),
       'pagamento-editar': () => abrirDialogoPagamento(id),
       'pagamento-excluir': () => excluirPagamento(id),
@@ -1481,8 +1927,17 @@
       await carregarPontos();
       await carregarDoPonto();
     } catch (err) { erroAoCarregar(err); }
+    if (!st.erroSetup) await atualizarMapa();
     novoFormulario();
     render();
+  }
+  async function abrirGerenteNoMapa(id) {
+    st.pontoId = id || null;
+    st.tentouSalvar = false;
+    try { await carregarDoPonto(); } catch (err) { aviso('Não foi possível carregar: ' + (err.message || err), 'error'); }
+    novoFormulario();
+    render();
+    document.getElementById('vgFormCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   async function recarregarCadastro() {
     st.erroSetup = '';
@@ -1503,7 +1958,7 @@
     await carregarDoPonto();
     try { await carregarContagem(); } catch (_) {}
     novoFormulario();
-    if (visivel('pageVideoGame')) render();
+    if (visivel('pageVideoGame')) { await atualizarMapa(); render(); }
     renderCadastro();
   }
   async function selecionarGerente(id) {

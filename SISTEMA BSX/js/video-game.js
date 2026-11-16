@@ -63,16 +63,19 @@
   }
 
   // ---------- cálculo (função pura) ----------
-  // Negativo acumulado só reduz a BASE das comissões; o líquido é sempre saldo − comissões.
-  function calcular({ leituras, negativoAnterior, comissoes, base }) {
+  // Despesas saem do resultado ANTES das comissões (como no JB: coletas − despesas).
+  // Negativo acumulado só reduz a BASE das comissões; o líquido é sempre resultado − comissões.
+  function calcular({ leituras, negativoAnterior, comissoes, base, despesas }) {
     const linhas = (leituras || []).map(l => {
       const venda = l.di - (l.zerado ? 0 : l.di_anterior);
       const premios = l.ds - (l.zerado ? 0 : l.ds_anterior);
       return { ...l, venda, premios, saldo: venda - premios };
     });
     const saldo = linhas.reduce((a, l) => a + l.saldo, 0);
+    const totalDespesas = Math.max(0, Math.round(Number(despesas) || 0));
+    const resultado = saldo - totalDespesas;
     const negAnt = Math.max(0, Number(negativoAnterior) || 0);
-    const baseValor = saldo - negAnt;
+    const baseValor = resultado - negAnt;
     let resto = Math.max(baseValor, 0);
     const valores = (comissoes || []).map(c => {
       if (baseValor <= 0) return { ...c, valor: 0 };
@@ -83,8 +86,8 @@
     });
     const totalComissoes = valores.reduce((a, c) => a + c.valor, 0);
     return {
-      linhas, saldo, negativoAnterior: negAnt, baseComissao: Math.max(baseValor, 0), comissoes: valores,
-      totalComissoes, negativoNovo: baseValor < 0 ? -baseValor : 0, liquido: saldo - totalComissoes
+      linhas, saldo, totalDespesas, resultado, negativoAnterior: negAnt, baseComissao: Math.max(baseValor, 0), comissoes: valores,
+      totalComissoes, negativoNovo: baseValor < 0 ? -baseValor : 0, liquido: resultado - totalComissoes
     };
   }
   // Recebido do gerente soma; pago ao gerente (DIVIDA_PAGA) subtrai
@@ -177,7 +180,7 @@
   function novoFormulario() {
     const ponto = pontoAtual();
     st.form = {
-      modo: 'nova', uid: null, data: hoje(), pagamentos: [],
+      modo: 'nova', uid: null, data: hoje(), pagamentos: [], despesas: [],
       comissoes: ponto ? comissoesDoPonto(ponto) : [],
       base: 'saldo',
       negativoAnterior: negativoAnterior(null),
@@ -208,6 +211,7 @@
     st.form = {
       modo, uid, data: String(p.data).slice(0, 10), linhas,
       pagamentos: JSON.parse(JSON.stringify(p.dados?.pagamentos || [])),
+      despesas: (p.dados?.despesas || []).map(d => ({ id: novoId(), descricao: d.descricao || '', valorTxt: String(Number(d.valor) || '') })),
       comissoes: Array.isArray(p.dados?.comissoes) ? p.dados.comissoes.map(c => ({ nome: c.nome, pct: c.pct })) : comissoesDoPonto(pontoAtual()),
       base: p.dados?.base || 'saldo',
       negativoAnterior: modo === 'editar' ? negativoAnterior(uid) : Number(p.negativo_anterior) || 0
@@ -228,6 +232,20 @@
       validas.push({ maquina_id: l.maquina_id, nome: l.nome, jogo: l.jogo || '', local: l.local || '', di_anterior: l.di_anterior, ds_anterior: l.ds_anterior, di, ds, zerado: !!l.zerado });
     });
     return { validas, erros };
+  }
+  // Despesas da prestação (valor em centavos); linhas vazias são ignoradas
+  function avaliarDespesas() {
+    const lista = [];
+    let erro = '';
+    (st.form?.despesas || []).forEach((d, i) => {
+      const descricao = String(d.descricao || '').trim();
+      const valor = leituraInt(d.valorTxt) || 0;
+      if (!descricao && !valor) return;
+      if (!descricao) { erro = erro || `Despesa ${i + 1}: informe a descrição.`; return; }
+      if (!valor) { erro = erro || `Despesa ${i + 1} (${descricao}): informe o valor.`; return; }
+      lista.push({ descricao, valor });
+    });
+    return { lista, total: lista.reduce((a, d) => a + d.valor, 0), erro };
   }
 
   // ---------- tela ----------
@@ -255,6 +273,9 @@
       .vg-aviso{background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0;padding:8px 10px;font-size:13px;color:#92400e;margin:0 0 10px}
       .vg-com-linha{display:grid;grid-template-columns:minmax(0,1fr) 90px auto;gap:8px;align-items:center;margin-bottom:8px}
       .vg-com-linha input{width:100%;min-width:0;box-sizing:border-box}
+      .vg-desp-linha{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:8px;align-items:center;margin-bottom:8px}
+      .vg-desp-linha input{width:100%;min-width:0;box-sizing:border-box;padding:6px 8px}
+      .vg-desp-linha input[data-desp="valorTxt"]{text-align:right}
       .vg-coms{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:8px 0 12px}
       .vg-com{background:#f9fafb;border-radius:10px;padding:10px 12px}
       .vg-linha{display:flex;justify-content:space-between;gap:12px;padding:5px 0;font-size:14px}
@@ -296,7 +317,7 @@
       table.vg-mapa tr.vg-sel td{background:#eff6ff}
       table.vg-mapa tr.vg-cad td{color:#4b5563}
       .vg-mini{display:block;font-size:11px;color:#6b7280;font-weight:400;white-space:nowrap;text-transform:none;letter-spacing:0}
-      .vg-datas{display:flex;flex-wrap:wrap;gap:4px;max-width:260px}
+      .vg-datas{display:flex;flex-wrap:wrap;gap:4px;max-width:180px}
       .vg-dt{font-size:11px;padding:1px 6px;border-radius:6px;background:#eef2ff;color:#3730a3;white-space:nowrap}
       .vg-dt.cad{background:#f3f4f6;color:#6b7280}
       .vg-dias-ok{color:#166534}.vg-dias-esp{color:#92400e}.vg-dias-atr{color:#b91c1c;font-weight:700}
@@ -315,6 +336,8 @@
       @media (max-width:560px){
         table.vg-hist-tab .vg-so-largo{display:none}
         .vg-resumo{grid-template-columns:1fr 1fr;gap:8px}
+        .vg-desp-linha{grid-template-columns:minmax(0,1fr) 96px auto;gap:6px}
+        .vg-linha .vg-num{white-space:nowrap}
         .vg-kpi{padding:8px 10px}
         .vg-kpi .vg-v{font-size:15px}
         .vg-grade{grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr) minmax(0,1fr)}
@@ -360,6 +383,7 @@
   }
   const somar = (arr, f) => arr.reduce((a, x) => a + (Number(f(x)) || 0), 0);
   const restamDe = p => (ehHistorico(p) ? 0 : (Number(p.liquido) || 0) - totalPago(p.dados?.pagamentos));
+  const despesasDe = p => Number(p.dados?.total_despesas) || somar(p.dados?.despesas || [], d => d.valor);
   const vendaDe = l => (Number.isFinite(l.venda) ? l.venda : l.di - (l.zerado ? 0 : l.di_anterior));
   const premiosDe = l => (Number.isFinite(l.premios) ? l.premios : l.ds - (l.zerado ? 0 : l.ds_anterior));
   const dataCurta = s => dataBR(s).slice(0, 5);
@@ -372,6 +396,7 @@
       vgs: st.contagem[p.id] || 0, ult: lista[0] || null,
       datas: doPeriodo.slice().reverse(),
       saldo: somar(doPeriodo, x => x.saldo),
+      despesas: somar(sistema, despesasDe),
       comissoes: somar(sistema, x => x.total_comissoes),
       liquido: somar(sistema, x => x.liquido),
       restam: somar(lista, restamDe)
@@ -411,12 +436,13 @@
           <div class="vg-kpi"><div class="vg-sub">Sem prestação há +20 dias</div><div class="vg-v${atrasados ? ' vg-neg' : ''}">${atrasados}</div></div>
         </div>
         <div class="vg-tabela"><table class="vg-mapa vg-fixa">
-          <thead><tr><th>Gerente</th><th class="vg-num">Video games</th><th>Prestações no período</th><th class="vg-num">Saldo</th><th class="vg-num">Comissões</th><th class="vg-num">Líquido</th><th class="vg-num">A acertar</th><th>Última</th><th></th></tr></thead>
+          <thead><tr><th>Gerente</th><th class="vg-num">Video games</th><th title="Prestações dentro do período escolhido">Prestações</th><th class="vg-num">Saldo</th><th class="vg-num">Despesas</th><th class="vg-num">Comissões</th><th class="vg-num">Líquido</th><th class="vg-num">A acertar</th><th>Última</th><th></th></tr></thead>
           <tbody>${linhas.map(({ p, r }) => `<tr${p.id === st.pontoId ? ' class="vg-sel"' : ''}>
             <td><strong>${esc(rotuloPonto(p))}</strong></td>
             <td class="vg-num">${r.vgs}</td>
             <td>${r.datas.length ? `<div class="vg-datas">${r.datas.map(x => `<span class="vg-dt${ehHistorico(x) ? ' cad' : ''}" title="${ehHistorico(x) ? 'Caderno' : 'Sistema'} · saldo ${esc(brl(x.saldo))}">${esc(dataCurta(x.data))}</span>`).join('')}</div>` : '<span class="vg-sub">—</span>'}</td>
             <td class="vg-num">${esc(brl(r.saldo))}</td>
+            <td class="vg-num">${r.despesas ? `<span class="vg-neg">${esc(brl(r.despesas))}</span>` : esc(brl(0))}</td>
             <td class="vg-num">${esc(brl(r.comissoes))}</td>
             <td class="vg-num">${esc(brl(r.liquido))}</td>
             <td class="vg-num">${htmlRestam(r.restam)}</td>
@@ -446,7 +472,7 @@
       const jogo = m?.jogo || l?.jogo || '';
       return `${esc(nome)}<span class="vg-mini">${esc([jogo, m && !m.ativo ? 'retirado' : ''].filter(Boolean).join(' · ') || ' ')}</span>`;
     };
-    const tot = { venda: 0, premios: 0, saldo: 0, com: 0, liq: 0, restam: 0, maq: {} };
+    const tot = { venda: 0, premios: 0, saldo: 0, desp: 0, com: 0, liq: 0, restam: 0, maq: {} };
     const corpo = rows.map(p => {
       const leituras = p.dados?.leituras || [];
       const hist = ehHistorico(p);
@@ -460,7 +486,7 @@
         return `<td class="vg-num">${esc(brl(v - pr))}<span class="vg-mini">v ${esc(centavosTxt(v))}</span><span class="vg-mini">p ${esc(centavosTxt(pr))}</span></td>`;
       }).join('');
       tot.venda += venda; tot.premios += premios; tot.saldo += venda - premios;
-      if (!hist) { tot.com += Number(p.total_comissoes) || 0; tot.liq += Number(p.liquido) || 0; tot.restam += restamDe(p); }
+      if (!hist) { tot.desp += despesasDe(p); tot.com += Number(p.total_comissoes) || 0; tot.liq += Number(p.liquido) || 0; tot.restam += restamDe(p); }
       const edita = p.uid === ultimaUid && !hist && podeEditar();
       const acoes = hist ? '<span class="vg-sub">caderno</span>' : `<div class="vg-acoes-mini">
           <button type="button" class="btn sm" data-vg="prest-abrir" data-id="${esc(p.uid)}">${edita ? 'Alterar' : 'Ver'}</button>
@@ -471,6 +497,7 @@
         ${celulas}
         <td class="vg-num">${esc(brl(venda))}</td><td class="vg-num">${esc(brl(premios))}</td>
         <td class="vg-num"><strong${venda - premios < 0 ? ' class="vg-neg"' : ''}>${esc(brl(venda - premios))}</strong></td>
+        <td class="vg-num">${hist ? '—' : despesasDe(p) ? `<span class="vg-neg">${esc(brl(despesasDe(p)))}</span>` : esc(brl(0))}</td>
         <td class="vg-num">${hist ? '—' : esc(brl(p.total_comissoes))}</td>
         <td class="vg-num">${hist ? '—' : esc(brl(p.liquido))}</td>
         <td class="vg-num">${hist ? '—' : htmlRestam(restamDe(p))}</td>
@@ -484,11 +511,11 @@
         </div>
         ${rows.length ? `<div class="vg-tabela"><table class="vg-mapa vg-fixa">
           <thead><tr><th>Data</th>${ids.map(id => `<th class="vg-num">${nomeMaq(id)}</th>`).join('')}
-            <th class="vg-num">Venda</th><th class="vg-num">Prêmios</th><th class="vg-num">Saldo</th><th class="vg-num">Comissões</th><th class="vg-num">Líquido</th><th class="vg-num">Restam</th><th></th></tr></thead>
+            <th class="vg-num">Venda</th><th class="vg-num">Prêmios</th><th class="vg-num">Saldo</th><th class="vg-num">Despesas</th><th class="vg-num">Comissões</th><th class="vg-num">Líquido</th><th class="vg-num">Restam</th><th></th></tr></thead>
           <tbody>${corpo}</tbody>
           <tfoot><tr><td>Soma</td>${ids.map(id => `<td class="vg-num">${esc(brl(tot.maq[id] || 0))}</td>`).join('')}
             <td class="vg-num">${esc(brl(tot.venda))}</td><td class="vg-num">${esc(brl(tot.premios))}</td><td class="vg-num">${esc(brl(tot.saldo))}</td>
-            <td class="vg-num">${esc(brl(tot.com))}</td><td class="vg-num">${esc(brl(tot.liq))}</td><td class="vg-num">${htmlRestam(tot.restam)}</td><td></td></tr></tfoot>
+            <td class="vg-num">${tot.desp ? `<span class="vg-neg">${esc(brl(tot.desp))}</span>` : esc(brl(0))}</td><td class="vg-num">${esc(brl(tot.com))}</td><td class="vg-num">${esc(brl(tot.liq))}</td><td class="vg-num">${htmlRestam(tot.restam)}</td><td></td></tr></tfoot>
         </table></div>
         <div class="vg-sub" style="margin-top:6px">Só a prestação mais recente pode ser alterada, porque cada leitura parte da anterior.</div>`
         : `<div class="vg-vazio">Nenhuma prestação em ${esc(PERIODOS[st.periodo].toLowerCase())}. Mude o período no mapa acima.</div>`}
@@ -516,12 +543,22 @@
         ${f.linhas.length ? f.linhas.map(l => htmlMaquina(l, ver)).join('') : `<div class="vg-vazio">Este gerente ainda não tem video game. Cadastre no menu <strong>Prestações → Cadastro video game</strong>.</div>`}
         ${f.modo === 'nova' && podeEditar() ? `<div class="vg-sub">Para adicionar, trocar ou retirar video game, use o menu <strong>Prestações → Cadastro video game</strong>.</div>` : ''}
         <div style="border-top:1px solid #e5e7eb;margin-top:14px;padding-top:12px">
+          <div class="vg-topo" style="margin-bottom:6px">
+            <div><strong>Despesas</strong><div class="vg-sub">Saem do resultado antes da comissão, como no JB.</div></div>
+            ${!ver && podeEditar() ? `<button type="button" class="btn sm" data-vg="despesa-nova">+ Adicionar despesa</button>` : ''}
+          </div>
+          <div id="vgDespLista">${htmlDespesas(ver)}</div>
+          <div class="vg-erro" id="vgDespErro"></div>
+        </div>
+        <div style="border-top:1px solid #e5e7eb;margin-top:14px;padding-top:12px">
           <div class="vg-topo" style="margin-bottom:0">
             <strong>Comissões</strong>
             <span class="vg-sub">${f.base === 'cascata' ? 'Em cascata' : 'Sobre o resultado de todos os video games'}${f.modo === 'nova' ? '' : ' · percentuais gravados nesta leitura'}</span>
           </div>
           <div class="vg-coms" id="vgComs"></div>
           <div class="vg-linha"><span>Saldo do período (todos os video games)</span><span class="vg-num" id="vgSaldo"></span></div>
+          <div class="vg-linha" id="vgDespLinha"><span>Despesas</span><span class="vg-num" id="vgDespTot" style="color:#b91c1c"></span></div>
+          <div class="vg-linha" id="vgResLinha"><span>Resultado depois das despesas</span><span class="vg-num" id="vgRes"></span></div>
           <div class="vg-linha" id="vgNegAntLinha"><span>Negativo acumulado anterior</span><span class="vg-num" id="vgNegAnt"></span></div>
           <div class="vg-linha"><span>Total de comissões</span><span class="vg-num" id="vgTotCom" style="color:#b91c1c"></span></div>
           <div class="vg-linha vg-total"><span>Líquido da empresa</span><span class="vg-num" id="vgLiq"></span></div>
@@ -566,6 +603,28 @@
       </div>`;
   }
 
+  function htmlDespesas(ver) {
+    const lista = st.form?.despesas || [];
+    const edita = !ver && podeEditar();
+    if (!lista.length) return `<div class="vg-sub" style="padding:6px 0">Nenhuma despesa lançada.</div>`;
+    if (!edita) {
+      return lista.map(d => `<div class="vg-linha"><span>${esc(d.descricao)}</span><span class="vg-num" style="color:#b91c1c">− ${esc(brl(leituraInt(d.valorTxt) || 0))}</span></div>`).join('');
+    }
+    return lista.map(d => `
+      <div class="vg-desp-linha">
+        <input data-desp="descricao" data-id="${esc(d.id)}" value="${esc(d.descricao)}" placeholder="Descrição (ex.: conserto, energia)" aria-label="Descrição da despesa" autocomplete="off">
+        <input data-desp="valorTxt" data-id="${esc(d.id)}" value="${esc(d.valorTxt ? centavosTxt(d.valorTxt) : '')}" inputmode="numeric" placeholder="0,00" aria-label="Valor da despesa" autocomplete="off">
+        <button type="button" class="btn ghost sm" data-vg="despesa-remover" data-id="${esc(d.id)}" aria-label="Remover despesa" title="Remover despesa">✕</button>
+      </div>`).join('');
+  }
+  function redesenharDespesas(focarUltima) {
+    const box = document.getElementById('vgDespLista');
+    if (!box || !st.form) return;
+    box.innerHTML = htmlDespesas(st.form.modo === 'ver');
+    recalcular();
+    if (focarUltima) box.querySelector('.vg-desp-linha:last-child [data-desp="descricao"]')?.focus();
+  }
+
   function htmlPagamentos(ver) {
     const lista = st.form.pagamentos;
     if (!lista.length) return `<div class="vg-sub" style="padding:6px 0">Nenhum pagamento lançado.</div>`;
@@ -592,7 +651,8 @@
     if (!st.form || !document.getElementById('vgSaldo')) return null;
     const f = st.form;
     const { validas, erros } = avaliarLinhas();
-    const r = calcular({ leituras: validas, negativoAnterior: f.negativoAnterior, comissoes: f.comissoes, base: f.base });
+    const desp = avaliarDespesas();
+    const r = calcular({ leituras: validas, negativoAnterior: f.negativoAnterior, comissoes: f.comissoes, base: f.base, despesas: desp.total });
     f.linhas.forEach(l => {
       const box = document.querySelector(`[data-maq="${CSS.escape(String(l.maquina_id))}"]`);
       if (!box) return;
@@ -611,6 +671,11 @@
     if (comsBox) comsBox.innerHTML = r.comissoes.map(c => `<div class="vg-com"><div class="vg-sub">${esc(c.nome)} (${esc(String(c.pct).replace('.', ','))}%)</div><div style="font-weight:700">${esc(brl(c.valor))}</div></div>`).join('')
       || '<div class="vg-sub">Nenhuma comissão cadastrada para este gerente.</div>';
     definir(document.getElementById('vgSaldo'), brl(r.saldo));
+    definir(document.getElementById('vgDespTot'), '− ' + brl(r.totalDespesas));
+    definir(document.getElementById('vgRes'), brl(r.resultado));
+    document.getElementById('vgDespLinha').hidden = !r.totalDespesas;
+    document.getElementById('vgResLinha').hidden = !r.totalDespesas;
+    definir(document.getElementById('vgDespErro'), f.modo === 'ver' ? '' : (f.despTocada || st.tentouSalvar ? desp.erro : ''));
     definir(document.getElementById('vgNegAnt'), '− ' + brl(r.negativoAnterior) + ' (só na base das comissões)');
     document.getElementById('vgNegAntLinha').hidden = !r.negativoAnterior;
     definir(document.getElementById('vgTotCom'), '− ' + brl(r.totalComissoes));
@@ -622,7 +687,7 @@
     const restam = r.liquido - totalPago(f.pagamentos);
     definir(document.getElementById('vgRestamRot'), restam < 0 ? 'Restam (empresa deve ao gerente)' : 'Restam (gerente deve à empresa)');
     definir(document.getElementById('vgRestam'), brl(Math.abs(restam)));
-    return { r, erros };
+    return { r, erros, desp };
   }
 
   async function atualizarStatusPagamentos() {
@@ -1437,6 +1502,7 @@
       st.tentouSalvar = true;
       const calc = recalcular();
       if (Object.keys(calc.erros).length) return falha('Corrija as leituras destacadas para salvar.');
+      if (calc.desp.erro) return falha('Confira as despesas: ' + calc.desp.erro);
       const r = calc.r;
 
       const gerente = ponto.gerente_nome || '';
@@ -1451,6 +1517,7 @@
         total_comissoes: r.totalComissoes, liquido: r.liquido,
         dados: {
           ponto_nome: ponto.nome, base: f.base, comissoes: r.comissoes, leituras: r.linhas,
+          despesas: calc.desp.lista, total_despesas: r.totalDespesas,
           pagamentos: JSON.parse(JSON.stringify(f.pagamentos))
         }
       });
@@ -1639,6 +1706,8 @@
       data: p.data, linhas,
       comissoes: Array.isArray(p.dados?.comissoes) ? p.dados.comissoes : [],
       saldo: Number(p.saldo) || 0,
+      despesas: (p.dados?.despesas || []).filter(d => Number(d.valor)),
+      totalDespesas: despesasDe(p),
       negativoAnterior: Number(p.negativo_anterior) || 0,
       negativoNovo: Number(p.negativo_novo) || 0,
       liquido, pagamentos,
@@ -1725,9 +1794,14 @@
 
       // Comissões sobre a soma e líquido
       const linhas = [];
+      const resultado = info.saldo - info.totalDespesas;
+      if (info.totalDespesas) {
+        info.despesas.forEach(d => linhas.push([`Despesa · ${d.descricao}`, '− ' + brl(d.valor), '#b91c1c']));
+        linhas.push(['Resultado depois das despesas', brl(resultado), resultado < 0 ? '#b91c1c' : '#0f172a']);
+      }
       if (info.negativoAnterior) {
         linhas.push(['Negativo anterior (abate da base)', '− ' + brl(info.negativoAnterior), '#b45309']);
-        linhas.push(['Base das comissões', brl(Math.max(info.saldo - info.negativoAnterior, 0)), '#0f172a']);
+        linhas.push(['Base das comissões', brl(Math.max(resultado - info.negativoAnterior, 0)), '#0f172a']);
       }
       info.comissoes.forEach(c => linhas.push([`${c.nome} (${pctTxt(c.pct)}%)`, '− ' + brl(c.valor), '#b91c1c']));
       if (!info.comissoes.length) linhas.push(['Comissões', brl(0), '#0f172a']);
@@ -1847,6 +1921,15 @@
   function ligarEventos() {
     const root = document.getElementById('vgRoot');
     root.addEventListener('input', e => {
+      const cd = e.target.getAttribute('data-desp');
+      if (cd && st.form) {
+        const d = (st.form.despesas || []).find(x => x.id === e.target.getAttribute('data-id'));
+        if (!d) return;
+        d[cd] = cd === 'valorTxt' ? mascarar(e.target) : e.target.value;
+        st.form.despTocada = true;
+        recalcular();
+        return;
+      }
       const campo = e.target.getAttribute('data-leitura');
       if (!campo) return;
       const l = st.form.linhas.find(x => x.maquina_id === e.target.getAttribute('data-id'));
@@ -1899,6 +1982,16 @@
       'maquina-trocar-jogo': () => abrirDialogoTroca(id, 'jogo'),
       'maquina-historico': () => abrirHistorico(id),
       'mapa-abrir': () => abrirGerenteNoMapa(id),
+      'despesa-nova': () => {
+        if (!st.form || st.form.modo === 'ver') return;
+        (st.form.despesas ||= []).push({ id: novoId(), descricao: '', valorTxt: '' });
+        redesenharDespesas(true);
+      },
+      'despesa-remover': () => {
+        if (!st.form) return;
+        st.form.despesas = (st.form.despesas || []).filter(d => d.id !== id);
+        redesenharDespesas(false);
+      },
       'pagamento-novo': () => abrirDialogoPagamento(null),
       'pagamento-editar': () => abrirDialogoPagamento(id),
       'pagamento-excluir': () => excluirPagamento(id),

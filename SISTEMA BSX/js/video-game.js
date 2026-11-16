@@ -194,27 +194,31 @@
     const p = st.prestacoes.find(x => x.uid === uid);
     if (!p) return;
     if (ehHistorico(p)) { aviso('Leitura do caderno: confira no mapa. Para alterar, use Histórico no Cadastro video game.'); return; }
+    // Qualquer prestação abre para editar (como no JB). Nas anteriores à última, leituras e data
+    // ficam travadas porque a prestação seguinte parte delas; pagamentos e despesas podem mudar.
     const ultima = st.prestacoes[0]?.uid === uid;
-    const modo = ultima && podeEditar() ? 'editar' : 'ver';
+    const modo = podeEditar() ? 'editar' : 'ver';
+    const trava = modo === 'editar' && !ultima;
+    const recalc = modo === 'editar' && !trava;
     const salvas = p.dados?.leituras || [];
     const linhas = salvas.map(l => {
       const maq = st.maquinas.find(m => m.id === l.maquina_id);
-      const a = modo === 'editar' && maq ? leituraAnterior(maq, uid) : { di: l.di_anterior, ds: l.ds_anterior };
+      const a = recalc && maq ? leituraAnterior(maq, uid) : { di: l.di_anterior, ds: l.ds_anterior };
       return { maquina_id: l.maquina_id, nome: l.nome, jogo: l.jogo || maq?.jogo || '', local: l.local ?? maq?.local ?? '', di_anterior: a.di, ds_anterior: a.ds, diTxt: String(l.di), dsTxt: String(l.ds), zerado: !!l.zerado };
     });
-    if (modo === 'editar') {
+    if (recalc) {
       st.maquinas.filter(m => m.ativo && !salvas.some(l => l.maquina_id === m.id)).forEach(m => {
         const a = leituraAnterior(m, uid);
         linhas.push({ maquina_id: m.id, nome: m.nome, jogo: m.jogo || '', local: m.local || '', di_anterior: a.di, ds_anterior: a.ds, diTxt: '', dsTxt: '', zerado: false });
       });
     }
     st.form = {
-      modo, uid, data: String(p.data).slice(0, 10), linhas,
+      modo, trava, uid, data: String(p.data).slice(0, 10), linhas,
       pagamentos: JSON.parse(JSON.stringify(p.dados?.pagamentos || [])),
       despesas: (p.dados?.despesas || []).map(d => ({ id: novoId(), descricao: d.descricao || '', valorTxt: String(Number(d.valor) || '') })),
       comissoes: Array.isArray(p.dados?.comissoes) ? p.dados.comissoes.map(c => ({ nome: c.nome, pct: c.pct })) : comissoesDoPonto(pontoAtual()),
       base: p.dados?.base || 'saldo',
-      negativoAnterior: modo === 'editar' ? negativoAnterior(uid) : Number(p.negativo_anterior) || 0
+      negativoAnterior: recalc ? negativoAnterior(uid) : Number(p.negativo_anterior) || 0
     };
     render();
     document.getElementById('vgFormCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -487,11 +491,12 @@
       }).join('');
       tot.venda += venda; tot.premios += premios; tot.saldo += venda - premios;
       if (!hist) { tot.desp += despesasDe(p); tot.com += Number(p.total_comissoes) || 0; tot.liq += Number(p.liquido) || 0; tot.restam += restamDe(p); }
-      const edita = p.uid === ultimaUid && !hist && podeEditar();
+      const edita = !hist && podeEditar();
+      const exclui = edita && p.uid === ultimaUid;
       const acoes = hist ? '<span class="vg-sub">caderno</span>' : `<div class="vg-acoes-mini">
-          <button type="button" class="btn sm" data-vg="prest-abrir" data-id="${esc(p.uid)}">${edita ? 'Alterar' : 'Ver'}</button>
+          <button type="button" class="btn sm" data-vg="prest-abrir" data-id="${esc(p.uid)}" title="${edita ? 'Abrir para editar: pagamentos e despesas' : 'Ver a prestação'}">${edita ? 'Editar' : 'Ver'}</button>
           <button type="button" class="btn ghost sm" data-vg="prest-imagem" data-id="${esc(p.uid)}" title="Imagem para enviar no grupo do gerente">Imagem</button>
-          ${edita ? `<button type="button" class="btn danger sm" data-vg="prest-excluir" data-id="${esc(p.uid)}">Excluir</button>` : ''}</div>`;
+          ${exclui ? `<button type="button" class="btn danger sm" data-vg="prest-excluir" data-id="${esc(p.uid)}">Excluir</button>` : ''}</div>`;
       return `<tr${hist ? ' class="vg-cad"' : ''}${st.form?.uid === p.uid ? ' style="outline:2px solid #93c5fd"' : ''}>
         <td style="white-space:nowrap"><strong>${esc(dataBR(p.data))}</strong>${hist ? '<span class="vg-mini">caderno</span>' : ''}</td>
         ${celulas}
@@ -517,7 +522,7 @@
             <td class="vg-num">${esc(brl(tot.venda))}</td><td class="vg-num">${esc(brl(tot.premios))}</td><td class="vg-num">${esc(brl(tot.saldo))}</td>
             <td class="vg-num">${tot.desp ? `<span class="vg-neg">${esc(brl(tot.desp))}</span>` : esc(brl(0))}</td><td class="vg-num">${esc(brl(tot.com))}</td><td class="vg-num">${esc(brl(tot.liq))}</td><td class="vg-num">${htmlRestam(tot.restam)}</td><td></td></tr></tfoot>
         </table></div>
-        <div class="vg-sub" style="margin-top:6px">Só a prestação mais recente pode ser alterada, porque cada leitura parte da anterior.</div>`
+        <div class="vg-sub" style="margin-top:6px">Qualquer prestação abre em Editar para lançar pagamentos e despesas. Leituras e data só mudam na mais recente, porque cada leitura parte da anterior.</div>`
         : `<div class="vg-vazio">Nenhuma prestação em ${esc(PERIODOS[st.periodo].toLowerCase())}. Mude o período no mapa acima.</div>`}
       </div>`;
   }
@@ -529,7 +534,11 @@
   function htmlFormulario(ponto) {
     const f = st.form;
     const ver = f.modo === 'ver';
-    const titulo = f.modo === 'nova' ? 'Nova leitura' : f.modo === 'editar' ? `Alterando a leitura de ${dataBR(f.data)}` : `Leitura de ${dataBR(f.data)} (somente consulta)`;
+    const titulo = f.modo === 'nova' ? 'Nova leitura'
+      : f.modo === 'editar' ? `Alterando a prestação de ${dataBR(f.data)}`
+      : `Prestação de ${dataBR(f.data)} (somente consulta)`;
+    const travaLeit = ver || !!f.trava;
+    const proxima = f.trava ? (() => { const i = st.prestacoes.findIndex(p => p.uid === f.uid); return i > 0 ? st.prestacoes[i - 1] : null; })() : null;
     return `
       <div class="vg-card" id="vgFormCard">
         <div class="vg-topo">
@@ -538,9 +547,10 @@
             <div class="vg-sub">${esc(titulo)}</div>
           </div>
           <label class="vg-sub" style="display:flex;flex-direction:column;gap:4px;font-weight:600">DATA DA LEITURA
-            <input type="date" id="vgData" value="${esc(f.data)}" ${ver ? 'disabled' : ''}></label>
+            <input type="date" id="vgData" value="${esc(f.data)}" ${travaLeit ? 'disabled' : ''}></label>
         </div>
-        ${f.linhas.length ? f.linhas.map(l => htmlMaquina(l, ver)).join('') : `<div class="vg-vazio">Este gerente ainda não tem video game. Cadastre no menu <strong>Prestações → Cadastro video game</strong>.</div>`}
+        ${f.trava ? `<p class="vg-aviso">Leituras e data travadas: ${proxima ? `a prestação de ${esc(dataBR(proxima.data))} parte destas leituras` : 'existe prestação depois desta'}. Aqui dá para lançar e corrigir <strong>pagamentos</strong> e <strong>despesas</strong>.</p>` : ''}
+        ${f.linhas.length ? f.linhas.map(l => htmlMaquina(l, travaLeit)).join('') : `<div class="vg-vazio">Este gerente ainda não tem video game. Cadastre no menu <strong>Prestações → Cadastro video game</strong>.</div>`}
         ${f.modo === 'nova' && podeEditar() ? `<div class="vg-sub">Para adicionar, trocar ou retirar video game, use o menu <strong>Prestações → Cadastro video game</strong>.</div>` : ''}
         <div style="border-top:1px solid #e5e7eb;margin-top:14px;padding-top:12px">
           <div class="vg-topo" style="margin-bottom:6px">
@@ -576,7 +586,7 @@
         <div class="vg-acoes">
           ${f.modo !== 'nova' ? `<button type="button" class="btn ghost" data-vg="form-novo">Voltar para nova leitura</button>` : ''}
           ${f.modo !== 'nova' ? `<button type="button" class="btn ghost" data-vg="prest-imagem" data-id="${esc(f.uid)}" title="Imagem da prestação salva, para enviar no grupo do gerente">Gerar imagem</button>` : ''}
-          ${!ver && podeEditar() ? `<button type="button" class="btn primary" id="vgSalvar" data-vg="salvar">Salvar prestação</button>` : ''}
+          ${!ver && podeEditar() ? `<button type="button" class="btn primary" id="vgSalvar" data-vg="salvar">${rotuloSalvar()}</button>` : ''}
         </div>
       </div>`;
   }
@@ -602,6 +612,8 @@
         <div class="vg-erro" data-o="erro"></div>
       </div>`;
   }
+
+  const rotuloSalvar = () => (st.form?.modo === 'editar' ? 'Salvar alterações' : 'Salvar prestação');
 
   function htmlDespesas(ver) {
     const lista = st.form?.despesas || [];
@@ -701,6 +713,7 @@
         const tudo = cods.length && cods.every(c => noCaixa.has(c));
         chip.textContent = tudo ? 'No caixa' : 'Aguardando caixa';
         chip.className = 'vg-chip ' + (tudo ? 'ok' : 'esp');
+        if (cods.length) chip.title = 'Código: ' + cods.join(', ');
       } catch (_) { chip.textContent = '—'; }
     }
   }
@@ -1381,6 +1394,10 @@
     f.reset();
     document.getElementById('vgPagErro').textContent = '';
     const pg = id ? st.form.pagamentos.find(p => p.id === id) : null;
+    if (pg && !Array.isArray(pg.codigos)) {
+      alert('Este pagamento foi lançado antes dos códigos de transação e não pode ser editado.\n\nPara corrigir, lance um novo pagamento com a diferença.');
+      return;
+    }
     f.dataset.id = id || '';
     document.getElementById('dlgVgPagTitulo').textContent = pg ? 'Editar pagamento' : 'Adicionar pagamento';
     document.getElementById('vgPagAviso').hidden = !pg;
@@ -1474,36 +1491,59 @@
       // Sempre confere com o banco: outra pessoa pode ter lançado neste gerente
       await carregarDoPonto();
       const ultima = st.prestacoes[0];
+      const eraNova = f.modo === 'nova';
+      let salva = null;
       if (f.modo === 'nova' && ultima && f.data <= String(ultima.data).slice(0, 10)) {
         return falha(`A data precisa ser depois da última prestação deste gerente (${dataBR(ultima.data)}).`);
       }
-      if (f.modo === 'editar') {
-        if (ultima?.uid !== f.uid) return falha('Existe uma prestação mais recente deste gerente. Só a última pode ser alterada.');
-        const penultima = st.prestacoes[1];
-        if (penultima && f.data <= String(penultima.data).slice(0, 10)) {
-          return falha(`A data precisa ser depois da prestação anterior (${dataBR(penultima.data)}).`);
+      if (f.modo === 'editar' && f.trava) {
+        // Prestação anterior: data e leituras ficam exatamente como estão no banco
+        salva = st.prestacoes.find(p => p.uid === f.uid && !ehHistorico(p));
+        if (!salva) return falha('Esta prestação não existe mais. Atualize a página.');
+        f.data = dia(salva.data);
+        f.linhas = (salva.dados?.leituras || []).map(l => ({
+          maquina_id: l.maquina_id, nome: l.nome, jogo: l.jogo || '', local: l.local || '',
+          di_anterior: l.di_anterior, ds_anterior: l.ds_anterior, diTxt: String(l.di), dsTxt: String(l.ds), zerado: !!l.zerado
+        }));
+        f.negativoAnterior = Number(salva.negativo_anterior) || 0;
+      } else {
+        if (f.modo === 'editar') {
+          if (ultima?.uid !== f.uid) return falha('Existe uma prestação mais recente deste gerente. Abra esta prestação de novo pelo mapa.');
+          const penultima = st.prestacoes[1];
+          if (penultima && f.data <= String(penultima.data).slice(0, 10)) {
+            return falha(`A data precisa ser depois da prestação anterior (${dataBR(penultima.data)}).`);
+          }
         }
+        const antesDaInstalacao = f.linhas
+          .map(l => st.maquinas.find(m => m.id === l.maquina_id))
+          .find(m => m?.instalada_em && f.data < String(m.instalada_em).slice(0, 10));
+        if (antesDaInstalacao) {
+          return falha(`A data da leitura é anterior à instalação de ${antesDaInstalacao.nome} (${dataBR(antesDaInstalacao.instalada_em)}).`);
+        }
+        f.negativoAnterior = negativoAnterior(f.uid);
+        f.linhas.forEach(l => {
+          const maq = st.maquinas.find(m => m.id === l.maquina_id);
+          if (!maq) return;
+          const a = leituraAnterior(maq, f.uid);
+          l.di_anterior = a.di;
+          l.ds_anterior = a.ds;
+        });
       }
-      const antesDaInstalacao = f.linhas
-        .map(l => st.maquinas.find(m => m.id === l.maquina_id))
-        .find(m => m?.instalada_em && f.data < String(m.instalada_em).slice(0, 10));
-      if (antesDaInstalacao) {
-        return falha(`A data da leitura é anterior à instalação de ${antesDaInstalacao.nome} (${dataBR(antesDaInstalacao.instalada_em)}).`);
-      }
-      f.negativoAnterior = negativoAnterior(f.uid);
-      f.linhas.forEach(l => {
-        const maq = st.maquinas.find(m => m.id === l.maquina_id);
-        if (!maq) return;
-        const a = leituraAnterior(maq, f.uid);
-        l.di_anterior = a.di;
-        l.ds_anterior = a.ds;
-      });
 
       st.tentouSalvar = true;
       const calc = recalcular();
       if (Object.keys(calc.erros).length) return falha('Corrija as leituras destacadas para salvar.');
       if (calc.desp.erro) return falha('Confira as despesas: ' + calc.desp.erro);
       const r = calc.r;
+      if (salva) {
+        // O negativo desta prestação passa para a seguinte: numa prestação anterior ele não pode mudar
+        const idx = st.prestacoes.findIndex(p => p.uid === salva.uid);
+        const seguinte = st.prestacoes.slice(0, idx).filter(p => !ehHistorico(p)).pop();
+        if (seguinte && r.negativoNovo !== (Number(salva.negativo_novo) || 0)) {
+          return falha(`Esta alteração muda o negativo que passa para a prestação de ${dataBR(seguinte.data)} `
+            + `(de ${brl(salva.negativo_novo)} para ${brl(r.negativoNovo)}). Numa prestação anterior, a despesa só pode mudar se o negativo continuar igual.`);
+        }
+      }
 
       const gerente = ponto.gerente_nome || '';
       await window.__reconciliarCodigos(f.pagamentos, gerente);
@@ -1546,12 +1586,20 @@
       await gerarPendencias(prest, f.pagamentos, ponto.nome, rotuloCaixa(ponto));
       try { await window.__getPendenciasAsync?.(); window.renderFinPendencias?.(); } catch (_) {}
 
+      try {
+        window.AuditLog?.log?.('prestacao_salva', {
+          tipo: eraNova ? 'Video game · nova' : 'Video game · alteração', id: uid,
+          gerente: rotuloCaixa(ponto), periodo: dataBR(f.data), valor: brl(r.liquido),
+          info: `${f.pagamentos.length} pagamento(s) · ${calc.desp.lista.length} despesa(s)`
+        });
+      } catch (_) {}
+
       st.tentouSalvar = false;
       await carregarDoPonto();
       await atualizarMapa();
       novoFormulario();
       render();
-      aviso('Prestação salva', 'success');
+      aviso(eraNova ? 'Prestação salva' : 'Alterações salvas', 'success');
       abrirImagem(uid);
     } catch (err) {
       console.error('[VideoGame] salvar prestação:', err);
@@ -1559,7 +1607,7 @@
     } finally {
       st.salvando = false;
       const b = document.getElementById('vgSalvar');
-      if (b) { b.disabled = false; b.textContent = 'Salvar prestação'; }
+      if (b) { b.disabled = false; b.textContent = rotuloSalvar(); }
     }
   }
 
@@ -1573,6 +1621,12 @@
     if (!confirm(`Excluir a leitura de ${dataBR(p.data)}? Os pagamentos ainda não confirmados saem da fila do caixa.`)) return;
     const { error } = await client().from('vg_prestacoes').delete().eq('uid', uid);
     if (error) { alert('Não foi possível excluir: ' + error.message); return; }
+    try {
+      window.AuditLog?.log?.('prestacao_excluida', {
+        tipo: 'Video game', id: uid, gerente: rotuloDe(p.gerente_nome, p.dados?.ponto_nome),
+        periodo: dataBR(p.data), valor: brl(p.liquido)
+      });
+    } catch (_) {}
     await window.__limparPendenciasOrfas({ id: uid, pagamentos: [] });
     try { await window.__getPendenciasAsync?.(); window.renderFinPendencias?.(); } catch (_) {}
     await carregarDoPonto();

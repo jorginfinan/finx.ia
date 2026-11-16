@@ -15,7 +15,7 @@
     pontos: [], pontoId: null, maquinas: [], prestacoes: [],
     form: null, salvando: false, erroSetup: '',
     cadPronto: false, contagem: {}, listaGerentes: [], imagem: null, salvandoCad: false,
-    todas: [], erroMapa: '', periodo: '3m'
+    todas: [], erroMapa: '', periodo: '3m', formAberto: false, etapa: 1
   };
 
   // ---------- helpers ----------
@@ -220,8 +220,10 @@
       base: p.dados?.base || 'saldo',
       negativoAnterior: recalc ? negativoAnterior(uid) : Number(p.negativo_anterior) || 0
     };
+    st.tentouSalvar = false;
+    st.formAberto = true;
+    st.etapa = modo === 'ver' ? 5 : 4;
     render();
-    document.getElementById('vgFormCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   // Separa as leituras válidas das que impedem salvar
   function avaliarLinhas() {
@@ -328,6 +330,28 @@
       .vg-neg{color:#b91c1c}
       .vg-mapa-topo{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:10px}
       .vg-mapa-topo label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:#6b7280}
+      .vg-pag-topo{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+      .vg-pag-topo h2{margin:0}
+      .vg-ov{position:fixed;inset:0;z-index:2000;background:rgba(15,23,42,.5);display:flex;justify-content:center;align-items:stretch}
+      .vg-ov-pg{background:#f8fafc;width:min(980px,100%);height:100%;display:flex;flex-direction:column;box-shadow:0 0 40px rgba(0,0,0,.3)}
+      .vg-ov-topo{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 18px;background:#fff;border-bottom:1px solid #e5e7eb}
+      .vg-passos{display:flex;gap:6px;padding:10px 18px;background:#fff;border-bottom:1px solid #e5e7eb;overflow-x:auto}
+      .vg-passo{display:flex;align-items:center;gap:6px;border:1px solid #e2e8f0;background:#f1f5f9;color:#475569;border-radius:999px;padding:6px 12px 6px 6px;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer}
+      .vg-passo b{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#cbd5e1;color:#fff;font-size:12px}
+      .vg-passo.on{background:#13294b;border-color:#13294b;color:#fff}
+      .vg-passo.on b{background:#facc15;color:#13294b}
+      .vg-passo.ok b{background:#16a34a}
+      .vg-ov-corpo{flex:1;overflow:auto;padding:18px;overscroll-behavior:contain}
+      .vg-ov-rodape{padding:12px 18px;background:#fff;border-top:1px solid #e5e7eb}
+      .vg-rodape-btns{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+      .vg-ov-rodape .vg-erro{margin:0 0 8px}
+      .vg-erro:empty{display:none}
+      .vg-etapa{display:none}
+      .vg-etapa.on{display:block}
+      .vg-pergunta{font-size:19px;font-weight:700;color:#111827;margin:0 0 4px}
+      .vg-campos{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+      .vg-campos label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:#6b7280}
+      .vg-campos select,.vg-campos input{width:100%;box-sizing:border-box}
       dialog#dlgVgHist{width:min(800px,96vw)}
       table.vg-hist-tab{width:100%;border-collapse:collapse;font-size:13px}
       table.vg-hist-tab th{white-space:nowrap;padding:8px 6px !important}
@@ -340,6 +364,8 @@
       @media (max-width:560px){
         table.vg-hist-tab .vg-so-largo{display:none}
         .vg-resumo{grid-template-columns:1fr 1fr;gap:8px}
+        .vg-ov-topo,.vg-passos,.vg-ov-corpo,.vg-ov-rodape{padding-left:12px;padding-right:12px}
+        .vg-pergunta{font-size:17px}
         .vg-desp-linha{grid-template-columns:minmax(0,1fr) 96px auto;gap:6px}
         .vg-linha .vg-num{white-space:nowrap}
         .vg-kpi{padding:8px 10px}
@@ -357,16 +383,22 @@
     const root = document.getElementById('vgRoot');
     if (!root) return;
     const ponto = pontoAtual();
+    const aberto = !!(st.formAberto && ponto && st.form);
     root.innerHTML = `
-      <h2>Video game</h2>
+      <div class="vg-pag-topo">
+        <h2>Video game</h2>
+        ${!st.erroSetup && st.pontos.length && podeEditar() ? `<button type="button" class="btn primary" data-vg="form-abrir">+ Criar prestação</button>` : ''}
+      </div>
       ${st.erroSetup ? `<div class="vg-setup">${esc(st.erroSetup)}</div>` : ''}
       ${st.erroSetup ? '' : htmlMapaGeral()}
       <div class="vg-barra">
         <label>GERENTE<select id="vgPonto">${opcoesGerentes()}</select></label>
       </div>
-      ${ponto ? htmlFormulario(ponto) + htmlMapaGerente(ponto) : `<div class="vg-card vg-vazio">Cadastre o gerente e os video games dele no menu <strong>Prestações → Cadastro video game</strong> para lançar a prestação.</div>`}
+      ${ponto ? (htmlMapaGerente(ponto) || `<div class="vg-card vg-vazio" id="vgMapaGer">${esc(rotuloPonto(ponto))} ainda não tem prestação.${podeEditar() ? ' Clique em <strong>+ Criar prestação</strong>.' : ''}</div>`)
+        : `<div class="vg-card vg-vazio">Cadastre o gerente e os video games dele no menu <strong>Prestações → Cadastro video game</strong> para lançar a prestação.</div>`}
+      ${aberto ? htmlFormulario(ponto) : ''}
     `;
-    if (ponto) { recalcular(); atualizarStatusPagamentos(); }
+    if (aberto) { recalcular(); atualizarStatusPagamentos(); }
   }
 
   // ---------- mapa de prestações ----------
@@ -509,7 +541,7 @@
         <td>${acoes}</td></tr>`;
     }).join('');
     return `
-      <div class="vg-card">
+      <div class="vg-card" id="vgMapaGer">
         <div class="vg-mapa-topo">
           <div><div class="vg-titulo">Mapa de ${esc(rotuloPonto(ponto))}</div>
           <div class="vg-sub">${esc(PERIODOS[st.periodo])} · saldo de cada video game por data (v = venda, p = prêmios)</div></div>
@@ -531,62 +563,90 @@
       || '<option value="">Nenhum gerente cadastrado</option>';
   }
 
+  // Formulário da prestação em etapas, aberto por cima da página (questionário)
+  const ETAPAS = ['Gerente e data', 'Leituras', 'Despesas', 'Pagamentos', 'Conferir e salvar'];
   function htmlFormulario(ponto) {
     const f = st.form;
     const ver = f.modo === 'ver';
-    const titulo = f.modo === 'nova' ? 'Nova leitura'
-      : f.modo === 'editar' ? `Alterando a prestação de ${dataBR(f.data)}`
-      : `Prestação de ${dataBR(f.data)} (somente consulta)`;
+    const e = st.etapa;
+    const titulo = f.modo === 'nova' ? 'Nova prestação'
+      : f.modo === 'editar' ? `Editar prestação de ${dataBR(f.data)}`
+      : `Prestação de ${dataBR(f.data)}`;
     const travaLeit = ver || !!f.trava;
     const proxima = f.trava ? (() => { const i = st.prestacoes.findIndex(p => p.uid === f.uid); return i > 0 ? st.prestacoes[i - 1] : null; })() : null;
+    const ultima = st.prestacoes[0];
+    const ativos = st.maquinas.filter(m => m.ativo).length;
+    const negAnt = Number(f.negativoAnterior) || 0;
+    const etapa = (n, pergunta, dica, corpo) => `
+      <section class="vg-etapa${e === n ? ' on' : ''}" data-etapa="${n}">
+        <p class="vg-pergunta">${pergunta}</p>
+        ${dica ? `<p class="vg-sub" style="margin:0 0 14px">${dica}</p>` : ''}
+        ${corpo}
+      </section>`;
     return `
-      <div class="vg-card" id="vgFormCard">
-        <div class="vg-topo">
-          <div>
-            <div class="vg-titulo">${esc(rotuloPonto(ponto))}</div>
-            <div class="vg-sub">${esc(titulo)}</div>
+      <div class="vg-ov" role="dialog" aria-modal="true" aria-label="${esc(titulo)}">
+        <div class="vg-ov-pg" id="vgFormCard">
+          <div class="vg-ov-topo">
+            <div style="min-width:0">
+              <div class="vg-titulo">🎰 ${esc(titulo)}</div>
+              <div class="vg-sub">${esc(rotuloPonto(ponto))}${ver ? ' · somente consulta' : ''}</div>
+            </div>
+            <button type="button" class="btn ghost sm" data-vg="form-fechar" aria-label="Fechar o formulário">✕ Fechar</button>
           </div>
-          <label class="vg-sub" style="display:flex;flex-direction:column;gap:4px;font-weight:600">DATA DA LEITURA
-            <input type="date" id="vgData" value="${esc(f.data)}" ${travaLeit ? 'disabled' : ''}></label>
-        </div>
-        ${f.trava ? `<p class="vg-aviso">Leituras e data travadas: ${proxima ? `a prestação de ${esc(dataBR(proxima.data))} parte destas leituras` : 'existe prestação depois desta'}. Aqui dá para lançar e corrigir <strong>pagamentos</strong> e <strong>despesas</strong>.</p>` : ''}
-        ${f.linhas.length ? f.linhas.map(l => htmlMaquina(l, travaLeit)).join('') : `<div class="vg-vazio">Este gerente ainda não tem video game. Cadastre no menu <strong>Prestações → Cadastro video game</strong>.</div>`}
-        ${f.modo === 'nova' && podeEditar() ? `<div class="vg-sub">Para adicionar, trocar ou retirar video game, use o menu <strong>Prestações → Cadastro video game</strong>.</div>` : ''}
-        <div style="border-top:1px solid #e5e7eb;margin-top:14px;padding-top:12px">
-          <div class="vg-topo" style="margin-bottom:6px">
-            <div><strong>Despesas</strong><div class="vg-sub">Saem do resultado antes da comissão, como no JB.</div></div>
-            ${!ver && podeEditar() ? `<button type="button" class="btn sm" data-vg="despesa-nova">+ Adicionar despesa</button>` : ''}
+          <div class="vg-passos" role="tablist">${ETAPAS.map((t, i) => `<button type="button" role="tab" aria-selected="${i + 1 === e}" class="vg-passo${i + 1 === e ? ' on' : ''}${i + 1 < e ? ' ok' : ''}" data-vg="etapa" data-id="${i + 1}"><b>${i + 1}</b>${t}</button>`).join('')}</div>
+          <div class="vg-ov-corpo">
+            ${etapa(1, 'Qual gerente e qual a data da leitura?', f.modo === 'nova' ? 'Escolha o gerente e a data em que as leituras foram feitas.' : '', `
+              <div class="vg-campos">
+                <label>GERENTE<select id="vgPontoForm" ${f.modo !== 'nova' ? 'disabled' : ''}>${opcoesGerentes()}</select></label>
+                <label>DATA DA LEITURA<input type="date" id="vgData" value="${esc(f.data)}" ${travaLeit ? 'disabled' : ''}></label>
+              </div>
+              <div class="vg-det" style="margin-top:12px">
+                <span>Video games ativos: <b>${ativos}</b></span>
+                <span>Última prestação: <b>${ultima ? `${esc(dataBR(ultima.data))}${ehHistorico(ultima) ? ' (caderno)' : ''}` : 'ainda não tem'}</b></span>
+                ${negAnt ? `<span>Negativo anterior: <b style="color:#b45309">${esc(brl(negAnt))}</b></span>` : ''}
+              </div>
+              ${!ativos && f.modo === 'nova' ? `<p class="vg-aviso" style="margin-top:12px">Este gerente não tem video game ativo. Cadastre no menu <strong>Prestações → Cadastro video game</strong>.</p>` : ''}`)}
+            ${etapa(2, 'Quais são as leituras de cada video game?', travaLeit ? '' : 'Digite os números da tela: entrada (di) e saída (ds). O período é calculado a partir da leitura anterior.', `
+              ${f.trava ? `<p class="vg-aviso">Leituras e data travadas: ${proxima ? `a prestação de ${esc(dataBR(proxima.data))} parte destas leituras` : 'existe prestação depois desta'}. Nesta prestação dá para lançar e corrigir <strong>pagamentos</strong> e <strong>despesas</strong>.</p>` : ''}
+              ${f.linhas.length ? f.linhas.map(l => htmlMaquina(l, travaLeit)).join('') : `<div class="vg-vazio">Este gerente ainda não tem video game. Cadastre no menu <strong>Prestações → Cadastro video game</strong>.</div>`}
+              ${f.modo === 'nova' && podeEditar() ? `<div class="vg-sub">Para adicionar, trocar ou retirar video game, use o menu <strong>Prestações → Cadastro video game</strong>.</div>` : ''}`)}
+            ${etapa(3, 'Teve alguma despesa?', ver ? '' : 'As despesas saem do resultado antes da comissão, como no JB. Se não teve, é só seguir.', `
+              ${!ver && podeEditar() ? `<button type="button" class="btn sm" data-vg="despesa-nova" style="margin-bottom:10px">+ Adicionar despesa</button>` : ''}
+              <div id="vgDespLista">${htmlDespesas(ver)}</div>
+              <div class="vg-erro" id="vgDespErro"></div>`)}
+            ${etapa(4, 'O gerente pagou alguma coisa?', ver ? '' : 'Lance o que foi recebido do gerente (ou pago a ele). Cada pagamento vai para confirmação no caixa.', `
+              <div class="vg-resumo" style="margin-top:0">
+                <div class="vg-kpi"><div class="vg-sub">Líquido desta prestação</div><div class="vg-v" data-out="liquido"></div></div>
+                <div class="vg-kpi"><div class="vg-sub">Pagamentos</div><div class="vg-v" data-out="pago"></div></div>
+                <div class="vg-kpi"><div class="vg-sub" data-out="restamRot"></div><div class="vg-v" data-out="restam"></div></div>
+              </div>
+              ${!ver && podeEditar() ? `<button type="button" class="btn sm" data-vg="pagamento-novo" style="margin-bottom:10px">+ Adicionar pagamento</button>` : ''}
+              <div class="vg-tabela">${htmlPagamentos(ver)}</div>`)}
+            ${etapa(5, ver ? 'Resumo da prestação' : 'Confira e salve', '', `
+              <div class="vg-tabela" style="margin-bottom:12px"><table class="vg-mapa" id="vgConfMaq"></table></div>
+              <div class="vg-sub" style="margin-bottom:6px">Comissões ${f.base === 'cascata' ? 'em cascata' : 'sobre o resultado de todos os video games'}${f.modo === 'nova' ? '' : ' · percentuais gravados nesta prestação'}</div>
+              <div class="vg-coms" id="vgComs"></div>
+              <div class="vg-linha"><span>Saldo do período (todos os video games)</span><span class="vg-num" id="vgSaldo"></span></div>
+              <div class="vg-linha" id="vgDespLinha"><span>Despesas</span><span class="vg-num" id="vgDespTot" style="color:#b91c1c"></span></div>
+              <div class="vg-linha" id="vgResLinha"><span>Resultado depois das despesas</span><span class="vg-num" id="vgRes"></span></div>
+              <div class="vg-linha" id="vgNegAntLinha"><span>Negativo acumulado anterior</span><span class="vg-num" id="vgNegAnt"></span></div>
+              <div class="vg-linha"><span>Total de comissões</span><span class="vg-num" id="vgTotCom" style="color:#b91c1c"></span></div>
+              <div class="vg-linha vg-total"><span>Líquido da empresa</span><span class="vg-num" id="vgLiq"></span></div>
+              <div class="vg-linha" id="vgNegNovoLinha" style="color:#92400e"><span>Negativo que vai para a próxima leitura</span><span class="vg-num" id="vgNegNovo"></span></div>
+              <div class="vg-linha"><span>Pagamentos</span><span class="vg-num" data-out="pago"></span></div>
+              <div class="vg-linha vg-total"><span id="vgRestamRot">Restam</span><span class="vg-num" id="vgRestam"></span></div>`)}
           </div>
-          <div id="vgDespLista">${htmlDespesas(ver)}</div>
-          <div class="vg-erro" id="vgDespErro"></div>
-        </div>
-        <div style="border-top:1px solid #e5e7eb;margin-top:14px;padding-top:12px">
-          <div class="vg-topo" style="margin-bottom:0">
-            <strong>Comissões</strong>
-            <span class="vg-sub">${f.base === 'cascata' ? 'Em cascata' : 'Sobre o resultado de todos os video games'}${f.modo === 'nova' ? '' : ' · percentuais gravados nesta leitura'}</span>
+          <div class="vg-ov-rodape">
+            <div class="vg-erro" id="vgMsg" role="alert"></div>
+            <div class="vg-rodape-btns">
+              <div>${e > 1 ? `<button type="button" class="btn ghost" data-vg="etapa-voltar">← Voltar</button>` : ''}</div>
+              <div class="vg-acoes" style="margin:0">
+                ${f.modo !== 'nova' ? `<button type="button" class="btn ghost" data-vg="prest-imagem" data-id="${esc(f.uid)}" title="Imagem da prestação salva, para enviar no grupo do gerente">Gerar imagem</button>` : ''}
+                ${e < ETAPAS.length ? `<button type="button" class="btn primary" data-vg="etapa-proxima">Próximo →</button>`
+                  : (!ver && podeEditar() ? `<button type="button" class="btn primary" id="vgSalvar" data-vg="salvar">${rotuloSalvar()}</button>` : '')}
+              </div>
+            </div>
           </div>
-          <div class="vg-coms" id="vgComs"></div>
-          <div class="vg-linha"><span>Saldo do período (todos os video games)</span><span class="vg-num" id="vgSaldo"></span></div>
-          <div class="vg-linha" id="vgDespLinha"><span>Despesas</span><span class="vg-num" id="vgDespTot" style="color:#b91c1c"></span></div>
-          <div class="vg-linha" id="vgResLinha"><span>Resultado depois das despesas</span><span class="vg-num" id="vgRes"></span></div>
-          <div class="vg-linha" id="vgNegAntLinha"><span>Negativo acumulado anterior</span><span class="vg-num" id="vgNegAnt"></span></div>
-          <div class="vg-linha"><span>Total de comissões</span><span class="vg-num" id="vgTotCom" style="color:#b91c1c"></span></div>
-          <div class="vg-linha vg-total"><span>Líquido da empresa</span><span class="vg-num" id="vgLiq"></span></div>
-          <div class="vg-linha" id="vgNegNovoLinha" style="color:#92400e"><span>Negativo que vai para a próxima leitura</span><span class="vg-num" id="vgNegNovo"></span></div>
-        </div>
-        <div style="border-top:1px solid #e5e7eb;margin-top:12px;padding-top:12px">
-          <div class="vg-topo" style="margin-bottom:6px">
-            <strong>Pagamentos</strong>
-            ${!ver && podeEditar() ? `<button type="button" class="btn sm" data-vg="pagamento-novo">Adicionar pagamento</button>` : ''}
-          </div>
-          <div class="vg-tabela">${htmlPagamentos(ver)}</div>
-          <div class="vg-linha vg-total"><span id="vgRestamRot">Restam</span><span class="vg-num" id="vgRestam"></span></div>
-        </div>
-        <div class="vg-erro" id="vgMsg" role="alert"></div>
-        <div class="vg-acoes">
-          ${f.modo !== 'nova' ? `<button type="button" class="btn ghost" data-vg="form-novo">Voltar para nova leitura</button>` : ''}
-          ${f.modo !== 'nova' ? `<button type="button" class="btn ghost" data-vg="prest-imagem" data-id="${esc(f.uid)}" title="Imagem da prestação salva, para enviar no grupo do gerente">Gerar imagem</button>` : ''}
-          ${!ver && podeEditar() ? `<button type="button" class="btn primary" id="vgSalvar" data-vg="salvar">${rotuloSalvar()}</button>` : ''}
         </div>
       </div>`;
   }
@@ -696,9 +756,31 @@
     liq.style.color = r.liquido < 0 ? '#b91c1c' : '#166534';
     definir(document.getElementById('vgNegNovo'), brl(r.negativoNovo));
     document.getElementById('vgNegNovoLinha').hidden = !r.negativoNovo;
-    const restam = r.liquido - totalPago(f.pagamentos);
-    definir(document.getElementById('vgRestamRot'), restam < 0 ? 'Restam (empresa deve ao gerente)' : 'Restam (gerente deve à empresa)');
+    const pago = totalPago(f.pagamentos);
+    const restam = r.liquido - pago;
+    const restamRot = restam < 0 ? 'Restam (empresa deve ao gerente)' : 'Restam (gerente deve à empresa)';
+    definir(document.getElementById('vgRestamRot'), restamRot);
     definir(document.getElementById('vgRestam'), brl(Math.abs(restam)));
+    // Valores repetidos nas etapas do formulário
+    const saida = (nome, txt, cor) => document.querySelectorAll(`[data-out="${nome}"]`).forEach(el => { el.textContent = txt; if (cor !== undefined) el.style.color = cor; });
+    saida('liquido', brl(r.liquido), r.liquido < 0 ? '#b91c1c' : '#166534');
+    saida('pago', brl(pago));
+    saida('restamRot', restamRot);
+    saida('restam', brl(Math.abs(restam)), restam < 0 ? '#b45309' : '');
+    const conf = document.getElementById('vgConfMaq');
+    if (conf) {
+      let tv = 0, tp = 0;
+      const corpo = f.linhas.map(l => {
+        const lin = r.linhas.find(x => x.maquina_id === l.maquina_id);
+        if (lin) { tv += lin.venda; tp += lin.premios; }
+        return `<tr><td>🎰 ${esc(l.nome)}${l.zerado ? ' <span class="vg-chip esp">zerado</span>' : ''}</td>
+          <td class="vg-num">${lin ? esc(brl(lin.venda)) : '—'}</td><td class="vg-num" style="color:#b91c1c">${lin ? esc(brl(lin.premios)) : '—'}</td>
+          <td class="vg-num"><strong>${lin ? esc(brl(lin.saldo)) : '<span class="vg-neg">falta leitura</span>'}</strong></td></tr>`;
+      }).join('');
+      conf.innerHTML = `<thead><tr><th>Video game</th><th class="vg-num">Venda</th><th class="vg-num">Prêmios</th><th class="vg-num">Saldo</th></tr></thead>
+        <tbody>${corpo}</tbody>
+        <tfoot><tr><td>Soma</td><td class="vg-num">${esc(brl(tv))}</td><td class="vg-num">${esc(brl(tp))}</td><td class="vg-num">${esc(brl(r.saldo))}</td></tr></tfoot>`;
+    }
     return { r, erros, desp };
   }
 
@@ -1447,6 +1529,7 @@
         id: novoId(), data: f.data.value, valor, forma, obs, __rascunho: true
       }, ponto?.gerente_nome));
     }
+    st.form.sujo = true;
     document.getElementById('dlgVgPagamento').close();
     render();
   }
@@ -1456,6 +1539,7 @@
     const bloqueio = await window.__bloqueioRemocaoPagamentos([pg]);
     if (bloqueio) { alert(bloqueio); return; }
     st.form.pagamentos = st.form.pagamentos.filter(p => p.id !== id);
+    st.form.sujo = true;
     render();
   }
 
@@ -1477,16 +1561,18 @@
 
   async function salvarPrestacao() {
     if (st.salvando) return;
-    const f = st.form, ponto = pontoAtual(), msg = document.getElementById('vgMsg');
+    const f = st.form, ponto = pontoAtual();
     const btn = document.getElementById('vgSalvar');
-    msg.textContent = '';
+    definir(document.getElementById('vgMsg'), '');
     st.salvando = true;
     if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
-    const falha = t => { msg.textContent = t; };
+    // A mensagem fica no rodapé do formulário; quando o problema é de outra etapa, volta para ela
+    const falha = t => { definir(document.getElementById('vgMsg'), t); };
+    const falhaEm = (n, t) => { if (st.etapa !== n) irEtapa(n); falha(t); };
     try {
-      f.data = document.getElementById('vgData').value;
-      if (!f.data) return falha('Informe a data da leitura.');
-      if (!f.linhas.length) return falha('Este gerente não tem video game. Cadastre em Cadastro video game.');
+      f.data = document.getElementById('vgData')?.value || f.data;
+      if (!f.data) return falhaEm(1, 'Informe a data da leitura.');
+      if (!f.linhas.length) return falhaEm(1, 'Este gerente não tem video game. Cadastre em Cadastro video game.');
 
       // Sempre confere com o banco: outra pessoa pode ter lançado neste gerente
       await carregarDoPonto();
@@ -1494,7 +1580,7 @@
       const eraNova = f.modo === 'nova';
       let salva = null;
       if (f.modo === 'nova' && ultima && f.data <= String(ultima.data).slice(0, 10)) {
-        return falha(`A data precisa ser depois da última prestação deste gerente (${dataBR(ultima.data)}).`);
+        return falhaEm(1, `A data precisa ser depois da última prestação deste gerente (${dataBR(ultima.data)}).`);
       }
       if (f.modo === 'editar' && f.trava) {
         // Prestação anterior: data e leituras ficam exatamente como estão no banco
@@ -1508,17 +1594,17 @@
         f.negativoAnterior = Number(salva.negativo_anterior) || 0;
       } else {
         if (f.modo === 'editar') {
-          if (ultima?.uid !== f.uid) return falha('Existe uma prestação mais recente deste gerente. Abra esta prestação de novo pelo mapa.');
+          if (ultima?.uid !== f.uid) return falha('Existe uma prestação mais recente deste gerente. Feche e abra esta prestação de novo pelo mapa.');
           const penultima = st.prestacoes[1];
           if (penultima && f.data <= String(penultima.data).slice(0, 10)) {
-            return falha(`A data precisa ser depois da prestação anterior (${dataBR(penultima.data)}).`);
+            return falhaEm(1, `A data precisa ser depois da prestação anterior (${dataBR(penultima.data)}).`);
           }
         }
         const antesDaInstalacao = f.linhas
           .map(l => st.maquinas.find(m => m.id === l.maquina_id))
           .find(m => m?.instalada_em && f.data < String(m.instalada_em).slice(0, 10));
         if (antesDaInstalacao) {
-          return falha(`A data da leitura é anterior à instalação de ${antesDaInstalacao.nome} (${dataBR(antesDaInstalacao.instalada_em)}).`);
+          return falhaEm(1, `A data da leitura é anterior à instalação de ${antesDaInstalacao.nome} (${dataBR(antesDaInstalacao.instalada_em)}).`);
         }
         f.negativoAnterior = negativoAnterior(f.uid);
         f.linhas.forEach(l => {
@@ -1532,15 +1618,16 @@
 
       st.tentouSalvar = true;
       const calc = recalcular();
-      if (Object.keys(calc.erros).length) return falha('Corrija as leituras destacadas para salvar.');
-      if (calc.desp.erro) return falha('Confira as despesas: ' + calc.desp.erro);
+      if (!calc) return falha('Não foi possível conferir a prestação. Feche e abra de novo.');
+      if (Object.keys(calc.erros).length) return falhaEm(2, 'Corrija as leituras destacadas para salvar.');
+      if (calc.desp.erro) { f.despTocada = true; return falhaEm(3, 'Confira as despesas: ' + calc.desp.erro); }
       const r = calc.r;
       if (salva) {
         // O negativo desta prestação passa para a seguinte: numa prestação anterior ele não pode mudar
         const idx = st.prestacoes.findIndex(p => p.uid === salva.uid);
         const seguinte = st.prestacoes.slice(0, idx).filter(p => !ehHistorico(p)).pop();
         if (seguinte && r.negativoNovo !== (Number(salva.negativo_novo) || 0)) {
-          return falha(`Esta alteração muda o negativo que passa para a prestação de ${dataBR(seguinte.data)} `
+          return falhaEm(3, `Esta alteração muda o negativo que passa para a prestação de ${dataBR(seguinte.data)} `
             + `(de ${brl(salva.negativo_novo)} para ${brl(r.negativoNovo)}). Numa prestação anterior, a despesa só pode mudar se o negativo continuar igual.`);
         }
       }
@@ -1595,6 +1682,7 @@
       } catch (_) {}
 
       st.tentouSalvar = false;
+      st.formAberto = false;
       await carregarDoPonto();
       await atualizarMapa();
       novoFormulario();
@@ -1981,6 +2069,7 @@
         if (!d) return;
         d[cd] = cd === 'valorTxt' ? mascarar(e.target) : e.target.value;
         st.form.despTocada = true;
+        st.form.sujo = true;
         recalcular();
         return;
       }
@@ -1990,6 +2079,7 @@
       if (!l) return;
       l[campo] = mascarar(e.target);
       l.tocado = true;
+      st.form.sujo = true;
       recalcular();
     });
     root.addEventListener('change', async e => {
@@ -1999,14 +2089,23 @@
         await carregarDoPonto();
         novoFormulario();
         render();
+      } else if (e.target.id === 'vgPontoForm') {
+        // Troca de gerente dentro do formulário (só na prestação nova)
+        st.pontoId = e.target.value;
+        st.tentouSalvar = false;
+        try { await carregarDoPonto(); } catch (err) { aviso('Não foi possível carregar: ' + (err.message || err), 'error'); }
+        novoFormulario();
+        st.etapa = 1;
+        render();
       } else if (e.target.id === 'vgPeriodo') {
         st.periodo = PERIODOS[e.target.value] ? e.target.value : '3m';
         render();
       } else if (e.target.id === 'vgData') {
         st.form.data = e.target.value;
+        st.form.sujo = true;
       } else if (e.target.hasAttribute('data-zerado')) {
         const l = st.form.linhas.find(x => x.maquina_id === e.target.getAttribute('data-id'));
-        if (l) { l.zerado = e.target.checked; recalcular(); }
+        if (l) { l.zerado = e.target.checked; st.form.sujo = true; recalcular(); }
       }
     });
     root.addEventListener('click', e => {
@@ -2039,17 +2138,24 @@
       'despesa-nova': () => {
         if (!st.form || st.form.modo === 'ver') return;
         (st.form.despesas ||= []).push({ id: novoId(), descricao: '', valorTxt: '' });
+        st.form.sujo = true;
         redesenharDespesas(true);
       },
       'despesa-remover': () => {
         if (!st.form) return;
         st.form.despesas = (st.form.despesas || []).filter(d => d.id !== id);
+        st.form.sujo = true;
         redesenharDespesas(false);
       },
       'pagamento-novo': () => abrirDialogoPagamento(null),
       'pagamento-editar': () => abrirDialogoPagamento(id),
       'pagamento-excluir': () => excluirPagamento(id),
       'salvar': salvarPrestacao,
+      'form-abrir': abrirFormulario,
+      'form-fechar': fecharFormulario,
+      'etapa': () => irEtapa(id),
+      'etapa-proxima': proximaEtapa,
+      'etapa-voltar': () => irEtapa(st.etapa - 1),
       'form-novo': () => { st.tentouSalvar = false; novoFormulario(); render(); },
       'prest-abrir': () => abrirPrestacao(id),
       'prest-excluir': () => excluirPrestacao(id),
@@ -2070,6 +2176,7 @@
   }
   async function recarregar() {
     st.erroSetup = '';
+    st.formAberto = false;
     try {
       await carregarPontos();
       await carregarDoPonto();
@@ -2084,7 +2191,65 @@
     try { await carregarDoPonto(); } catch (err) { aviso('Não foi possível carregar: ' + (err.message || err), 'error'); }
     novoFormulario();
     render();
-    document.getElementById('vgFormCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('vgMapaGer')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ---------- formulário em etapas ----------
+  function abrirFormulario() {
+    if (!st.pontos.length || !podeEditar()) return;
+    st.tentouSalvar = false;
+    novoFormulario();
+    st.formAberto = true;
+    st.etapa = 1;
+    render();
+  }
+  function fecharFormulario() {
+    const f = st.form;
+    if (f && f.modo !== 'ver' && f.sujo && !confirm('Fechar sem salvar? O que foi digitado nesta prestação será perdido.')) return;
+    st.formAberto = false;
+    st.tentouSalvar = false;
+    novoFormulario();
+    render();
+  }
+  function irEtapa(n) {
+    st.etapa = Math.min(Math.max(1, Number(n) || 1), ETAPAS.length);
+    render();
+    document.querySelector('#vgRoot .vg-ov-corpo')?.scrollTo(0, 0);
+  }
+  // Confere a etapa antes de seguir; devolve a mensagem de erro ('' se estiver tudo certo)
+  function conferirEtapa(n) {
+    const f = st.form;
+    if (!f || f.modo === 'ver') return '';
+    if (n === 1) {
+      if (!pontoAtual()) return 'Selecione o gerente.';
+      if (!f.linhas.length) return 'Este gerente não tem video game ativo. Cadastre no menu Prestações → Cadastro video game.';
+      if (f.trava) return '';
+      const d = document.getElementById('vgData')?.value || '';
+      if (!d) return 'Informe a data da leitura.';
+      f.data = d;
+      const ultima = st.prestacoes[0];
+      if (f.modo === 'nova' && ultima && d <= dia(ultima.data)) return `A data precisa ser depois da última prestação deste gerente (${dataBR(ultima.data)}).`;
+      const penultima = st.prestacoes[1];
+      if (f.modo === 'editar' && penultima && d <= dia(penultima.data)) return `A data precisa ser depois da prestação anterior (${dataBR(penultima.data)}).`;
+      const m = f.linhas.map(l => st.maquinas.find(x => x.id === l.maquina_id)).find(x => x?.instalada_em && d < dia(x.instalada_em));
+      if (m) return `A data da leitura é anterior à instalação de ${m.nome} (${dataBR(m.instalada_em)}).`;
+      return '';
+    }
+    if (n === 2 && !f.trava && Object.keys(avaliarLinhas().erros).length) {
+      st.tentouSalvar = true;
+      recalcular();
+      return 'Preencha ou corrija as leituras destacadas.';
+    }
+    if (n === 3) {
+      const { erro } = avaliarDespesas();
+      if (erro) { f.despTocada = true; recalcular(); return erro; }
+    }
+    return '';
+  }
+  function proximaEtapa() {
+    const erro = conferirEtapa(st.etapa);
+    if (erro) { definir(document.getElementById('vgMsg'), erro); return; }
+    irEtapa(st.etapa + 1);
   }
   async function recarregarCadastro() {
     st.erroSetup = '';

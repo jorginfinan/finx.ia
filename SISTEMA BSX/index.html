@@ -10,15 +10,16 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="css/app.css?v=20261117d">
-  <link rel="stylesheet" href="css/system-redesign.css?v=20261117d">
-  <link rel="stylesheet" href="css/mobile.css?v=20261117d">
-  <link rel="stylesheet" href="css/mobile-fixes.css?v=20261117d">
-  <link rel="stylesheet" href="css/dashboard-mobile-fix.css?v=20261117d">
-  <link rel="stylesheet" href="css/dashboard-redesign.css?v=20261117d">
-  <link rel="stylesheet" href="css/analise-gerente-redesign.css?v=20261117d">
-  <link rel="stylesheet" href="css/tooltips.css?v=20261117d">
-  <link rel="stylesheet" href="css/tema-video-game.css?v=20261117d">
+  <link rel="stylesheet" href="css/app.css?v=20261117e">
+  <link rel="stylesheet" href="css/system-redesign.css?v=20261117e">
+  <link rel="stylesheet" href="css/mobile.css?v=20261117e">
+  <link rel="stylesheet" href="css/mobile-fixes.css?v=20261117e">
+  <link rel="stylesheet" href="css/dashboard-mobile-fix.css?v=20261117e">
+  <link rel="stylesheet" href="css/dashboard-redesign.css?v=20261117e">
+  <link rel="stylesheet" href="css/analise-gerente-redesign.css?v=20261117e">
+  <link rel="stylesheet" href="css/tooltips.css?v=20261117e">
+  <link rel="stylesheet" href="css/tema-video-game.css?v=20261117e">
+  <link rel="stylesheet" href="css/seletor-topo.css?v=20261117e">
   <style>
     /* Abas de periodicidade Semanal/Mensal */
     .tab-btn { transition: all 0.15s ease; }
@@ -26,16 +27,6 @@
     .tab-btn.active {
       color: #2563eb !important;
       border-bottom-color: #2563eb !important;
-    }
-    /* Seletor de ramo ao lado do seletor de empresa */
-    .ramo-switcher[hidden] { display: none !important; }
-    #ramoSelect { width: 150px; min-width: 0 !important; }
-    @media (max-width: 900px) {
-      /* No celular o ramo aparece pelo ícone (leão, caça-níquel ou bola); a lista mostra os nomes */
-      #ramoSwitcher .company-switcher-icon { display: flex !important; padding: 8px 2px 8px 10px; border-right: 0; }
-      #ramoSelect { width: 30px; padding: 10px 18px 10px 2px !important; color: transparent !important; background-position: right 7px center !important; }
-      #ramoSelect option { color: var(--sb-fg); }
-      .topbar:has(#ramoSwitcher:not([hidden])) { gap: 6px !important; }
     }
   </style>
 
@@ -426,6 +417,8 @@
   window.renderCompanyUI = render;
 })();
 </script>
+        <!-- Seletores do topo (ramo e empresa) em menu próprio; carrega aqui para aparecer na hora -->
+        <script src="js/seletor-topo.js?v=20261117e"></script>
         
 
     </header>
@@ -3176,45 +3169,45 @@ function pgDivAddFromForm(){
 
 <!-- JS externo -->
 
-<script src="js/utils.js?v=20261117d"></script>
-<script src="js/empresa-shim.js?v=20261117d"></script>
-<script src="js/auth-rbac.js?v=20261117d" ></script>
-<script src="js/api-supabase.js?v=20261117d"></script>
-<script src="js/prestacoes-supabase.js?v=20261117d" defer></script>
-<script src="js/supabase-init.js?v=20261117d"></script>
-<script src="js/config-supabase.js?v=20261117d"></script>
-<script src="js/auth-supabase-adapter.js?v=20261117d"></script>
-<script src="js/sync-manager.js?v=20261117d" defer></script>
-<script src="js/nav.js?v=20261117d"></script>
-<script src="js/core.js?v=20261117d" defer></script>
-<script src="js/gerentes.js?v=20261117d"></script>
-<script src="js/fichas.js?v=20261117d" defer></script>
-<script src="js/maquinas.js?v=20261117d" defer></script>
-<script src="js/estoque.js?v=20261117d" defer></script>
-<script src="js/pecas.js?v=20261117d" defer></script>
-<script src="js/bobinas.js?v=20261117d" defer></script>
-<script src="js/empresas-page.js?v=20261117d" defer></script>
-<script src="js/ramo-empresa.js?v=20261117d" defer></script>
-<script src="js/mapa.js?v=20261117d" defer></script>
-<script src="js/tooltips.js?v=20261117d" defer></script>
-<script src="js/saldo-acumulado.js?v=20261117d"></script>
-<script src="js/saldo-acumulado-ui.js?v=20261117d"></script>
-<script src="ajuste-saldo-manual.js?v=20261117d"></script>
-<script src="js/prestacoes.js?v=20261117d" defer></script>
-<script src="js/relatorios.js?v=20261117d" defer></script>
-<script src="js/financeiro.js?v=20261117d" defer></script>
-<script src="js/despesas.js?v=20261117d" defer></script>
-<script src="js/video-game.js?v=20261117d" defer></script>
-<script src="js/dashboard.js?v=20261117d" defer></script>
-<script src="js/users-page.js?v=20261117d" defer></script>
-<script src="js/auth.js?v=20261117d" defer></script>
-<script src="js/boot.js?v=20261117d" defer></script>
-<script src="js/ai.js?v=20261117d" defer></script>
-<script src="js/audit-log.js?v=20261117d"></script>
-<script src="js/audit-auto.js?v=20261117d"></script>
-<script src="js/historico.js?v=20261117d" defer></script>
-<script src="js/analise-gerente.js?v=20261117d"></script>
-<script src="js/tema-sazonal.js?v=20261117d"></script>
+<script src="js/utils.js?v=20261117e"></script>
+<script src="js/empresa-shim.js?v=20261117e"></script>
+<script src="js/auth-rbac.js?v=20261117e" ></script>
+<script src="js/api-supabase.js?v=20261117e"></script>
+<script src="js/prestacoes-supabase.js?v=20261117e" defer></script>
+<script src="js/supabase-init.js?v=20261117e"></script>
+<script src="js/config-supabase.js?v=20261117e"></script>
+<script src="js/auth-supabase-adapter.js?v=20261117e"></script>
+<script src="js/sync-manager.js?v=20261117e" defer></script>
+<script src="js/nav.js?v=20261117e"></script>
+<script src="js/core.js?v=20261117e" defer></script>
+<script src="js/gerentes.js?v=20261117e"></script>
+<script src="js/fichas.js?v=20261117e" defer></script>
+<script src="js/maquinas.js?v=20261117e" defer></script>
+<script src="js/estoque.js?v=20261117e" defer></script>
+<script src="js/pecas.js?v=20261117e" defer></script>
+<script src="js/bobinas.js?v=20261117e" defer></script>
+<script src="js/empresas-page.js?v=20261117e" defer></script>
+<script src="js/ramo-empresa.js?v=20261117e" defer></script>
+<script src="js/mapa.js?v=20261117e" defer></script>
+<script src="js/tooltips.js?v=20261117e" defer></script>
+<script src="js/saldo-acumulado.js?v=20261117e"></script>
+<script src="js/saldo-acumulado-ui.js?v=20261117e"></script>
+<script src="ajuste-saldo-manual.js?v=20261117e"></script>
+<script src="js/prestacoes.js?v=20261117e" defer></script>
+<script src="js/relatorios.js?v=20261117e" defer></script>
+<script src="js/financeiro.js?v=20261117e" defer></script>
+<script src="js/despesas.js?v=20261117e" defer></script>
+<script src="js/video-game.js?v=20261117e" defer></script>
+<script src="js/dashboard.js?v=20261117e" defer></script>
+<script src="js/users-page.js?v=20261117e" defer></script>
+<script src="js/auth.js?v=20261117e" defer></script>
+<script src="js/boot.js?v=20261117e" defer></script>
+<script src="js/ai.js?v=20261117e" defer></script>
+<script src="js/audit-log.js?v=20261117e"></script>
+<script src="js/audit-auto.js?v=20261117e"></script>
+<script src="js/historico.js?v=20261117e" defer></script>
+<script src="js/analise-gerente.js?v=20261117e"></script>
+<script src="js/tema-sazonal.js?v=20261117e"></script>
 
 
 

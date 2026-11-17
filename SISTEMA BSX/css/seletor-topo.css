@@ -1,0 +1,192 @@
+/* =====================================================================
+   SELETORES DO TOPO (ramo e empresa) — menu próprio do sistema
+   Montado pelo js/seletor-topo.js. Os <select> originais ficam escondidos.
+   Cores vêm das variáveis do tema (amarelo no JB, ciano no Video game).
+   ===================================================================== */
+
+.ramo-switcher[hidden] { display: none !important; }
+
+/* O botão novo ocupa o lugar do ícone + select nativos */
+.company-switcher.sx-on { padding: 0; }
+.company-switcher.sx-on > .company-switcher-icon,
+.company-switcher.sx-on > select { display: none !important; }
+
+/* Brilho de foco só quando navega pelo teclado (não fica "aceso" ao clicar) */
+.company-switcher.sx-on:focus-within {
+  border-color: var(--navy-3);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
+}
+.company-switcher.sx-on:hover,
+.company-switcher.sx-on.sx-aberto { border-color: var(--brand); }
+.company-switcher.sx-on:has(.sx-btn:focus-visible) {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-glow);
+}
+
+.sx-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 42px;
+  min-width: 0;
+  padding: 0 12px 0 6px;
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+  color: var(--sb-fg);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.sx-btn:focus { outline: none; }
+.company-switcher.sx-empresa .sx-btn { min-width: 160px; }
+.company-switcher.sx-ramo .sx-btn { min-width: 150px; }
+
+.sx-ico {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--brand-dim);
+  color: var(--brand);
+}
+.sx-emoji { font-size: 17px; line-height: 1; }
+
+.sx-txt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  flex: 1 1 auto;
+  line-height: 1.15;
+}
+.sx-cap {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--sb-fg-dim);
+}
+.sx-val {
+  max-width: 170px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--sb-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sx-seta {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--brand);
+  transition: transform 0.15s ease;
+}
+.sx-aberto .sx-seta { transform: rotate(180deg); }
+
+.sx-giro {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  border: 2px solid var(--brand-dim);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: sx-giro 0.7s linear infinite;
+}
+@keyframes sx-giro { to { transform: rotate(360deg); } }
+.sx-btn.sx-carregando { cursor: progress; }
+
+/* ---------- Menu aberto ---------- */
+.sx-menu {
+  position: fixed;
+  z-index: 3000;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  background: var(--navy);
+  border: 1px solid var(--navy-3);
+  border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(2, 6, 23, 0.35), 0 2px 8px rgba(2, 6, 23, 0.2);
+  color: var(--sb-fg);
+  animation: sx-entra 0.14s ease-out;
+}
+@keyframes sx-entra {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.sx-cab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--sb-fg-dim);
+}
+.sx-cab svg { color: var(--brand); }
+.sx-lista { display: flex; flex-direction: column; gap: 2px; }
+
+.sx-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.sx-item:hover,
+.sx-item:focus { background: rgba(255, 255, 255, 0.06); }
+.sx-item.sx-atual { background: var(--brand-dim); }
+.sx-item.sx-atual:focus { background: var(--brand-dim); }
+.sx-item:focus-visible { box-shadow: inset 0 0 0 1px var(--brand); }
+.sx-item[aria-disabled="true"] { cursor: not-allowed; opacity: 0.45; }
+.sx-item[aria-disabled="true"]:hover { background: transparent; }
+.sx-item .sx-ico { flex-basis: 34px; width: 34px; height: 34px; }
+.sx-item .sx-emoji { font-size: 18px; }
+.sx-item[aria-disabled="true"] .sx-ico { background: rgba(255, 255, 255, 0.05); color: var(--sb-fg-dim); }
+.sx-item-t {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--sb-fg);
+}
+.sx-item-s {
+  max-width: 100%;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--sb-fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sx-check { flex: 0 0 auto; margin-left: auto; color: var(--brand); }
+.sx-vazio { padding: 12px 10px; font-size: 13px; color: var(--sb-fg-dim); }
+
+/* ---------- Celular ---------- */
+@media (max-width: 900px) {
+  .topbar:has(#ramoSwitcher:not([hidden])) { gap: 6px !important; }
+  .sx-btn { height: 44px; gap: 7px; padding: 0 9px 0 6px; }
+  .company-switcher.sx-empresa .sx-btn,
+  .company-switcher.sx-ramo .sx-btn { min-width: 0; }
+  .sx-cap { display: none; }
+  /* Ramo: só o ícone (o nome aparece na lista) */
+  .company-switcher.sx-ramo .sx-txt { display: none; }
+  .company-switcher.sx-ramo .sx-btn { padding-right: 8px; gap: 5px; }
+  .sx-val { max-width: 34vw; }
+  .sx-item { padding: 10px; }
+}
+@media (max-width: 420px) {
+  .sx-val { max-width: 26vw; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sx-menu, .sx-seta, .sx-giro { animation: none; transition: none; }
+}

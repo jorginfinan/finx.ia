@@ -408,11 +408,15 @@ window.EMPRESA_EMOJI_OPTIONS = [
     } catch (_) { return []; }
   }
 
+  // O seletor (ramo + empresa, menu próprio) é montado pelo js/seletor-topo.js,
+  // que já mostra a última lista guardada assim que a página abre.
+  // Aqui só buscamos a lista atualizada no banco e repassamos para ele.
+  let tentativasVazias = 0;
   async function reloadSelector() {
     const sel = document.getElementById('empresaSelect');
     if (!sel) return;
     if (!window.SupabaseAPI?.empresas) {
-      return setTimeout(reloadSelector, 500);
+      return setTimeout(reloadSelector, 200);
     }
     // ⚠️  Não mexer no select se o usuário está interagindo com ele agora
     // (no mobile isso "cancela" o toque e a seleção não confirma).
@@ -422,7 +426,12 @@ window.EMPRESA_EMOJI_OPTIONS = [
     }
     try {
       const empresas = await window.SupabaseAPI.empresas.getAll({ ativasApenas: true });
-      if (!empresas.length) return;
+      if (!empresas.length) {
+        // A sessão do banco pode ainda estar subindo: tenta de novo algumas vezes
+        if (tentativasVazias++ < 5) setTimeout(reloadSelector, 1000);
+        return;
+      }
+      tentativasVazias = 0;
 
       // ✅ Filtra pelas empresas que o usuário tem acesso
       const permitidas = empresasPermitidas();
@@ -439,137 +448,53 @@ window.EMPRESA_EMOJI_OPTIONS = [
         if (!visiveis.length) return;
       }
 
-      const atual = (window.getCompany?.() || 'BSX').toUpperCase();
-      const fallback = window.EMPRESA_EMOJI_FALLBACK || {};
-
-      // ✅ Ramo (JB / Video game / Futebol): seletor ao lado, e a lista de empresas
-      // mostra só as do ramo da empresa atual. Sem a coluna ramo no banco, nada muda.
-      const temRamo = visiveis.some(e => e.ramo);
-      const empAtual = visiveis.find(e => String(e.nome || '').toUpperCase() === atual);
-      const ramoAtual = temRamo && empAtual ? ramoDe(empAtual) : null;
-      atualizarSeletorRamo(temRamo ? visiveis : [], ramoAtual, atual);
-      if (ramoAtual) visiveis = visiveis.filter(e => ramoDe(e) === ramoAtual);
-
-      // ✅ Gera a nova lista e SÓ substitui se o conjunto de opções mudou.
-      // Isso evita destruir o listener e resetar interações no mobile.
-      const novoHTML = visiveis.map(e => {
-        const nome = e.nome || '';
-        const emoji = e.emoji || fallback[nome.toUpperCase()] || '🏢';
-        const selected = nome.toUpperCase() === atual ? 'selected' : '';
-        return `<option value="${nome}" ${selected}>${emoji} ${nome}</option>`;
-      }).join('');
-
-      // Compara a lista de valores atual com a nova (rápido)
-      const atualValores = Array.from(sel.options).map(o => o.value).join('|');
-      const novaListaValores = visiveis.map(e => e.nome).join('|');
-
-      if (atualValores !== novaListaValores) {
-        sel.innerHTML = novoHTML;
-      }
-
-      // Ajusta visualmente qual está selecionada, sem disparar change
-      const currentIsVisible = visiveis.some(e => String(e.nome).toUpperCase() === atual);
-      if (!currentIsVisible && visiveis[0]) {
-        sel.value = visiveis[0].nome;
+      if (window.SeletorTopo) {
+        window.SeletorTopo.aplicarLista(visiveis);
+        window.SeletorTopo.salvarCache(visiveis);
       } else {
-        // Só ajusta se estiver diferente pra não disparar change no mobile
-        const alvo = visiveis.find(e => String(e.nome).toUpperCase() === atual)?.nome;
-        if (alvo && sel.value !== alvo) sel.value = alvo;
-      }
-
-      // ✅ Garante que o listener de change EXISTE
-      // (se por acaso foi perdido em algum re-render)
-      if (!sel.__empresasWired) {
-        sel.__empresasWired = true;
-        sel.addEventListener('change', (e) => {
-          const novaEmpresa = e.target.value;
-          if (!novaEmpresa) return;
-          try {
-            if (typeof window.setCompany === 'function') {
-              window.setCompany(novaEmpresa);
-            } else {
-              localStorage.setItem('CURRENT_COMPANY', novaEmpresa);
-              location.reload();
-            }
-          } catch (err) {
-            console.error('[EmpresasSelector] Erro ao trocar empresa:', err);
-          }
-        });
+        aplicarSemSeletor(sel, visiveis);
       }
     } catch (e) {
       console.warn('[EmpresasSelector] Falha:', e);
     }
   }
 
-  // ---------- Seletor de ramo ----------
-  const NOMES_RAMO = { JB: 'JB', VG: 'Video game', FUTEBOL: 'Futebol' };
-  // Ícones dos ramos: leão (JB), caça-níquel (Video game) e bola (Futebol).
-  // Fonte: Pinhead Map Icons (licença CC0, uso livre). Grade 15x15, preenchidos.
-  const ICONES_RAMO = {
-    JB: 'M8.39 3.89S7.68 5 7 5H4.5c-.68 0-1.3.41-1.77.86L.5 8c-.27.26-.49.77-.5 1c-.02.5 0 1 0 1s1 0 1-1v-.5l1-1h.5l.16.29s-.95 1.82-.95 3.53c-.01.68.68.68.68.68h.68s.34 0 0-.34l-.34-.34c0-.68.77-1.65 1.27-2.32c0 0 .02 1.16 0 2c-.01.41.27 1 .68 1h.68s.34 0 0-.34l-.34-.34c-.31-.57.48-2.82.48-2.82c1.27 0 1.5.5 3 .5l.36 2.32c.12.71.64.68.64.68H11c.34 0 .96-.31.34-.77L11 11V9c1.21-.17 2-1 2-2h1c.32 0 1 0 1-.5v-1l-1.7-1.68C12.54 3.08 12 2.5 11 2.5c-1.45 0-2.14.57-2.61 1.39',
-    VG: 'M8.57 0C9 0 9 .5 9 .5v1h.5c.5 0 .5.5.5.5h2c1 0 1 0 1 1v4.5s.5 0 .5.5h.5V4.5c-.37-.11-.5-.37-.5-.75c0-.37.38-.75.75-.75c.38 0 .75.38.75.75c0 .38-.17.61-.5.75v4.25c0 .25-.25.25-.25.25h-.75c0 .5-.5.5-.5.5V14c0 1 0 1-1 1H3c-1 0-1 0-1-1V3c0-1 0-1 1-1h2s0-.5.5-.5H6v-1s0-.5.5-.5zM10 13H5v1h5zm0-3H9v1h1zm-4 0H5v1h1zm2 0H7v1h1zm4-6H9.25v5H12zM8.82 4H6.13v5h2.69zM5.75 4H3v5h2.75zM7 .33c-.5 0-.5.17-.5.42v.75C6.75.75 7.25.5 8 .33zm2.5 4.42h.5c0 .25 1.38 0 1.38 0s.5 0 .25.25s-.75 2-.5 3H10c0-1.25.63-2.25.63-2.25s-.63-.25-.63 0h-.5zm-3.17 0h.5c0 .25 1.42 0 1.42 0s.5 0 .25.25s-.75 2-.5 3H6.83c0-1.25.67-2.25.67-2.25s-.67-.25-.67 0h-.5zm-3.08 0h.5c0 .25 1.38 0 1.38 0s.5 0 .25.25s-.75 2-.5 3H3.75c0-1.25.63-2.25.63-2.25s-.63-.25-.63 0h-.5z',
-    FUTEBOL: 'M7.5.75c4.06 0 6.75 3.39 6.75 6.75c0 3.65-2.89 6.62-6.51 6.75H7.5C3.77 14.25.75 11.23.75 7.5C.75 3.5 4.08.75 7.5.75m1.37 8.99H6.14l-1.08 1.41l.76 1.81c.53.16 1.1.25 1.68.25c.59 0 1.15-.09 1.69-.25l.76-1.81zm2.89-3.34l-1.75.58l-.75 2.33l1.13 1.48l1.96-.28c.51-.81.82-1.76.86-2.78zm-8.51 0L1.79 7.75c.05 1 .35 1.94.85 2.75l1.98.29l1.13-1.48L5 6.98zM9.5 2.15l-1.71.97v1.9l1.99 1.44l1.8-.6l.38-1.91c-.63-.8-1.48-1.43-2.46-1.8M3.05 3.93l.37 1.92l1.8.6l1.99-1.44V3.12L5.5 2.16a5.7 5.7 0 0 0-2.45 1.77'
-  };
-  window.iconeRamo = (ramo, tam = 16) =>
-    `<svg viewBox="0 0 15 15" width="${tam}" height="${tam}" fill="currentColor" aria-hidden="true"><path d="${ICONES_RAMO[ramo] || ICONES_RAMO.JB}"/></svg>`;
-  function mostrarIconeRamo(box, ramo) {
-    const ico = box?.querySelector('.company-switcher-icon');
-    if (!ico || ico.dataset.ramo === ramo) return;
-    ico.innerHTML = window.iconeRamo(ramo);
-    ico.dataset.ramo = ramo;
-    box.title = 'Ramo: ' + (NOMES_RAMO[ramo] || ramo);
-  }
-  const ramoDe = e => (NOMES_RAMO[e?.ramo] ? e.ramo : 'JB');
-  const CHAVE_ULTIMA = 'finx:ultimaEmpresa:';
-
-  function atualizarSeletorRamo(lista, ramoAtual, empresaAtual) {
-    const box = document.getElementById('ramoSwitcher');
-    const sel = document.getElementById('ramoSelect');
-    if (!box || !sel) return;
-    const ramos = ['JB', 'VG', 'FUTEBOL'].filter(r => lista.some(e => ramoDe(e) === r));
-    // Só aparece quando o usuário tem empresas de mais de um ramo
-    if (!ramoAtual || ramos.length < 2) { box.hidden = true; return; }
-    box.hidden = false;
-    const chaveLista = ramos.join('|');
-    if (sel.dataset.lista !== chaveLista) {
-      // Ramo sem empresa aparece desabilitado (fica disponível quando a empresa for criada)
-      sel.innerHTML = ['JB', 'VG', 'FUTEBOL'].map(r => ramos.includes(r)
-        ? `<option value="${r}">${NOMES_RAMO[r]}</option>`
-        : `<option value="${r}" disabled>${NOMES_RAMO[r]} (sem empresa)</option>`).join('');
-      sel.dataset.lista = chaveLista;
+  // Reserva: se o js/seletor-topo.js não carregar, a lista nativa continua funcionando
+  function aplicarSemSeletor(sel, visiveis) {
+    const atual = (window.getCompany?.() || 'BSX').toUpperCase();
+    const fallback = window.EMPRESA_EMOJI_FALLBACK || {};
+    const novoHTML = visiveis.map(e => {
+      const nome = e.nome || '';
+      const emoji = e.emoji || fallback[nome.toUpperCase()] || '🏢';
+      const selected = nome.toUpperCase() === atual ? 'selected' : '';
+      return `<option value="${nome}" ${selected}>${emoji} ${nome}</option>`;
+    }).join('');
+    if (Array.from(sel.options).map(o => o.value).join('|') !== visiveis.map(e => e.nome).join('|')) {
+      sel.innerHTML = novoHTML;
     }
-    if (document.activeElement !== sel && sel.value !== ramoAtual) sel.value = ramoAtual;
-    mostrarIconeRamo(box, ramoAtual);
-    // Lembra a última empresa usada em cada ramo, para voltar nela
-    try { localStorage.setItem(CHAVE_ULTIMA + ramoAtual, empresaAtual); } catch (_) {}
-    sel.__lista = lista;
-    sel.__ramoAtual = ramoAtual;
-    if (sel.__wired) return;
-    sel.__wired = true;
-    sel.addEventListener('change', () => {
-      const novo = sel.value;
-      if (novo === sel.__ramoAtual) return;
-      const opcoes = (sel.__lista || []).filter(e => ramoDe(e) === novo);
-      if (!opcoes.length) { sel.value = sel.__ramoAtual; return; }
-      let ultima = '';
-      try { ultima = String(localStorage.getItem(CHAVE_ULTIMA + novo) || '').toUpperCase(); } catch (_) {}
-      const alvo = opcoes.find(e => String(e.nome || '').toUpperCase() === ultima) || opcoes[0];
-      mostrarIconeRamo(box, novo);
-      try {
-        if (typeof window.setCompany === 'function') window.setCompany(alvo.nome);
-        else { localStorage.setItem('CURRENT_COMPANY', alvo.nome); location.reload(); }
-      } catch (err) {
-        console.error('[EmpresasSelector] Erro ao trocar de ramo:', err);
-        sel.value = sel.__ramoAtual;
-      }
-    });
+    const alvo = visiveis.find(e => String(e.nome).toUpperCase() === atual)?.nome;
+    if (!alvo && visiveis[0]) sel.value = visiveis[0].nome;
+    else if (alvo && sel.value !== alvo) sel.value = alvo;
+    if (!sel.__empresasWired) {
+      sel.__empresasWired = true;
+      sel.addEventListener('change', (e) => {
+        const novaEmpresa = e.target.value;
+        if (!novaEmpresa) return;
+        try {
+          if (typeof window.setCompany === 'function') window.setCompany(novaEmpresa);
+          else { localStorage.setItem('CURRENT_COMPANY', novaEmpresa); location.reload(); }
+        } catch (err) {
+          console.error('[EmpresasSelector] Erro ao trocar empresa:', err);
+        }
+      });
+    }
   }
 
   window.__reloadEmpresaSelector = reloadSelector;
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(reloadSelector, 1000));
+    document.addEventListener('DOMContentLoaded', reloadSelector);
   } else {
-    setTimeout(reloadSelector, 1000);
+    reloadSelector();
   }
 })();

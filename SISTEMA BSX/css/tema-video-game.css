@@ -1,103 +1,60 @@
 /* =====================================================================
-   TEMA VIDEO GAME (caça-níquel, discreto)
+   TEMA VIDEO GAME (painel de operação)
    Só vale quando a empresa selecionada é do ramo Video game: <body class="ramo-vg">
    (a classe é colocada pelo js/ramo-empresa.js). No JB nada muda.
-   Cores: roxo profundo do gabinete + dourado dos detalhes da máquina.
+   As páginas do video game (prestação e cadastro) ficam no tema escuro;
+   o resto do sistema só ganha os detalhes em azul-ciano.
    ===================================================================== */
 
 body.ramo-vg {
-  --navy: #2a0d3a;
-  --navy-2: #3b1350;
-  --navy-3: #56236e;
-  --navy-4: #74428c;
-  --brand: #f2b705;
-  --brand-2: #fcd34d;
-  --brand-dim: rgba(242, 183, 5, 0.12);
-  --brand-glow: rgba(252, 211, 77, 0.28);
-  --page-bg: #f6f2f8;
-  --line: #ebe3f0;
-  --line-2: #d9cbe2;
-  --sb-bg: #1e0a29;
-  --sb-border: #361348;
-  --sb-fg: #f3eaf8;
-  --sb-fg-dim: #c9b3d8;
-  --shadow: 0 4px 24px rgba(42, 13, 58, 0.08);
-  --shadow-hover: 0 8px 32px rgba(42, 13, 58, 0.14);
+  --navy: #0b1220;
+  --navy-2: #16213a;
+  --navy-3: #24324f;
+  --navy-4: #3b4a68;
+  --brand: #22d3ee;
+  --brand-2: #67e8f9;
+  --brand-dim: rgba(34, 211, 238, 0.12);
+  --brand-glow: rgba(34, 211, 238, 0.25);
+  --sb-bg: #090d16;
+  --sb-border: #1e2a40;
+  --sb-fg: #e6edf7;
+  --sb-fg-dim: #8a9bb5;
 }
 
 /* ---------- Menu lateral ---------- */
 body.ramo-vg #sidebar {
-  background: linear-gradient(180deg, #2a0d3a 0%, var(--sb-bg) 40%) !important;
+  background: linear-gradient(180deg, #0d1320 0%, #090d16 45%) !important;
 }
 body.ramo-vg #sidebar .sb-top {
-  border-bottom: 1px solid rgba(242, 183, 5, 0.22);
+  border-bottom: 1px solid rgba(34, 211, 238, 0.18);
 }
 body.ramo-vg #sidebar .logo::after {
-  content: '🎰 VIDEO GAME';
+  content: 'VIDEO GAME · OPERAÇÃO';
   display: block;
-  margin-top: 5px;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 2.4px;
-  color: var(--brand-2);
+  margin-top: 6px;
+  font: 700 9.5px/1 "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 2px;
+  color: #22d3ee;
   text-shadow: none;
 }
 body.ramo-vg.sidebar-compact #sidebar .logo::after {
-  content: '🎰';
+  content: 'VG';
   letter-spacing: 0;
-  font-size: 14px;
+  font-size: 11px;
 }
 body.ramo-vg #sidebar .sb-item:hover,
 body.ramo-vg #sidebar .sb-subitem:hover,
 body.ramo-vg #sidebar .sb-group:hover {
-  background: rgba(242, 183, 5, 0.07) !important;
+  background: rgba(34, 211, 238, 0.06) !important;
 }
 body.ramo-vg #sidebar .sb-item.active,
 body.ramo-vg #sidebar .sb-subitem.active {
-  background: rgba(242, 183, 5, 0.12) !important;
-  box-shadow: inset 3px 0 0 var(--brand) !important;
+  background: rgba(34, 211, 238, 0.10) !important;
+  box-shadow: inset 3px 0 0 #22d3ee !important;
+  color: #67e8f9 !important;
 }
 
-/* ---------- Barra do topo: filete dourado ---------- */
+/* ---------- Barra do topo: filete ciano ---------- */
 body.ramo-vg .topbar {
-  box-shadow: inset 0 -2px 0 var(--brand) !important;
-}
-
-/* ---------- Páginas ---------- */
-body.ramo-vg #content h2 {
-  color: var(--navy);
-}
-
-/* Cartões do video game com acabamento dourado, como o painel da máquina */
-body.ramo-vg .vg-card {
-  border-top: 3px solid var(--brand);
-}
-body.ramo-vg .vg-kpi {
-  background: linear-gradient(180deg, #fffbeb 0%, #ffffff 75%);
-  border-color: #f1e2ae;
-}
-body.ramo-vg .vg-kpi .vg-v {
-  color: var(--navy);
-}
-body.ramo-vg .vg-maq {
-  background: #fbf8fd;
-  border-color: #ece2f2;
-}
-
-/* Formulário da prestação (questionário) */
-body.ramo-vg .vg-ov-topo {
-  border-top: 4px solid var(--brand);
-}
-body.ramo-vg .vg-ov {
-  background: rgba(30, 10, 41, 0.55);
-}
-
-/* Datas das prestações no mapa */
-body.ramo-vg .vg-dt {
-  background: #f5ecfb;
-  color: var(--navy-3);
-}
-body.ramo-vg .vg-dt.cad {
-  background: #f3f4f6;
-  color: #6b7280;
+  box-shadow: inset 0 -1px 0 rgba(34, 211, 238, 0.7) !important;
 }

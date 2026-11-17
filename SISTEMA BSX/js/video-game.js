@@ -15,7 +15,8 @@
     pontos: [], pontoId: null, maquinas: [], prestacoes: [],
     form: null, salvando: false, erroSetup: '',
     cadPronto: false, contagem: {}, listaGerentes: [], imagem: null, salvandoCad: false,
-    todas: [], erroMapa: '', periodo: '3m', formAberto: false, etapa: 1
+    todas: [], erroMapa: '', periodo: '3m', formAberto: false, etapa: 1,
+    maqTodas: [], atualizadoEm: '', decAnt: {}, abertos: new Set(), filtro: 'todos', popMaq: null, pgHist: []
   };
 
   // ---------- helpers ----------
@@ -132,10 +133,11 @@
   // Quantos video games ativos cada gerente tem (só para a tela de cadastro)
   async function carregarContagem() {
     const id = await empresaId();
-    const { data, error } = await client().from('vg_maquinas').select('ponto_id').eq('empresa_id', id).eq('ativo', true);
+    const { data, error } = await client().from('vg_maquinas').select('*').eq('empresa_id', id).order('created_at');
     if (error) throw error;
+    st.maqTodas = data || [];
     st.contagem = {};
-    (data || []).forEach(m => { st.contagem[m.ponto_id] = (st.contagem[m.ponto_id] || 0) + 1; });
+    st.maqTodas.filter(m => m.ativo).forEach(m => { st.contagem[m.ponto_id] = (st.contagem[m.ponto_id] || 0) + 1; });
   }
   // Todas as prestações da empresa (para o mapa de prestações)
   async function carregarMapa() {
@@ -146,6 +148,8 @@
     if (error) throw error;
     st.todas = data || [];
     await carregarContagem();
+    const agora = new Date();
+    st.atualizadoEm = `${pad2(agora.getHours())}:${pad2(agora.getMinutes())}`;
   }
   async function atualizarMapa() {
     st.erroMapa = '';
@@ -260,145 +264,326 @@
     const css = document.createElement('style');
     css.id = 'vg-styles';
     css.textContent = `
+      /* ===== VIDEO GAME · painel de operação (tema escuro) ===== */
+      .vg-tech,dialog.vg-dlg{--vt-bg:#090d16;--vt-bg2:#0d1320;--vt-painel:#111a2b;--vt-painel2:#0f1726;--vt-borda:#1e2a40;--vt-borda2:#2a3a57;
+        --vt-txt:#e6edf7;--vt-dim:#8a9bb5;--vt-fraco:#5b6b85;--vt-ciano:#22d3ee;--vt-violeta:#a78bfa;--vt-verde:#34d399;--vt-verm:#f87171;--vt-ambar:#fbbf24;
+        --vt-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+        --card-bg:#111a2b;--page-bg:#0d1320;--line:#1e2a40;--line-2:#2a3a57;--text:#e6edf7;--text-dim:#8a9bb5;--text-muted:#5b6b85;
+        --navy:#16213a;--navy-2:#1e2c4a;--navy-3:#2a3a57;--brand:#22d3ee;--brand-2:#67e8f9;--brand-dim:rgba(34,211,238,.15);color:var(--vt-txt)}
+      #content:has(> #pageVideoGame:not(.hidden)),#content:has(> #pageVgCadastro:not(.hidden)){background-color:#090d16 !important;
+        background-image:linear-gradient(rgba(34,211,238,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,.035) 1px,transparent 1px) !important;background-size:32px 32px !important}
+      .vg-tech h2,.vg-tech h3,.vg-tech h4{color:var(--vt-txt)}
+      .vg-tech input:not([type=checkbox]):not([type=radio]),.vg-tech select,.vg-tech textarea,
+      dialog.vg-dlg input:not([type=checkbox]):not([type=radio]),dialog.vg-dlg select,dialog.vg-dlg textarea{background:var(--vt-bg2) !important;color:var(--vt-txt) !important;border:1px solid var(--vt-borda2) !important;border-radius:9px !important;color-scheme:dark}
+      .vg-tech input:focus,.vg-tech select:focus,.vg-tech textarea:focus,dialog.vg-dlg input:focus,dialog.vg-dlg select:focus,dialog.vg-dlg textarea:focus{border-color:var(--vt-ciano) !important;box-shadow:0 0 0 3px rgba(34,211,238,.15) !important;outline:none !important}
+      .vg-tech input:disabled,.vg-tech select:disabled{opacity:.6}
+      .vg-tech input[type=checkbox],dialog.vg-dlg input[type=checkbox]{accent-color:#22d3ee}
+      .vg-tech table,dialog.vg-dlg table{background:transparent !important}
+      .vg-tech thead th,dialog.vg-dlg thead th{background:var(--vt-painel2) !important;color:var(--vt-fraco) !important;border-bottom:1px solid var(--vt-borda) !important;font-weight:600 !important;letter-spacing:.7px !important}
+      .vg-tech tbody td,dialog.vg-dlg tbody td{background:transparent !important;border-bottom:1px solid rgba(30,42,64,.8) !important;color:var(--vt-txt) !important}
+      .vg-tech tbody tr:nth-child(even) td,dialog.vg-dlg tbody tr:nth-child(even) td{background:rgba(15,23,38,.55) !important}
+      .vg-tech tbody tr:hover td,dialog.vg-dlg tbody tr:hover td{background:rgba(34,211,238,.05) !important}
+      .vg-tech tfoot td,dialog.vg-dlg tfoot td{background:var(--vt-painel2) !important;color:var(--vt-txt) !important;border-top:1px solid var(--vt-borda2) !important}
+      .vg-tech .btn.primary,dialog.vg-dlg .btn.primary{background:linear-gradient(135deg,#22d3ee,#60a5fa) !important;color:#06111f !important}
+      dialog.vg-dlg{background:var(--vt-painel);color:var(--vt-txt);border:1px solid var(--vt-borda2) !important}
+      dialog.vg-dlg::backdrop{background:rgba(5,8,15,.72)}
+      dialog.vg-dlg .card{background:var(--vt-painel) !important;border-color:var(--vt-borda) !important;box-shadow:none !important;color:var(--vt-txt)}
+      dialog.vg-dlg .form-grid label{color:var(--vt-dim) !important}
+
+      /* elementos comuns (cadastro, diálogos e formulário) */
       .vg-barra{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px}
-      .vg-barra label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:#6b7280;min-width:240px}
-      .vg-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:14px}
+      .vg-barra label{display:flex;flex-direction:column;gap:4px;font-size:11px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--vt-fraco);min-width:240px}
+      .vg-card{background:var(--vt-painel);border:1px solid var(--vt-borda);border-radius:14px;padding:16px;margin-bottom:14px}
       .vg-topo{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px}
-      .vg-titulo{font-size:16px;font-weight:700;color:#111827}
-      .vg-sub{font-size:12px;color:#6b7280}
-      .vg-maq{background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin-bottom:10px}
+      .vg-titulo{font-size:16px;font-weight:700;color:var(--vt-txt)}
+      .vg-sub{font-size:12px;color:var(--vt-dim)}
+      .vg-maq{background:var(--vt-painel2);border:1px solid var(--vt-borda);border-radius:12px;padding:12px;margin-bottom:10px}
       .vg-maq-topo{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;font-weight:600;font-size:14px}
-      .vg-grade{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:center;font-size:13px}
-      .vg-grade input{width:100%;min-width:0;padding:6px 8px;box-sizing:border-box}
-      .vg-num{text-align:right;font-variant-numeric:tabular-nums}
-      .vg-rot{font-size:11px;color:#6b7280;font-weight:600}
-      .vg-rodape{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:13px}
-      .vg-erro{color:#b91c1c;font-size:12px;margin-top:6px}
-      .vg-zerado{display:flex;gap:6px;align-items:center;font-size:12px;margin-top:4px;color:#92400e}
+      .vg-maq-topo .vg-ico{width:16px;height:16px;color:var(--vt-ciano);vertical-align:-3px;margin-right:6px}
+      .vg-num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--vt-mono)}
+      .vg-erro{color:var(--vt-verm);font-size:12px;margin-top:6px}
+      .vg-erro:empty{display:none}
+      .vg-zerado{display:flex;gap:6px;align-items:center;font-size:12px;margin-top:8px;color:var(--vt-ambar)}
       .vg-maq-btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-      .vg-aviso{background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0;padding:8px 10px;font-size:13px;color:#92400e;margin:0 0 10px}
+      .vg-aviso{background:rgba(251,191,36,.08);border-left:3px solid var(--vt-ambar);border-radius:0;padding:8px 10px;font-size:13px;color:#fcd34d;margin:0 0 10px}
       .vg-com-linha{display:grid;grid-template-columns:minmax(0,1fr) 90px auto;gap:8px;align-items:center;margin-bottom:8px}
       .vg-com-linha input{width:100%;min-width:0;box-sizing:border-box}
-      .vg-desp-linha{display:grid;grid-template-columns:minmax(0,1fr) 130px auto;gap:8px;align-items:center;margin-bottom:8px}
-      .vg-desp-linha input{width:100%;min-width:0;box-sizing:border-box;padding:6px 8px}
-      .vg-desp-linha input[data-desp="valorTxt"]{text-align:right}
+      .vg-desp-linha{display:grid;grid-template-columns:minmax(0,1fr) 140px auto;gap:8px;align-items:center;margin-bottom:8px}
+      .vg-desp-linha input{width:100%;min-width:0;box-sizing:border-box;padding:8px 10px}
+      .vg-desp-linha input[data-desp="valorTxt"]{text-align:right;font-family:var(--vt-mono)}
       .vg-coms{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:8px 0 12px}
-      .vg-com{background:#f9fafb;border-radius:10px;padding:10px 12px}
-      .vg-linha{display:flex;justify-content:space-between;gap:12px;padding:5px 0;font-size:14px}
-      .vg-total{border-top:1px solid #e5e7eb;margin-top:4px;padding-top:9px;font-weight:700;font-size:15px}
+      .vg-com{background:var(--vt-painel2);border:1px solid var(--vt-borda);border-radius:10px;padding:8px 10px}
+      .vg-com div:last-child{font-family:var(--vt-mono)}
+      .vg-linha{display:flex;justify-content:space-between;gap:12px;padding:5px 0;font-size:13.5px;color:var(--vt-txt)}
+      .vg-linha .vg-num{white-space:nowrap}
+      .vg-total{border-top:1px solid var(--vt-borda);margin-top:4px;padding-top:9px;font-weight:700;font-size:15px}
       .vg-acoes{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:14px}
       .vg-tabela{overflow-x:auto}
-      .vg-chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;background:#f3f4f6;color:#374151}
-      .vg-chip.ok{background:#dcfce7;color:#166534}
-      .vg-chip.esp{background:#fef3c7;color:#92400e}
-      .vg-vazio{text-align:center;color:#6b7280;padding:28px 12px}
-      .vg-setup{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:12px;font-size:14px;margin-bottom:14px}
-      #vgRoot [hidden],dialog.vg-dlg [hidden]{display:none !important}
-      .vg-so-celular{display:none}
-      dialog.vg-dlg{border:none;border-radius:14px;padding:0;width:min(560px,94vw)}
+      .vg-chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;background:#1a2438;color:#c7d2e3}
+      .vg-chip.ok{background:rgba(52,211,153,.14);color:var(--vt-verde)}
+      .vg-chip.esp{background:rgba(251,191,36,.14);color:var(--vt-ambar)}
+      .vg-vazio{text-align:center;color:var(--vt-dim);padding:28px 12px}
+      .vg-setup{background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.35);color:#fca5a5;border-radius:10px;padding:12px;font-size:14px;margin-bottom:14px}
+      #vgRoot [hidden],#vgCadRoot [hidden],dialog.vg-dlg [hidden],#vgPop [hidden]{display:none !important}
+      dialog.vg-dlg{border-radius:14px;padding:0;width:min(560px,94vw)}
       dialog.vg-dlg form{margin:0;padding-top:16px !important}
-      .vg-det{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:13px;color:#374151}
-      .vg-det b{font-weight:600;color:#111827}
+      .vg-det{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:13px;color:var(--vt-dim)}
+      .vg-det b{font-weight:600;color:var(--vt-txt)}
       .vg-coms-cad{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
       details.vg-ret{margin-top:10px}
-      details.vg-ret summary{cursor:pointer;font-size:13px;font-weight:600;color:#374151;padding:4px 0}
-      .vg-ret-item{font-size:13px;color:#4b5563;padding:6px 0;border-top:1px solid #f3f4f6}
-      .vg-dica{font-size:13px;color:#4b5563;background:#f9fafb;border:1px dashed #d1d5db;border-radius:10px;padding:10px 12px;margin-top:6px}
+      details.vg-ret summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--vt-dim);padding:4px 0}
+      .vg-ret-item{font-size:13px;color:var(--vt-dim);padding:6px 0;border-top:1px solid var(--vt-borda)}
+      .vg-ret-item .vg-ico{width:14px;height:14px;vertical-align:-2px;color:var(--vt-fraco)}
       dialog#dlgVgImagem{width:min(640px,96vw)}
-      .vg-img-prev{display:block;width:100%;max-height:68vh;object-fit:contain;border:1px solid #e5e7eb;border-radius:8px;background:#f8fafc}
+      .vg-img-prev{display:block;width:100%;max-height:68vh;object-fit:contain;border:1px solid var(--vt-borda);border-radius:8px;background:var(--vt-bg2)}
       .vg-resumo{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:2px 0 14px}
-      .vg-kpi{background:#f9fafb;border:1px solid #eef0f3;border-radius:10px;padding:10px 12px}
-      .vg-kpi .vg-v{font-size:18px;font-weight:700;color:#111827;font-variant-numeric:tabular-nums;margin-top:2px}
-      table.vg-mapa{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;overflow:visible}
-      table.vg-mapa th{white-space:nowrap;vertical-align:bottom;padding:9px 8px !important;letter-spacing:.3px !important}
-      table.vg-mapa td{padding:8px !important;vertical-align:top}
-      table.vg-mapa thead .vg-mini{color:#cbd5e1}
-      table.vg-fixa tr > :first-child{position:sticky;left:0;z-index:1;background:#fff}
-      table.vg-fixa thead tr > :first-child{z-index:3}
-      table.vg-fixa tr.vg-sel > :first-child{background:#eff6ff}
-      table.vg-fixa tfoot tr > :first-child{background:#f9fafb}
-      .vg-acoes-mini{display:flex;flex-wrap:wrap;gap:4px;width:170px}
-      table.vg-mapa .vg-num{text-align:right;white-space:nowrap}
-      table.vg-mapa tfoot td{font-weight:700;border-top:2px solid #e5e7eb;border-bottom:none;background:#f9fafb}
-      table.vg-mapa tr.vg-sel td{background:#eff6ff}
-      table.vg-mapa tr.vg-cad td{color:#4b5563}
-      .vg-mini{display:block;font-size:11px;color:#6b7280;font-weight:400;white-space:nowrap;text-transform:none;letter-spacing:0}
-      .vg-datas{display:flex;flex-wrap:wrap;gap:4px;max-width:180px}
-      .vg-dt{font-size:11px;padding:1px 6px;border-radius:6px;background:#eef2ff;color:#3730a3;white-space:nowrap}
-      .vg-dt.cad{background:#f3f4f6;color:#6b7280}
-      .vg-dias-ok{color:#166534}.vg-dias-esp{color:#92400e}.vg-dias-atr{color:#b91c1c;font-weight:700}
-      .vg-neg{color:#b91c1c}
-      .vg-mapa-topo{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:10px}
-      .vg-mapa-topo label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:#6b7280}
-      .vg-pag-topo{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
-      .vg-pag-topo h2{margin:0}
-      .vg-ov{position:fixed;inset:0;z-index:2000;background:rgba(15,23,42,.5);display:flex;justify-content:center;align-items:stretch}
-      .vg-ov-pg{background:#f8fafc;width:min(980px,100%);height:100%;display:flex;flex-direction:column;box-shadow:0 0 40px rgba(0,0,0,.3)}
-      .vg-ov-topo{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 18px;background:#fff;border-bottom:1px solid #e5e7eb}
-      .vg-passos{display:flex;gap:6px;padding:10px 18px;background:#fff;border-bottom:1px solid #e5e7eb;overflow-x:auto}
-      .vg-passo{display:flex;align-items:center;gap:6px;border:1px solid #e2e8f0;background:#f1f5f9;color:#475569;border-radius:999px;padding:6px 12px 6px 6px;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer}
-      .vg-passo b{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#cbd5e1;color:#fff;font-size:12px}
-      .vg-passo.on{background:var(--navy,#13294b);border-color:var(--navy,#13294b);color:#fff}
-      .vg-passo.on b{background:var(--brand-2,#facc15);color:var(--navy,#13294b)}
-      .vg-passo.ok b{background:#16a34a}
-      .vg-ov-corpo{flex:1;overflow:auto;padding:18px;overscroll-behavior:contain}
-      .vg-ov-rodape{padding:12px 18px;background:#fff;border-top:1px solid #e5e7eb}
-      .vg-rodape-btns{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
-      .vg-ov-rodape .vg-erro{margin:0 0 8px}
-      .vg-erro:empty{display:none}
-      .vg-etapa{display:none}
-      .vg-etapa.on{display:block}
-      .vg-pergunta{font-size:19px;font-weight:700;color:#111827;margin:0 0 4px}
-      .vg-campos{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
-      .vg-campos label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:#6b7280}
-      .vg-campos select,.vg-campos input{width:100%;box-sizing:border-box}
+      .vg-kpi{background:var(--vt-painel2);border:1px solid var(--vt-borda);border-radius:10px;padding:10px 12px}
+      .vg-kpi .vg-v{font:700 17px var(--vt-mono);color:var(--vt-txt);margin-top:2px}
+      .vg-neg{color:var(--vt-verm)}
       dialog#dlgVgHist{width:min(800px,96vw)}
       table.vg-hist-tab{width:100%;border-collapse:collapse;font-size:13px}
       table.vg-hist-tab th{white-space:nowrap;padding:8px 6px !important}
-      table.vg-hist-tab td{padding:4px !important;vertical-align:middle}
+      table.vg-hist-tab td{padding:4px !important;vertical-align:middle;font-family:var(--vt-mono)}
       table.vg-hist-tab input{width:100%;min-width:0;box-sizing:border-box;padding:5px 6px}
       table.vg-hist-tab input[type=date]{min-width:128px}
-      table.vg-hist-tab tr.vg-hist-erro td{background:#fef2f2}
-      table.vg-hist-tab tfoot td{font-weight:700;border-top:1px solid #e5e7eb;padding-top:6px}
-      #vgHistColar{width:100%;box-sizing:border-box;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;margin:6px 0}
+      table.vg-hist-tab tr.vg-hist-erro td{background:rgba(248,113,113,.12) !important}
+      #vgHistColar{width:100%;box-sizing:border-box;font-family:var(--vt-mono);font-size:13px;margin:6px 0}
+      .vg-ico{width:15px;height:15px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+      /* ===== topo da página ===== */
+      .vt-num{font-family:var(--vt-mono);font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+      .vt-topo{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+      .vt-marca{display:flex;align-items:center;gap:10px;min-width:0}
+      .vt-logo{width:36px;height:36px;flex:none;border-radius:10px;display:grid;place-items:center;color:var(--vt-ciano);background:linear-gradient(135deg,rgba(34,211,238,.22),rgba(167,139,250,.22));border:1px solid var(--vt-borda2)}
+      .vt-logo .vg-ico{width:20px;height:20px}
+      .vt-marca h2{margin:0;font-size:20px}
+      .vt-sub{font-size:12px;color:var(--vt-dim)}
+      .vt-vivo{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--vt-verde);border:1px solid rgba(52,211,153,.3);background:rgba(52,211,153,.08);padding:3px 9px;border-radius:999px}
+      .vt-vivo i{width:6px;height:6px;border-radius:50%;background:var(--vt-verde);animation:vtPulso 1.8s infinite}
+      @keyframes vtPulso{0%{box-shadow:0 0 0 0 rgba(52,211,153,.6)}100%{box-shadow:0 0 0 8px rgba(52,211,153,0)}}
+      .vt-esp{flex:1}
+      .vt-seg{display:flex;background:var(--vt-painel2);border:1px solid var(--vt-borda);border-radius:10px;padding:3px;flex-wrap:wrap}
+      .vt-seg button{border:0;background:transparent;color:var(--vt-dim);font:600 12.5px Inter,sans-serif;padding:7px 11px;border-radius:7px;cursor:pointer}
+      .vt-seg button.on{background:var(--vt-painel);color:var(--vt-txt);box-shadow:inset 0 0 0 1px var(--vt-borda2)}
+      .vt-btp{border:0;border-radius:10px;padding:10px 16px;font:700 13.5px Inter,sans-serif;cursor:pointer;color:#06111f;background:linear-gradient(135deg,#22d3ee,#60a5fa);box-shadow:0 0 0 1px rgba(34,211,238,.4),0 8px 24px -8px rgba(34,211,238,.6)}
+      .vt-bts{border:1px solid var(--vt-borda2);border-radius:10px;padding:8px 12px;font:600 12.5px Inter,sans-serif;cursor:pointer;color:var(--vt-txt);background:var(--vt-painel2);white-space:nowrap}
+      .vt-bts:hover{border-color:var(--vt-ciano)}
+      .vt-bts.mini{padding:5px 9px;font-size:12px}
+      .vt-bts.perigo{color:var(--vt-verm);border-color:rgba(248,113,113,.4)}
+
+      /* ===== indicadores ===== */
+      .vt-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
+      .vt-kpi{background:linear-gradient(180deg,var(--vt-painel),var(--vt-painel2));border:1px solid var(--vt-borda);border-radius:14px;padding:12px 14px;position:relative;overflow:hidden}
+      .vt-kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--cor,var(--vt-ciano))}
+      .vt-kpi .rt{font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--vt-dim)}
+      .vt-kpi .vl{font:700 21px/1.25 var(--vt-mono);margin-top:6px;color:var(--cor,var(--vt-txt));white-space:nowrap}
+      .vt-kpi .rod{font-size:11.5px;color:var(--vt-fraco);margin-top:4px}
+      .vt-barra{height:4px;border-radius:2px;background:var(--vt-borda);margin-top:8px;overflow:hidden}
+      .vt-barra i{display:block;height:100%;background:var(--cor,var(--vt-ciano));transition:width 1s cubic-bezier(.2,.8,.2,1)}
+
+      /* ===== gerentes ===== */
+      .vt-filtros{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+      .vt-filtros button{border:1px solid var(--vt-borda);background:var(--vt-painel2);color:var(--vt-dim);border-radius:8px;padding:6px 10px;font:600 12px Inter,sans-serif;cursor:pointer}
+      .vt-filtros button.on{color:var(--vt-txt);border-color:var(--vt-borda2);background:var(--vt-painel)}
+      .vt-ger{background:var(--vt-painel);border:1px solid var(--vt-borda);border-radius:14px;margin-bottom:10px;overflow:hidden}
+      .vt-ger.aberto{border-color:var(--vt-borda2)}
+      .vt-ger-lin{display:grid;grid-template-columns:minmax(0,2.1fr) 150px minmax(0,1fr) minmax(0,1.1fr) auto;gap:16px;align-items:center;padding:14px 16px}
+      .vt-id{display:flex;align-items:center;gap:12px;min-width:0}
+      .vt-av{width:40px;height:40px;flex:none;border-radius:11px;display:grid;place-items:center;font:700 13px var(--vt-mono);color:var(--vt-ciano);background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.25)}
+      .vt-nm{font-weight:700;font-size:15px;letter-spacing:.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .vt-maqs{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+      .vt-qtd{display:inline-flex;align-items:center;gap:5px;font:700 11.5px var(--vt-mono);color:var(--vt-ciano);border:1px solid rgba(34,211,238,.35);background:rgba(34,211,238,.08);border-radius:6px;padding:2px 8px}
+      .vt-maq{display:inline-flex;align-items:center;gap:5px;font:500 11px var(--vt-mono);color:var(--vt-dim);border:1px solid var(--vt-borda);border-radius:6px;padding:2px 7px;background:var(--vt-painel2);cursor:pointer;transition:border-color .15s,color .15s,background .15s}
+      .vt-maq .vg-ico{width:13px;height:13px;color:var(--vt-verde)}
+      .vt-maq.amb .vg-ico{color:var(--vt-ambar)}
+      .vt-maq:hover{border-color:var(--vt-ciano);color:var(--vt-txt)}
+      .vt-maq[aria-expanded="true"]{border-color:var(--vt-ciano);background:rgba(34,211,238,.1);color:var(--vt-txt)}
+      .vt-cel .vt-rt{font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--vt-fraco)}
+      .vt-cel .vt-vl{font:600 14px var(--vt-mono);margin-top:3px}
+      .vt-det{font-size:11.5px;color:var(--vt-dim);margin-top:2px}
+      .vt-ok{color:var(--vt-verde)}.vt-esp2{color:var(--vt-ambar)}.vt-atr{color:var(--vt-verm)}
+      .vg-spark{width:150px;height:40px;display:block}
+      .vg-spark path.l{fill:none;stroke:var(--vt-ciano);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:600;stroke-dashoffset:600;animation:vtTraco 1.2s ease-out forwards}
+      .vg-spark path.a{fill:rgba(34,211,238,.12);stroke:none}
+      .vg-spark circle{fill:var(--vt-ciano)}
+      .vg-spark circle.cad{fill:var(--vt-fraco)}
+      @keyframes vtTraco{to{stroke-dashoffset:0}}
+      .vt-sit{font:700 11.5px var(--vt-mono);padding:4px 9px;border-radius:7px;white-space:nowrap;display:inline-block}
+      .vt-sit.deve{color:var(--vt-verm);background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3)}
+      .vt-sit.cred{color:var(--vt-ambar);background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3)}
+      .vt-sit.ok{color:var(--vt-verde);background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.3)}
+      .vt-sit.sem{color:var(--vt-dim);background:var(--vt-painel2);border:1px solid var(--vt-borda)}
+      .vt-acoes{display:flex;gap:8px;justify-content:flex-end}
+
+      /* ===== histórico do gerente ===== */
+      .vt-hist{border-top:1px solid var(--vt-borda);padding:14px 16px 16px;background:var(--vt-bg2)}
+      .vt-hk-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-bottom:6px}
+      .vt-hk{border:1px solid var(--vt-borda);border-radius:10px;padding:8px 10px;background:var(--vt-painel2)}
+      .vt-hk .rt{font-size:10px;letter-spacing:.7px;text-transform:uppercase;color:var(--vt-fraco)}
+      .vt-hk .vl{font:600 14px var(--vt-mono);margin-top:3px;white-space:nowrap}
+      .vt-sec{margin:16px 0 8px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--vt-dim);font-weight:700}
+      table.vt-tab{width:100%;border-collapse:separate;border-spacing:0;table-layout:auto;font-size:13px}
+      table.vt-tab th{font-size:10.5px !important;text-transform:uppercase;text-align:right;padding:8px 10px !important}
+      table.vt-tab td{padding:10px 8px !important;text-align:right;white-space:nowrap;font-family:var(--vt-mono);font-size:12.5px;vertical-align:top}
+      table.vt-tab th{padding:8px 8px !important}
+      table.vt-tab td.vt-ac .vt-bts{padding:4px 8px;font-size:11.5px}
+      table.vt-tab th:first-child,table.vt-tab td:first-child{text-align:left}
+      table.vt-tab td.vt-ac{text-align:right;overflow:visible}
+      .vt-abre{border:1px solid var(--vt-borda2);background:transparent;color:var(--vt-dim);width:22px;height:22px;border-radius:6px;cursor:pointer;margin-right:6px;line-height:1;padding:0}
+      .vt-pd{display:block;font:500 10.5px Inter,sans-serif;color:var(--vt-fraco);margin:2px 0 0 28px}
+      table.vt-tab tr.vt-det-lin td{white-space:normal;background:rgba(15,23,38,.6) !important}
+      .vt-chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+      .vt-chip{border:1px solid var(--vt-borda);border-radius:10px;padding:8px 10px;background:var(--vt-painel2);font-family:Inter,sans-serif;text-align:left}
+      .vt-chip .t{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--vt-dim)}
+      .vt-chip .t b{color:var(--vt-txt);font-family:var(--vt-mono)}
+      .vt-hold{height:4px;border-radius:2px;background:var(--vt-borda);margin-top:6px;overflow:hidden}
+      .vt-hold i{display:block;height:100%;background:linear-gradient(90deg,var(--vt-violeta),var(--vt-ciano))}
+      .vt-neg{color:var(--vt-verm)}.vt-pos{color:var(--vt-verde)}.vt-ciano{color:var(--vt-ciano)}.vt-violeta{color:var(--vt-violeta)}
+      .vt-duas{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+      .vt-lista{border:1px solid var(--vt-borda);border-radius:10px;overflow:hidden}
+      .vt-lista div{display:flex;justify-content:space-between;gap:10px;padding:8px 12px;border-top:1px solid var(--vt-borda);font-size:12.5px}
+      .vt-lista div:first-child{border-top:0}
+      .vt-lista .vz{color:var(--vt-fraco);justify-content:center}
+      .vt-tag{font:600 10.5px Inter,sans-serif;padding:2px 7px;border-radius:999px;white-space:nowrap}
+      .vt-tag.cx{color:var(--vt-verde);background:rgba(52,211,153,.12)}.vt-tag.ag{color:var(--vt-ambar);background:rgba(251,191,36,.12)}
+      details.vt-cad{margin-top:12px;font-size:12.5px;color:var(--vt-dim)}
+      details.vt-cad summary{cursor:pointer}
+
+      /* ===== quadro do jogo ===== */
+      #vgPop{position:absolute;z-index:1900;width:330px;background:#111a2b;color:#e6edf7;border:1px solid #2a3a57;border-radius:14px;padding:14px;box-shadow:0 18px 50px -10px rgba(0,0,0,.75),0 0 0 1px rgba(34,211,238,.08);animation:vtEntra .18s ease-out;font-family:Inter,system-ui,sans-serif}
+      #vgPop.folha{position:fixed;left:8px !important;right:8px;bottom:8px;top:auto !important;width:auto;max-height:80vh;overflow:auto}
+      #vgPopFundo{position:fixed;inset:0;z-index:1899;background:rgba(5,8,15,.7)}
+      @keyframes vtEntra{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+      .vp-cab{display:flex;gap:10px;align-items:center;margin-bottom:10px}
+      .vp-ico{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;color:#22d3ee;background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.25)}
+      .vp-ico .vg-ico{width:22px;height:22px}
+      .vp-t{font-weight:700;font-size:14px}
+      .vp-s{font-size:11.5px;color:#8a9bb5}
+      .vp-x{margin-left:auto;border:1px solid #2a3a57;background:transparent;color:#8a9bb5;border-radius:8px;width:28px;height:28px;cursor:pointer}
+      .vp-per{font-size:12px;color:#8a9bb5;border:1px solid #1e2a40;border-radius:9px;padding:7px 9px;background:#0d1320;margin-bottom:10px}
+      .vp-per b{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;color:#e6edf7}
+      .vp-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px}
+      .vp-grid div{border:1px solid #1e2a40;border-radius:8px;padding:6px 8px;background:#0d1320}
+      .vp-grid span{display:block;font-size:9.5px;letter-spacing:.7px;text-transform:uppercase;color:#5b6b85}
+      .vp-grid b{font:700 13px "JetBrains Mono",ui-monospace,Menlo,monospace}
+      .vp-lucro{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+      .vp-lucro .rt{font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:#5b6b85;width:100%}
+      .vp-lucro .vl{font:800 24px "JetBrains Mono",ui-monospace,Menlo,monospace}
+      .vp-lucro .hd{font:600 12px "JetBrains Mono",ui-monospace,Menlo,monospace;color:#a78bfa}
+      #vgPop .vg-spark{width:100%;height:46px;margin-top:8px}
+      #vgPop .vg-spark path.l{stroke:#22d3ee}
+      #vgPop .vg-spark circle{fill:#22d3ee}
+      .vp-rod{display:flex;justify-content:space-between;font-size:11px;color:#5b6b85;margin-top:2px}
+      .vp-pos{color:#34d399}.vp-neg{color:#f87171}
+
+      /* ===== formulário (nova prestação) ===== */
+      .vt-ov{position:fixed;inset:0;z-index:2000;background:rgba(5,8,15,.72);display:flex;justify-content:center;align-items:stretch}
+      .vt-ov-pg{background:#090d16;background-image:linear-gradient(rgba(34,211,238,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,.03) 1px,transparent 1px);background-size:32px 32px;
+        width:min(1180px,100%);height:100%;display:flex;flex-direction:column;border-left:1px solid var(--vt-borda);border-right:1px solid var(--vt-borda)}
+      .vt-ov-topo{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--vt-borda);background:rgba(13,19,32,.9)}
+      .vt-ov-t{font-weight:700;font-size:16px}
+      .vt-ov-corpo{flex:1;overflow:auto;padding:16px 18px 24px;overscroll-behavior:contain}
+      .vt-form{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+      .vt-card{background:var(--vt-painel);border:1px solid var(--vt-borda);border-radius:14px;padding:16px}
+      .vt-pipe{display:flex;align-items:center;margin-bottom:16px}
+      .vt-pp{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--vt-fraco);white-space:nowrap;cursor:pointer;border:0;background:transparent;padding:0}
+      .vt-pp b{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font:700 11px var(--vt-mono);border:1px solid var(--vt-borda2);color:var(--vt-dim);background:var(--vt-painel2)}
+      .vt-pp.on{color:var(--vt-txt)}
+      .vt-pp.on b{border-color:var(--vt-ciano);color:var(--vt-ciano);box-shadow:0 0 0 3px rgba(34,211,238,.12)}
+      .vt-pp.ok b{background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.5);color:var(--vt-verde)}
+      .vt-fio{flex:1;height:2px;background:var(--vt-borda);margin:0 10px;min-width:16px;position:relative;overflow:hidden}
+      .vt-fio i{position:absolute;inset:0;background:linear-gradient(90deg,var(--vt-verde),var(--vt-ciano))}
+      .vt-etapa{display:none}
+      .vt-etapa.on{display:block}
+      .vt-etapa h3{margin:0 0 4px;font-size:17px}
+      .vt-sub2{font-size:12.5px;color:var(--vt-dim);margin:0 0 14px}
+      .vt-campos{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+      .vt-lab{display:block;font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--vt-fraco);margin-bottom:5px}
+      .vt-campos select,.vt-campos input{width:100%;box-sizing:border-box;padding:9px 10px;font:600 14px var(--vt-mono)}
+      .vt-per{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--vt-borda2);border-radius:10px;background:var(--vt-bg2);font-size:12.5px;color:var(--vt-dim);margin:12px 0}
+      .vt-per b{font-family:var(--vt-mono);color:var(--vt-txt);font-size:13px}
+      .vt-per.erro{border-color:rgba(248,113,113,.6);color:var(--vt-verm)}
+      .vt-info{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:12.5px;color:var(--vt-dim)}
+      .vt-info b{color:var(--vt-txt);font-family:var(--vt-mono)}
+      .vt-term{border:1px solid var(--vt-borda);border-radius:12px;background:var(--vt-painel2);padding:12px;margin-bottom:10px}
+      .vt-term.erro{border-color:rgba(248,113,113,.6)}
+      .vt-term-cab{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+      .vt-term-t{font-weight:700;font-size:14px;display:flex;align-items:center;gap:6px;min-width:0}
+      .vt-term-t .vg-ico{color:var(--vt-ciano);width:16px;height:16px}
+      .vt-term-t small{font:500 11px var(--vt-mono);color:var(--vt-fraco);margin-left:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .vt-st{display:inline-flex;align-items:center;gap:6px;font:500 11px var(--vt-mono);color:var(--vt-dim);border:1px solid var(--vt-borda);border-radius:6px;padding:2px 7px;white-space:nowrap}
+      .vt-st i{width:6px;height:6px;border-radius:50%;background:var(--vt-ambar)}
+      .vt-st.ok i{background:var(--vt-verde)}.vt-st.ok{color:var(--vt-verde)}
+      .vt-st.erro i{background:var(--vt-verm)}.vt-st.erro{color:var(--vt-verm)}
+      .vt-term-grid{display:grid;grid-template-columns:1fr 1fr minmax(0,1.7fr);gap:12px;align-items:end}
+      .vt-term-grid input{width:100%;box-sizing:border-box;padding:9px 10px;text-align:right;font:600 14px var(--vt-mono)}
+      .vt-ant{font:500 11px var(--vt-mono);color:var(--vt-fraco);margin-top:4px;text-align:right}
+      .vt-saidas{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+      .vt-sd{border:1px solid var(--vt-borda);border-radius:8px;padding:6px 8px;background:var(--vt-bg2);min-width:0}
+      .vt-sd span{display:block;font-size:9.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--vt-fraco)}
+      .vt-sd b{display:block;font:700 13px var(--vt-mono);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .vt-rodape{display:flex;justify-content:space-between;gap:8px;margin-top:14px;flex-wrap:wrap}
+      .vt-resumo{position:sticky;top:0}
+      .vt-resumo h4{margin:0 0 10px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--vt-dim)}
+      .vt-resumo .vt-per{margin:0 0 12px}
+      .vt-lc{display:grid;grid-template-columns:90px minmax(0,1fr) 112px;gap:8px;align-items:center;margin-bottom:8px;font-size:12px;color:var(--vt-dim)}
+      .vt-bar{height:10px;border-radius:3px;background:var(--vt-borda);overflow:hidden;position:relative}
+      .vt-bar i{position:absolute;top:0;bottom:0;border-radius:3px;transition:left .6s cubic-bezier(.2,.8,.2,1),width .6s cubic-bezier(.2,.8,.2,1)}
+      .vt-lc .vt-num{text-align:right;color:var(--vt-txt);font-size:12.5px;white-space:nowrap}
+      .vt-tot{display:flex;justify-content:space-between;align-items:baseline;gap:8px;border-top:1px solid var(--vt-borda);padding-top:10px;margin-top:6px;font-size:12px;color:var(--vt-dim)}
+      .vt-tot.sem{border:0;padding-top:4px;margin-top:0}
+      .vt-grande{font:700 20px var(--vt-mono)}
+      .vt-prog{height:6px;border-radius:3px;background:var(--vt-borda);overflow:hidden;margin-top:8px}
+      .vt-prog i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--vt-verde),var(--vt-ciano));transition:width .6s}
+      .vt-slide{position:relative;height:52px;border-radius:14px;background:var(--vt-bg2);border:1px solid var(--vt-borda2);margin-top:14px;overflow:hidden;user-select:none;touch-action:none}
+      .vt-slide .txt{position:absolute;inset:0;padding-left:50px;display:grid;place-items:center;font:700 12px Inter,sans-serif;letter-spacing:1.2px;text-transform:uppercase;pointer-events:none}
+      .vg-tabela .btn{padding:5px 10px !important;font-size:12px !important}
+      .vt-slide .txt span{background:linear-gradient(90deg,#8a9bb5 0%,#fff 50%,#8a9bb5 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:vtBrilho 2.4s linear infinite}
+      @keyframes vtBrilho{from{background-position:200% 0}to{background-position:-200% 0}}
+      .vt-slide .rastro{position:absolute;left:0;top:0;bottom:0;width:52px;background:linear-gradient(90deg,rgba(34,211,238,.25),rgba(34,211,238,.05))}
+      .vt-slide .pino{position:absolute;left:4px;top:4px;width:44px;height:42px;border-radius:11px;display:grid;place-items:center;cursor:grab;color:#06111f;font:800 18px var(--vt-mono);background:linear-gradient(135deg,#22d3ee,#60a5fa);box-shadow:0 0 18px -2px rgba(34,211,238,.7);outline:none}
+      .vt-slide .pino:focus-visible{box-shadow:0 0 0 3px #fff}
+      .vt-slide.feito{border-color:rgba(52,211,153,.6)}
+      .vt-slide.feito .pino{background:linear-gradient(135deg,#34d399,#10b981)}
+
+      @media (max-width:980px){
+        .vt-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+        .vt-kpi .vl{font-size:17px}
+        .vt-ger-lin{grid-template-columns:1fr 1fr}
+        .vt-ger-lin .vt-id,.vt-ger-lin .vt-acoes{grid-column:1/-1}
+        .vt-acoes{justify-content:flex-start}
+        .vg-spark{width:100%}
+        .vt-hk-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+        .vt-duas{grid-template-columns:1fr}
+        .vt-form{grid-template-columns:1fr}
+        .vt-resumo{position:static}
+        .vt-term-grid{grid-template-columns:1fr 1fr}
+        .vt-term-grid .vt-saidas{grid-column:1/-1}
+        .vt-pp span{display:none}
+        table.vt-tab,table.vt-tab tbody,table.vt-tab tr,table.vt-tab td{display:block;width:100%}
+        table.vt-tab thead,table.vt-tab colgroup{display:none}
+        table.vt-tab tr.vt-lin{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--vt-borda);padding:6px 0}
+        table.vt-tab td{border:0 !important;text-align:left;padding:4px 8px !important;white-space:normal}
+        table.vt-tab td::before{content:attr(data-r);display:block;font:600 10px Inter,sans-serif;letter-spacing:.6px;text-transform:uppercase;color:var(--vt-fraco)}
+        table.vt-tab td.vt-ac{grid-column:1/-1;text-align:left}
+        table.vt-tab td.vt-ac::before{display:none}
+      }
       @media (max-width:560px){
         table.vg-hist-tab .vg-so-largo{display:none}
         .vg-resumo{grid-template-columns:1fr 1fr;gap:8px}
-        .vg-ov-topo,.vg-passos,.vg-ov-corpo,.vg-ov-rodape{padding-left:12px;padding-right:12px}
-        .vg-pergunta{font-size:17px}
-        .vg-desp-linha{grid-template-columns:minmax(0,1fr) 96px auto;gap:6px}
-        .vg-linha .vg-num{white-space:nowrap}
-        .vg-kpi{padding:8px 10px}
-        .vg-kpi .vg-v{font-size:15px}
-        .vg-grade{grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr) minmax(0,1fr)}
-        .vg-grade .vg-so-largo{display:none}
-        .vg-so-celular{display:block;margin-bottom:6px}
+        .vt-ov-topo,.vt-ov-corpo{padding-left:12px;padding-right:12px}
+        .vg-desp-linha{grid-template-columns:minmax(0,1fr) 100px auto;gap:6px}
         .vg-maq-btns{width:100%;justify-content:flex-start}
+        .vt-saidas{grid-template-columns:repeat(2,minmax(0,1fr))}
+        .vt-hk-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+        .vt-hk .vl{font-size:13px}
+      }
+      @media (prefers-reduced-motion:reduce){
+        .vg-tech *,#vgPop{animation:none !important;transition:none !important}
+        .vg-spark path.l{stroke-dashoffset:0}
       }
     `;
     document.head.appendChild(css);
-  }
-
-  function render() {
-    const root = document.getElementById('vgRoot');
-    if (!root) return;
-    const ponto = pontoAtual();
-    const aberto = !!(st.formAberto && ponto && st.form);
-    root.innerHTML = `
-      <div class="vg-pag-topo">
-        <h2>Video game</h2>
-        ${!st.erroSetup && st.pontos.length && podeEditar() ? `<button type="button" class="btn primary" data-vg="form-abrir">+ Criar prestação</button>` : ''}
-      </div>
-      ${st.erroSetup ? `<div class="vg-setup">${esc(st.erroSetup)}</div>` : ''}
-      ${st.erroSetup ? '' : htmlMapaGeral()}
-      <div class="vg-barra">
-        <label>GERENTE<select id="vgPonto">${opcoesGerentes()}</select></label>
-      </div>
-      ${ponto ? (htmlMapaGerente(ponto) || `<div class="vg-card vg-vazio" id="vgMapaGer">${esc(rotuloPonto(ponto))} ainda não tem prestação.${podeEditar() ? ' Clique em <strong>+ Criar prestação</strong>.' : ''}</div>`)
-        : `<div class="vg-card vg-vazio">Cadastre o gerente e os video games dele no menu <strong>Prestações → Cadastro video game</strong> para lançar a prestação.</div>`}
-      ${aberto ? htmlFormulario(ponto) : ''}
-    `;
-    if (aberto) { recalcular(); atualizarStatusPagamentos(); }
   }
 
   // ---------- mapa de prestações ----------
@@ -424,147 +609,347 @@
   const premiosDe = l => (Number.isFinite(l.premios) ? l.premios : l.ds - (l.zerado ? 0 : l.ds_anterior));
   const dataCurta = s => dataBR(s).slice(0, 5);
 
-  function resumoGerente(p, intervalo) {
-    const lista = st.todas.filter(x => x.ponto_id === p.id);
-    const doPeriodo = lista.filter(x => noPeriodo(x.data, intervalo));
-    const sistema = doPeriodo.filter(x => !ehHistorico(x));
-    return {
-      vgs: st.contagem[p.id] || 0, ult: lista[0] || null,
-      datas: doPeriodo.slice().reverse(),
-      saldo: somar(doPeriodo, x => x.saldo),
-      despesas: somar(sistema, despesasDe),
-      comissoes: somar(sistema, x => x.total_comissoes),
-      liquido: somar(sistema, x => x.liquido),
-      restam: somar(lista, restamDe)
-    };
-  }
-  function htmlDias(ult) {
-    if (!ult) return '<span class="vg-dias-atr">sem prestação</span>';
-    const n = diasDesde(ult.data);
-    const cls = n <= 20 ? 'vg-dias-ok' : n <= 35 ? 'vg-dias-esp' : 'vg-dias-atr';
-    return `${esc(dataBR(ult.data))}<span class="vg-mini ${cls}">${n <= 0 ? 'hoje' : `há ${n} dia${n === 1 ? '' : 's'}`}</span>`;
-  }
-  function htmlRestam(v) {
-    if (!v) return `<span class="vg-sub">${esc(brl(0))}</span>`;
-    return v > 0 ? esc(brl(v)) : `<span class="vg-neg">${esc(brl(-v))}</span><span class="vg-mini">empresa deve</span>`;
+  // ---------- tela (painel de operação) ----------
+  const ICONE = '<svg class="vg-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h10a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zM6 7V4h8v3M6 10h8v4H6zM8.7 10v4M11.3 10v4M7 17.5h6M17 14h2a1 1 0 0 0 1-1V7"/><circle cx="20" cy="5.5" r="1.5"/></svg>';
+  const PER_CURTO = { mes: 'Mês', ant: 'Mês passado', '3m': '3 meses', '6m': '6 meses', tudo: 'Tudo' };
+  const siglaDe = nome => {
+    const p = String(nome || '').trim().split(/\s+/).filter(Boolean);
+    return ((p[0]?.[0] || '') + (p[1]?.[0] || p[0]?.[1] || '')).toUpperCase() || 'VG';
+  };
+  const pct1 = (a, b) => (b ? (a / b * 100).toFixed(1).replace('.', ',') + '%' : '—');
+  const entreDias = (a, b) => Math.round((Date.parse(dia(b)) - Date.parse(dia(a))) / 86400000);
+  const tagVG = i => 'VG-' + String(i + 1).padStart(2, '0');
+
+  function render() {
+    const root = document.getElementById('vgRoot');
+    if (!root) return;
+    root.classList.add('vg-tech');
+    fecharPop();
+    const ponto = pontoAtual();
+    const aberto = !!(st.formAberto && ponto && st.form);
+    const qtdVG = Object.values(st.contagem || {}).reduce((a, n) => a + n, 0);
+    root.innerHTML = `
+      <div class="vt-topo">
+        <div class="vt-marca"><div class="vt-logo">${ICONE}</div><div><h2>Video game</h2>
+          <div class="vt-sub">${st.pontos.length} gerente${st.pontos.length === 1 ? '' : 's'} · ${qtdVG} video game${qtdVG === 1 ? '' : 's'}</div></div></div>
+        ${st.atualizadoEm && !st.erroMapa && !st.erroSetup ? `<span class="vt-vivo" title="Dados carregados do sistema"><i></i>Atualizado às ${esc(st.atualizadoEm)}</span>` : ''}
+        <span class="vt-esp"></span>
+        <div class="vt-seg" role="group" aria-label="Período">${Object.entries(PER_CURTO).map(([k, t]) =>
+          `<button type="button" data-vg="periodo" data-id="${k}" class="${k === st.periodo ? 'on' : ''}" aria-pressed="${k === st.periodo}">${t}</button>`).join('')}</div>
+        ${!st.erroSetup && st.pontos.length && podeEditar() ? `<button type="button" class="vt-btp" data-vg="form-abrir">+ Nova prestação</button>` : ''}
+      </div>
+      ${st.erroSetup ? `<div class="vg-setup">${esc(st.erroSetup)}</div>` : htmlPainel()}
+      ${aberto ? htmlFormulario(ponto) : ''}`;
+    animarNumeros(root);
+    if (aberto) { recalcular(); atualizarStatusPagamentos(); ligarSlide(); }
+    else atualizarStatusHist();
   }
 
-  function htmlMapaGeral() {
-    if (!st.pontos.length) return '';
+  // Números do painel "decodificam" até o valor quando mudam
+  function animarNumeros(root) {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    root.querySelectorAll('[data-dec]').forEach(el => {
+      const chave = el.dataset.dec, alvo = el.textContent;
+      if (st.decAnt[chave] === alvo) return;
+      st.decAnt[chave] = alvo;
+      const ini = performance.now(), dur = 650;
+      (function passo(t) {
+        if (!el.isConnected) return;
+        const p = Math.min(1, (t - ini) / dur), fixos = Math.floor(alvo.length * p);
+        el.textContent = [...alvo].map((ch, i) => (i < fixos || !/\d/.test(ch)) ? ch : String(Math.floor(Math.random() * 10))).join('');
+        if (p < 1) requestAnimationFrame(passo); else el.textContent = alvo;
+      })(ini);
+    });
+  }
+
+  // ---------- dados do painel ----------
+  const prestDoPonto = pontoId => (st.todas || []).filter(x => x.ponto_id === pontoId);
+  const maqsDoPonto = pontoId => (st.maqTodas || []).filter(m => m.ponto_id === pontoId);
+  const vendaPrest = p => somar(p.dados?.leituras || [], vendaDe);
+  // Início do período de vendas: a leitura anterior do gerente (ou a instalação dos video games)
+  function inicioDe(p, lista) {
+    const i = lista.findIndex(x => x.uid === p.uid);
+    const ant = i >= 0 ? lista[i + 1] : null;
+    if (ant) return { data: dia(ant.data), inicio: false };
+    const ids = (p.dados?.leituras || []).map(l => l.maquina_id);
+    const inst = (st.maqTodas || []).filter(m => ids.includes(m.id) && m.instalada_em).map(m => dia(m.instalada_em)).sort()[0];
+    return { data: inst || null, inicio: true };
+  }
+  // Última leitura de um video game: medidores, venda, prêmios e lucro das últimas leituras
+  function ultimaDaMaquina(m) {
+    const lista = prestDoPonto(m.ponto_id).filter(p => (p.dados?.leituras || []).some(l => l.maquina_id === m.id));
+    if (!lista.length) return null;
+    const l = lista[0].dados.leituras.find(x => x.maquina_id === m.id);
+    const serie = lista.slice(0, 6).reverse().map(x => { const y = x.dados.leituras.find(z => z.maquina_id === m.id); return vendaDe(y) - premiosDe(y); });
+    return {
+      p: lista[0], l, venda: vendaDe(l), premios: premiosDe(l), serie,
+      ini: lista[1] ? dia(lista[1].data) : (dia(m.instalada_em) || null), inicio: !lista[1]
+    };
+  }
+  function resumoGerente(p, intervalo) {
+    const lista = prestDoPonto(p.id);
+    const reais = lista.filter(x => !ehHistorico(x));
+    const ps = reais.filter(x => noPeriodo(x.data, intervalo));
+    const restos = reais.map(restamDe);
+    return {
+      lista, reais, ps, ult: lista[0] || null,
+      venda: somar(ps, vendaPrest), saldo: somar(ps, x => x.saldo), desp: somar(ps, despesasDe),
+      com: somar(ps, x => x.total_comissoes), liq: somar(ps, x => x.liquido),
+      rec: somar(ps, x => totalPago(x.dados?.pagamentos)),
+      deve: somar(restos, v => Math.max(v, 0)), credito: somar(restos, v => Math.max(-v, 0))
+    };
+  }
+  function sparkSvg(valores, cinzas, largura = 150, altura = 40) {
+    const w = largura, h = altura;
+    if (!valores.length) return `<svg class="vg-spark" viewBox="0 0 ${w} ${h}" aria-hidden="true"></svg>`;
+    const max = Math.max(...valores, 1), min = Math.min(...valores, 0), n = valores.length;
+    const pts = valores.map((v, i) => [n === 1 ? w / 2 : 4 + i * (w - 8) / (n - 1), h - 5 - ((v - min) / ((max - min) || 1)) * (h - 12)]);
+    const d = pts.map((pt, i) => (i ? 'L' : 'M') + pt[0].toFixed(1) + ' ' + pt[1].toFixed(1)).join(' ');
+    return `<svg class="vg-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+      <path class="a" d="${d} L${pts[n - 1][0].toFixed(1)} ${h} L${pts[0][0].toFixed(1)} ${h} Z"></path><path class="l" d="${d}"></path>
+      ${pts.map((pt, i) => `<circle class="${cinzas?.[i] ? 'cad' : ''}" cx="${pt[0].toFixed(1)}" cy="${pt[1].toFixed(1)}" r="2.6"></circle>`).join('')}</svg>`;
+  }
+
+  // ---------- painel: indicadores + gerentes ----------
+  function htmlPainel() {
+    st.pgHist = [];
+    if (!st.pontos.length) return `<div class="vg-card vg-vazio">Nenhum gerente no video game. Cadastre no menu <strong>Prestações → Cadastro video game</strong>.</div>`;
     const intervalo = intervaloPeriodo(st.periodo);
     const linhas = st.pontos.map(p => ({ p, r: resumoGerente(p, intervalo) }));
-    const receber = somar(linhas, x => Math.max(x.r.restam, 0));
-    const deve = somar(linhas, x => Math.max(-x.r.restam, 0));
-    const atrasados = linhas.filter(x => !x.r.ult || diasDesde(x.r.ult.data) > 20).length;
-    const temCaderno = linhas.some(x => x.r.datas.some(ehHistorico));
+    const T = k => somar(linhas, x => x.r[k]);
+    const liq = T('liq'), rec = T('rec'), saldo = T('saldo'), venda = T('venda'), desp = T('desp');
+    const emAberto = linhas.filter(x => x.r.deve > 0).length;
+    const qtd = somar(linhas, x => x.r.ps.length);
+    const filtro = st.filtro || 'todos';
+    const lista = linhas.filter(({ r }) => filtro === 'todos'
+      || (filtro === 'deve' && r.deve > 0)
+      || (filtro === 'ok' && r.reais.length && r.deve <= 0 && r.credito <= 0)
+      || (filtro === 'atraso' && (!r.ult || diasDesde(r.ult.data) > 20)))
+      .sort((a, b) => b.r.deve - a.r.deve || rotuloPonto(a.p).localeCompare(rotuloPonto(b.p), 'pt-BR'));
     return `
-      <div class="vg-card">
-        <div class="vg-mapa-topo">
-          <div><div class="vg-titulo">🎰 Mapa de prestações</div><div class="vg-sub">Todos os gerentes do video game · clique em Abrir para lançar ou conferir</div></div>
-          <label>PERÍODO<select id="vgPeriodo">${Object.entries(PERIODOS).map(([k, t]) => `<option value="${k}"${k === st.periodo ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
-        </div>
-        ${st.erroMapa ? `<div class="vg-erro" style="margin-bottom:8px">${esc(st.erroMapa)}</div>` : ''}
-        <div class="vg-resumo">
-          <div class="vg-kpi"><div class="vg-sub">Gerentes</div><div class="vg-v">${st.pontos.length}</div></div>
-          <div class="vg-kpi"><div class="vg-sub">Video games ativos</div><div class="vg-v">${somar(linhas, x => x.r.vgs)}</div></div>
-          <div class="vg-kpi"><div class="vg-sub">Saldo no período</div><div class="vg-v">${esc(brl(somar(linhas, x => x.r.saldo)))}</div></div>
-          <div class="vg-kpi"><div class="vg-sub">Gerentes devem</div><div class="vg-v">${esc(brl(receber))}</div>${deve ? `<div class="vg-mini vg-neg">Empresa deve ${esc(brl(deve))}</div>` : ''}</div>
-          <div class="vg-kpi"><div class="vg-sub">Sem prestação há +20 dias</div><div class="vg-v${atrasados ? ' vg-neg' : ''}">${atrasados}</div></div>
-        </div>
-        <div class="vg-tabela"><table class="vg-mapa vg-fixa">
-          <thead><tr><th>Gerente</th><th class="vg-num">Video games</th><th title="Prestações dentro do período escolhido">Prestações</th><th class="vg-num">Saldo</th><th class="vg-num">Despesas</th><th class="vg-num">Comissões</th><th class="vg-num">Líquido</th><th class="vg-num">A acertar</th><th>Última</th><th></th></tr></thead>
-          <tbody>${linhas.map(({ p, r }) => `<tr${p.id === st.pontoId ? ' class="vg-sel"' : ''}>
-            <td><strong>${esc(rotuloPonto(p))}</strong></td>
-            <td class="vg-num">${r.vgs}</td>
-            <td>${r.datas.length ? `<div class="vg-datas">${r.datas.map(x => `<span class="vg-dt${ehHistorico(x) ? ' cad' : ''}" title="${ehHistorico(x) ? 'Caderno' : 'Sistema'} · saldo ${esc(brl(x.saldo))}">${esc(dataCurta(x.data))}</span>`).join('')}</div>` : '<span class="vg-sub">—</span>'}</td>
-            <td class="vg-num">${esc(brl(r.saldo))}</td>
-            <td class="vg-num">${r.despesas ? `<span class="vg-neg">${esc(brl(r.despesas))}</span>` : esc(brl(0))}</td>
-            <td class="vg-num">${esc(brl(r.comissoes))}</td>
-            <td class="vg-num">${esc(brl(r.liquido))}</td>
-            <td class="vg-num">${htmlRestam(r.restam)}</td>
-            <td style="white-space:nowrap">${htmlDias(r.ult)}</td>
-            <td><button type="button" class="btn ghost sm" data-vg="mapa-abrir" data-id="${esc(p.id)}">Abrir</button></td>
-          </tr>`).join('')}</tbody>
-        </table></div>
-        <div class="vg-sub" style="margin-top:6px">A acertar soma todas as prestações do sistema ainda não pagas.${temCaderno ? ' Datas em cinza são do caderno: entram só no saldo (não têm comissão nem pagamento).' : ''}</div>
-      </div>`;
+      ${st.erroMapa ? `<div class="vg-setup">${esc(st.erroMapa)}</div>` : ''}
+      <div class="vt-kpis">
+        <div class="vt-kpi" style="--cor:var(--vt-verde)"><div class="rt">Recebido</div><div class="vl" data-dec="rec">${brl(rec)}</div>
+          <div class="rod">${liq > 0 ? Math.round(rec / liq * 100) + '% do líquido' : '—'}</div><div class="vt-barra"><i style="width:${liq > 0 ? Math.max(0, Math.min(100, rec / liq * 100)) : 0}%"></i></div></div>
+        <div class="vt-kpi" style="--cor:var(--vt-verm)"><div class="rt">A receber</div><div class="vl" data-dec="rcb">${brl(T('deve'))}</div>
+          <div class="rod">${emAberto} gerente${emAberto === 1 ? '' : 's'} com saldo aberto</div></div>
+        <div class="vt-kpi" style="--cor:var(--vt-ciano)"><div class="rt">Líquido</div><div class="vl" data-dec="liq">${brl(liq)}</div><div class="rod">depois de despesas e comissões</div></div>
+        <div class="vt-kpi" style="--cor:var(--vt-ambar)"><div class="rt">Despesas</div><div class="vl" data-dec="desp">${brl(desp)}</div><div class="rod">${saldo > 0 ? pct1(desp, saldo) + ' do saldo' : '—'}</div></div>
+        <div class="vt-kpi" style="--cor:var(--vt-violeta)"><div class="rt">Prestações</div><div class="vl" data-dec="qtd">${qtd}</div><div class="rod">hold médio ${pct1(saldo, venda)}</div></div>
+      </div>
+      <div class="vt-filtros" role="group" aria-label="Filtrar gerentes">${[['todos', 'Todos'], ['deve', 'A receber'], ['ok', 'Quitados'], ['atraso', '+20 dias sem prestação']].map(([k, t]) =>
+        `<button type="button" data-vg="filtro" data-id="${k}" class="${filtro === k ? 'on' : ''}" aria-pressed="${filtro === k}">${t}</button>`).join('')}</div>
+      ${lista.map(({ p, r }) => htmlGerente(p, r)).join('') || '<div class="vt-ger" style="padding:22px;text-align:center;color:var(--vt-dim)">Nenhum gerente neste filtro.</div>'}`;
   }
 
-  // Mapa do gerente: uma linha por data, uma coluna por video game (igual ao caderno)
-  function htmlMapaGerente(ponto) {
-    if (!st.prestacoes.length) return '';
-    const intervalo = intervaloPeriodo(st.periodo);
-    const rows = st.prestacoes.filter(p => noPeriodo(p.data, intervalo)).slice().reverse();
-    const ultimaUid = st.prestacoes[0]?.uid;
-    const ordem = id => { const i = st.maquinas.findIndex(m => m.id === id); return i < 0 ? 9999 : i; };
-    const ids = [];
-    rows.forEach(p => (p.dados?.leituras || []).forEach(l => { if (!ids.includes(l.maquina_id)) ids.push(l.maquina_id); }));
-    st.maquinas.filter(m => m.ativo).forEach(m => { if (!ids.includes(m.id)) ids.push(m.id); });
-    ids.sort((a, b) => ordem(a) - ordem(b));
-    const nomeMaq = id => {
-      const m = st.maquinas.find(x => x.id === id);
-      const l = rows.flatMap(p => p.dados?.leituras || []).find(x => x.maquina_id === id);
-      const nome = m?.nome || l?.nome || 'Video game';
-      const jogo = m?.jogo || l?.jogo || '';
-      return `${esc(nome)}<span class="vg-mini">${esc([jogo, m && !m.ativo ? 'retirado' : ''].filter(Boolean).join(' · ') || ' ')}</span>`;
-    };
-    const tot = { venda: 0, premios: 0, saldo: 0, desp: 0, com: 0, liq: 0, restam: 0, maq: {} };
-    const corpo = rows.map(p => {
-      const leituras = p.dados?.leituras || [];
-      const hist = ehHistorico(p);
-      let venda = 0, premios = 0;
-      const celulas = ids.map(id => {
-        const l = leituras.find(x => x.maquina_id === id);
-        if (!l) return '<td class="vg-num vg-sub">—</td>';
-        const v = vendaDe(l), pr = premiosDe(l);
-        venda += v; premios += pr;
-        tot.maq[id] = (tot.maq[id] || 0) + (v - pr);
-        return `<td class="vg-num">${esc(brl(v - pr))}<span class="vg-mini">v ${esc(centavosTxt(v))}</span><span class="vg-mini">p ${esc(centavosTxt(pr))}</span></td>`;
-      }).join('');
-      tot.venda += venda; tot.premios += premios; tot.saldo += venda - premios;
-      if (!hist) { tot.desp += despesasDe(p); tot.com += Number(p.total_comissoes) || 0; tot.liq += Number(p.liquido) || 0; tot.restam += restamDe(p); }
-      const edita = !hist && podeEditar();
-      const exclui = edita && p.uid === ultimaUid;
-      const acoes = hist ? '<span class="vg-sub">caderno</span>' : `<div class="vg-acoes-mini">
-          <button type="button" class="btn sm" data-vg="prest-abrir" data-id="${esc(p.uid)}" title="${edita ? 'Abrir para editar: pagamentos e despesas' : 'Ver a prestação'}">${edita ? 'Editar' : 'Ver'}</button>
-          <button type="button" class="btn ghost sm" data-vg="prest-imagem" data-id="${esc(p.uid)}" title="Imagem para enviar no grupo do gerente">Imagem</button>
-          ${exclui ? `<button type="button" class="btn danger sm" data-vg="prest-excluir" data-id="${esc(p.uid)}">Excluir</button>` : ''}</div>`;
-      return `<tr${hist ? ' class="vg-cad"' : ''}${st.form?.uid === p.uid ? ' style="outline:2px solid #93c5fd"' : ''}>
-        <td style="white-space:nowrap"><strong>${esc(dataBR(p.data))}</strong>${hist ? '<span class="vg-mini">caderno</span>' : ''}</td>
-        ${celulas}
-        <td class="vg-num">${esc(brl(venda))}</td><td class="vg-num">${esc(brl(premios))}</td>
-        <td class="vg-num"><strong${venda - premios < 0 ? ' class="vg-neg"' : ''}>${esc(brl(venda - premios))}</strong></td>
-        <td class="vg-num">${hist ? '—' : despesasDe(p) ? `<span class="vg-neg">${esc(brl(despesasDe(p)))}</span>` : esc(brl(0))}</td>
-        <td class="vg-num">${hist ? '—' : esc(brl(p.total_comissoes))}</td>
-        <td class="vg-num">${hist ? '—' : esc(brl(p.liquido))}</td>
-        <td class="vg-num">${hist ? '—' : htmlRestam(restamDe(p))}</td>
-        <td>${acoes}</td></tr>`;
+  function htmlGerente(p, r) {
+    const aberto = st.abertos.has(p.id);
+    const maqs = maqsDoPonto(p.id).filter(m => m.ativo);
+    const n = r.ult ? diasDesde(r.ult.data) : null;
+    const cls = n === null ? 'vt-atr' : n <= 20 ? 'vt-ok' : n <= 35 ? 'vt-esp2' : 'vt-atr';
+    const ini = r.ult ? inicioDe(r.ult, r.lista) : null;
+    const serie = r.lista.slice(0, 8).reverse();
+    const sit = r.deve > 0 ? `<span class="vt-sit deve">A receber ${brl(r.deve)}</span>`
+      : r.credito > 0 ? `<span class="vt-sit cred">Empresa deve ${brl(r.credito)}</span>`
+      : r.reais.length ? '<span class="vt-sit ok">Quitado</span>' : '<span class="vt-sit sem">Sem prestação</span>';
+    const chips = maqs.map((m, i) => {
+      const u = ultimaDaMaquina(m);
+      const emDia = u && diasDesde(u.p.data) <= 20;
+      return `<button type="button" class="vt-maq${emDia ? '' : ' amb'}" data-vg="maq-info" data-id="${esc(m.id)}" aria-expanded="false" title="Última leitura de ${esc(m.nome)}">${ICONE}${tagVG(i)} ${esc(m.nome)}</button>`;
     }).join('');
-    return `
-      <div class="vg-card" id="vgMapaGer">
-        <div class="vg-mapa-topo">
-          <div><div class="vg-titulo">Mapa de ${esc(rotuloPonto(ponto))}</div>
-          <div class="vg-sub">${esc(PERIODOS[st.periodo])} · saldo de cada video game por data (v = venda, p = prêmios)</div></div>
+    return `<article class="vt-ger${aberto ? ' aberto' : ''}">
+      <div class="vt-ger-lin">
+        <div class="vt-id"><div class="vt-av">${esc(siglaDe(p.gerente_nome || p.nome))}</div><div style="min-width:0">
+          <div class="vt-nm">${esc(rotuloPonto(p))}</div>
+          <div class="vt-maqs"><span class="vt-qtd" title="${maqs.length} jogo${maqs.length === 1 ? '' : 's'} ativo${maqs.length === 1 ? '' : 's'}">${ICONE}${maqs.length} jogo${maqs.length === 1 ? '' : 's'}</span>${chips}</div></div></div>
+        <div class="vt-cel">${sparkSvg(serie.map(x => Number(x.saldo) || 0), serie.map(ehHistorico))}</div>
+        <div class="vt-cel"><div class="vt-rt">Último período</div>
+          <div class="vt-vl">${r.ult ? `${ini?.data ? dataCurta(ini.data) : '…'} → ${dataCurta(r.ult.data)}` : '—'}</div>
+          <div class="vt-det">${r.ult ? (ini?.inicio ? 'desde a instalação' : `${entreDias(ini.data, r.ult.data)} dias de venda`) + (ehHistorico(r.ult) ? ' · caderno' : '') : ''}</div>
+          <div class="vt-det ${cls}">${n === null ? 'sem prestação' : `lida ${n <= 0 ? 'hoje' : `há ${n} dia${n === 1 ? '' : 's'}`}`}${r.ult ? ' · hold ' + pct1(Number(r.ult.saldo) || 0, vendaPrest(r.ult)) : ''}</div></div>
+        <div class="vt-cel"><div class="vt-rt">Situação</div><div style="margin-top:4px">${sit}</div><div class="vt-det">recebido ${brl(r.rec)}</div></div>
+        <div class="vt-acoes">
+          <button type="button" class="vt-bts" data-vg="ger-hist" data-id="${esc(p.id)}" aria-expanded="${aberto}">${aberto ? 'Fechar ▴' : 'Histórico ▾'}</button>
+          ${podeEditar() ? `<button type="button" class="vt-bts" data-vg="ger-nova" data-id="${esc(p.id)}" title="Nova prestação para ${esc(rotuloPonto(p))}" aria-label="Nova prestação para ${esc(rotuloPonto(p))}">＋</button>` : ''}
         </div>
-        ${rows.length ? `<div class="vg-tabela"><table class="vg-mapa vg-fixa">
-          <thead><tr><th>Data</th>${ids.map(id => `<th class="vg-num">${nomeMaq(id)}</th>`).join('')}
-            <th class="vg-num">Venda</th><th class="vg-num">Prêmios</th><th class="vg-num">Saldo</th><th class="vg-num">Despesas</th><th class="vg-num">Comissões</th><th class="vg-num">Líquido</th><th class="vg-num">Restam</th><th></th></tr></thead>
-          <tbody>${corpo}</tbody>
-          <tfoot><tr><td>Soma</td>${ids.map(id => `<td class="vg-num">${esc(brl(tot.maq[id] || 0))}</td>`).join('')}
-            <td class="vg-num">${esc(brl(tot.venda))}</td><td class="vg-num">${esc(brl(tot.premios))}</td><td class="vg-num">${esc(brl(tot.saldo))}</td>
-            <td class="vg-num">${tot.desp ? `<span class="vg-neg">${esc(brl(tot.desp))}</span>` : esc(brl(0))}</td><td class="vg-num">${esc(brl(tot.com))}</td><td class="vg-num">${esc(brl(tot.liq))}</td><td class="vg-num">${htmlRestam(tot.restam)}</td><td></td></tr></tfoot>
-        </table></div>
-        <div class="vg-sub" style="margin-top:6px">Qualquer prestação abre em Editar para lançar pagamentos e despesas. Leituras e data só mudam na mais recente, porque cada leitura parte da anterior.</div>`
-        : `<div class="vg-vazio">Nenhuma prestação em ${esc(PERIODOS[st.periodo].toLowerCase())}. Mude o período no mapa acima.</div>`}
-      </div>`;
+      </div>
+      ${aberto ? htmlHistGerente(p, r) : ''}
+    </article>`;
   }
+
+  function htmlHistGerente(p, r) {
+    const ultimaUid = r.lista[0]?.uid;
+    const cad = r.lista.filter(ehHistorico);
+    const kpi = (t, v, c) => `<div class="vt-hk"><div class="rt">${t}</div><div class="vl ${c || ''}">${brl(v)}</div></div>`;
+    const linhas = r.ps.map(x => {
+      const ini = inicioDe(x, r.lista), rest = restamDe(x), pago = totalPago(x.dados?.pagamentos), desp = despesasDe(x);
+      const edita = podeEditar(), exclui = edita && x.uid === ultimaUid;
+      const det = (x.dados?.leituras || []).map(l => {
+        const v = vendaDe(l), s = v - premiosDe(l), hold = v ? s / v * 100 : 0;
+        return `<div class="vt-chip"><div class="t"><span>${esc(l.nome)}</span><b class="${s < 0 ? 'vt-neg' : ''}">${brl(s)}</b></div>
+          <div class="t" style="margin-top:4px"><span>entrada ${esc(centavosTxt(l.di))} · saída ${esc(centavosTxt(l.ds))}</span><span>hold ${pct1(s, v)}</span></div>
+          <div class="vt-hold"><i style="width:${Math.max(0, Math.min(100, hold))}%"></i></div></div>`;
+      }).join('');
+      const u = esc(x.uid), pid = esc(p.id);
+      return `<tr class="vt-lin">
+        <td data-r="Período"><button type="button" class="vt-abre" data-vg="prest-det" data-id="${u}" aria-expanded="false" aria-label="Ver cada video game">+</button>${ini.data ? dataCurta(ini.data) : '…'} → ${dataCurta(x.data)}<span class="vt-pd">${ini.inicio ? 'desde a instalação' : `${entreDias(ini.data, x.data)} dias de venda`}</span></td>
+        <td data-r="Saldo">${brl(x.saldo)}</td>
+        <td data-r="Despesas" class="${desp ? 'vt-neg' : ''}">${brl(desp)}</td>
+        <td data-r="Comissão">${brl(x.total_comissoes)}</td>
+        <td data-r="Líquido"><b>${brl(x.liquido)}</b></td>
+        <td data-r="Recebido" class="${pago ? 'vt-pos' : ''}">${brl(pago)}</td>
+        <td data-r="Situação">${rest > 0 ? `<span class="vt-sit deve">${brl(rest)}</span>` : rest < 0 ? `<span class="vt-sit cred">deve ${brl(-rest)}</span>` : '<span class="vt-sit ok">Quitada</span>'}</td>
+        <td class="vt-ac"><button type="button" class="vt-bts mini" data-vg="prest-abrir" data-id="${u}" data-ponto="${pid}">${edita ? 'Editar' : 'Ver'}</button>
+          <button type="button" class="vt-bts mini" data-vg="prest-imagem" data-id="${u}" data-ponto="${pid}">Imagem</button>${exclui ? `
+          <button type="button" class="vt-bts mini perigo" data-vg="prest-excluir" data-id="${u}" data-ponto="${pid}">Excluir</button>` : ''}</td>
+      </tr>
+      <tr class="vt-det-lin" data-det="${u}" hidden><td colspan="8"><div class="vt-chips">${det || '<span class="vt-det">Sem leituras.</span>'}</div></td></tr>`;
+    }).join('');
+    const recs = [];
+    r.ps.forEach(x => (x.dados?.pagamentos || []).forEach(pg => {
+      const k = st.pgHist.push(pg) - 1;
+      const divida = String(pg.forma).toUpperCase() === 'DIVIDA_PAGA';
+      const v = Math.round((Number(pg.valor) || 0) * 100);
+      recs.push(`<div><span>${esc(dataBR(pg.data || x.data))} · ${esc(divida ? 'Pago ao gerente · ' + (pg.obs || 'PIX') : (pg.forma || ''))}</span>
+        <span class="vt-num"><b class="${divida ? 'vt-neg' : 'vt-pos'}">${divida ? '−' : ''}${brl(v)}</b> <span class="vt-tag ag" data-pgh="${k}">…</span></span></div>`);
+    }));
+    const desps = r.ps.flatMap(x => (x.dados?.despesas || []).map(d => ({ ...d, data: x.data })));
+    return `<div class="vt-hist">
+      <div class="vt-hk-grid">${kpi('Saldo', r.saldo)}${kpi('Despesas', r.desp, r.desp ? 'vt-neg' : '')}${kpi('Comissões', r.com)}${kpi('Líquido', r.liq)}${kpi('Recebido', r.rec, r.rec ? 'vt-pos' : '')}${kpi('A receber', r.deve, r.deve ? 'vt-neg' : '')}</div>
+      <div class="vt-sec">Prestações</div>
+      ${r.ps.length ? `<table class="vt-tab">
+        <thead><tr><th>Período</th><th>Saldo</th><th>Despesas</th><th>Comissão</th><th>Líquido</th><th>Recebido</th><th>Situação</th><th></th></tr></thead>
+        <tbody>${linhas}</tbody></table>`
+        : `<div class="vt-lista"><div class="vz">Nenhuma prestação em ${esc(PERIODOS[st.periodo].toLowerCase())}.</div></div>`}
+      <div class="vt-duas">
+        <div><div class="vt-sec">Recebimentos</div><div class="vt-lista">${recs.join('') || '<div class="vz">Nenhum recebimento no período</div>'}</div></div>
+        <div><div class="vt-sec">Despesas</div><div class="vt-lista">${desps.map(d => `<div><span>${esc(dataBR(d.data))} · ${esc(d.descricao)}</span><b class="vt-num vt-neg">${brl(d.valor)}</b></div>`).join('') || '<div class="vz">Nenhuma despesa no período</div>'}</div></div>
+      </div>
+      ${cad.length ? `<details class="vt-cad"><summary>Caderno, antes do sistema · ${cad.length} leitura${cad.length === 1 ? '' : 's'} · saldo ${brl(somar(cad, x => x.saldo))}</summary>
+        <div class="vt-chips" style="margin-top:8px">${cad.slice().reverse().map(x => `<div class="vt-chip"><div class="t"><span>${esc(dataBR(x.data))}</span><b>${brl(x.saldo)}</b></div></div>`).join('')}</div></details>` : ''}
+    </div>`;
+  }
+
+  // Situação no caixa de cada recebimento do histórico
+  async function atualizarStatusHist() {
+    for (const el of [...document.querySelectorAll('#vgRoot [data-pgh]')]) {
+      const pg = st.pgHist?.[Number(el.dataset.pgh)];
+      if (!pg) continue;
+      try {
+        const cods = (window.__codigosAtivos?.(pg) || []).map(m => m.codigo);
+        if (!cods.length) { el.textContent = 'sem código'; el.className = 'vt-tag'; continue; }
+        const noCaixa = await window.__valoresNoCaixa(pg, cods);
+        const tudo = cods.every(c => noCaixa.has(c));
+        el.textContent = tudo ? 'no caixa' : 'aguardando caixa';
+        el.className = 'vt-tag ' + (tudo ? 'cx' : 'ag');
+        el.title = 'Código: ' + cods.join(', ');
+      } catch (_) { el.textContent = '—'; }
+    }
+  }
+
+  // ---------- quadro do jogo: última leitura e último lucro ----------
+  function fecharPop() {
+    document.getElementById('vgPop')?.remove();
+    document.getElementById('vgPopFundo')?.remove();
+    document.querySelectorAll('.vt-maq[aria-expanded="true"]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+    st.popMaq = null;
+  }
+  function abrirPopMaq(btn, maqId) {
+    if (st.popMaq === maqId) { fecharPop(); return; }
+    fecharPop();
+    const m = (st.maqTodas || []).find(x => x.id === maqId);
+    if (!m) return;
+    const ponto = st.pontos.find(p => p.id === m.ponto_id);
+    const idx = maqsDoPonto(m.ponto_id).filter(x => x.ativo).findIndex(x => x.id === m.id);
+    const u = ultimaDaMaquina(m);
+    const el = document.createElement('div');
+    el.id = 'vgPop';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', 'Última leitura de ' + m.nome);
+    const cab = `<div class="vp-cab"><span class="vp-ico">${ICONE}</span><div><div class="vp-t">${tagVG(Math.max(idx, 0))} · ${esc(m.nome)}</div>
+      <div class="vp-s">${esc(rotuloPonto(ponto))}${[m.jogo, m.local].filter(Boolean).length ? ' · ' + esc([m.jogo, m.local].filter(Boolean).join(' · ')) : ''}</div></div>
+      <button type="button" class="vp-x" data-pop-fechar aria-label="Fechar">✕</button></div>`;
+    if (!u) {
+      el.innerHTML = cab + `<div class="vp-per">Ainda não tem leitura. Leitura inicial <b>${esc(centavosTxt(Number(m.di_inicial) || 0))}</b> / <b>${esc(centavosTxt(Number(m.ds_inicial) || 0))}</b>${m.instalada_em ? ` em <b>${esc(dataBR(m.instalada_em))}</b>` : ''}.</div>`;
+    } else {
+      const lucro = u.venda - u.premios, nd = u.ini ? entreDias(u.ini, u.p.data) : 0;
+      const media = u.serie.length ? somar(u.serie, v => v) / u.serie.length : 0;
+      const hold = u.venda ? lucro / u.venda * 100 : 0;
+      el.innerHTML = cab + `
+        <div class="vp-per">Última leitura <b>${esc(dataBR(u.p.data))}</b>${ehHistorico(u.p) ? ' (caderno)' : ''} · período <b>${u.ini ? dataCurta(u.ini) : '…'} → ${dataCurta(u.p.data)}</b>${nd > 0 ? ` · ${nd} dias` : u.inicio ? ' · desde a instalação' : ''}</div>
+        <div class="vp-grid">
+          <div><span>Entrada · coin in</span><b>${esc(centavosTxt(u.l.di))}</b></div><div><span>Saída · coin out</span><b>${esc(centavosTxt(u.l.ds))}</b></div>
+          <div><span>Venda no período</span><b>${esc(centavosTxt(u.venda))}</b></div><div><span>Prêmios no período</span><b class="vp-neg">${esc(centavosTxt(u.premios))}</b></div>
+        </div>
+        <div class="vp-lucro"><span class="rt">Último lucro</span><span class="vl ${lucro > 0 ? 'vp-pos' : lucro < 0 ? 'vp-neg' : ''}">${brl(lucro)}</span>
+          <span class="hd">hold ${pct1(lucro, u.venda)}</span>${nd > 0 ? `<span class="hd" style="color:#8a9bb5">${brl(Math.round(lucro / nd))}/dia</span>` : ''}</div>
+        <div class="vt-hold"><i style="width:${Math.max(0, Math.min(100, hold))}%"></i></div>
+        ${sparkSvg(u.serie, null, 300, 46)}
+        <div class="vp-rod"><span>Lucro nas últimas ${u.serie.length} leitura${u.serie.length === 1 ? '' : 's'}</span><span>média ${brl(Math.round(media))}</span></div>`;
+    }
+    document.body.appendChild(el);
+    btn.setAttribute('aria-expanded', 'true');
+    st.popMaq = maqId;
+    if (innerWidth < 640) {
+      const f = document.createElement('div');
+      f.id = 'vgPopFundo';
+      document.body.insertBefore(f, el);
+      el.classList.add('folha');
+      return;
+    }
+    const rc = btn.getBoundingClientRect();
+    el.style.left = Math.max(8, Math.min(rc.left + scrollX, scrollX + innerWidth - el.offsetWidth - 12)) + 'px';
+    const embaixo = rc.bottom + el.offsetHeight + 12 < innerHeight;
+    el.style.top = (embaixo ? rc.bottom + scrollY + 8 : Math.max(scrollY + 8, rc.top + scrollY - el.offsetHeight - 8)) + 'px';
+  }
+  document.addEventListener('click', e => {
+    if (!st.popMaq) return;
+    if (e.target.closest('[data-pop-fechar]') || (!e.target.closest('#vgPop') && !e.target.closest('.vt-maq'))) fecharPop();
+  }, true);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && st.popMaq) fecharPop(); });
+
   function opcoesGerentes() {
     return st.pontos.map(p => `<option value="${esc(p.id)}"${p.id === st.pontoId ? ' selected' : ''}>${esc(rotuloPonto(p))}</option>`).join('')
       || '<option value="">Nenhum gerente cadastrado</option>';
   }
 
-  // Formulário da prestação em etapas, aberto por cima da página (questionário)
-  const ETAPAS = ['Gerente e data', 'Leituras', 'Despesas', 'Pagamentos', 'Conferir e salvar'];
+  // ---------- formulário da prestação (etapas + resultado ao vivo) ----------
+  const ETAPAS = ['Gerente', 'Leituras', 'Despesas', 'Pagamentos', 'Revisão'];
+  // Período de vendas desta prestação: da última leitura do gerente até a data desta leitura
+  function periodoForm() {
+    const f = st.form;
+    let ini = null, inicio = false, cad = false;
+    const i = f.uid ? st.prestacoes.findIndex(p => p.uid === f.uid) : -1;
+    const ant = i >= 0 ? st.prestacoes[i + 1] : (f.modo === 'nova' ? st.prestacoes[0] : null);
+    if (ant) { ini = dia(ant.data); cad = ehHistorico(ant); }
+    else {
+      ini = st.maquinas.filter(m => f.linhas.some(l => l.maquina_id === m.id) && m.instalada_em).map(m => dia(m.instalada_em)).sort()[0] || null;
+      inicio = true;
+    }
+    const fim = f.data || '';
+    return { ini, fim, inicio, cad, n: ini && fim ? entreDias(ini, fim) : null };
+  }
+  function htmlPeriodoForm(mini) {
+    const pr = periodoForm();
+    if (mini && pr.fim && !(pr.ini && !pr.inicio && pr.n <= 0)) {
+      return `<div class="vt-per"><b>${pr.ini ? esc(dataCurta(pr.ini)) : '—'} → ${esc(dataBR(pr.fim))}</b>${pr.n > 0 ? `<span class="vt-sit ok">${pr.n} dia${pr.n === 1 ? '' : 's'}</span>` : pr.inicio ? '<span>desde a instalação</span>' : ''}</div>`;
+    }
+    if (!pr.fim) return '<div class="vt-per">Informe a data da leitura.</div>';
+    if (pr.ini && !pr.inicio && pr.n <= 0) return `<div class="vt-per erro">A data precisa ser depois da última leitura (<b>${esc(dataBR(pr.ini))}</b>).</div>`;
+    return `<div class="vt-per">Período de vendas <b>${pr.ini ? esc(dataBR(pr.ini)) : '—'}</b> → <b>${esc(dataBR(pr.fim))}</b>
+      ${pr.n !== null && pr.n > 0 ? `<span class="vt-sit ok">${pr.n} dia${pr.n === 1 ? '' : 's'}</span>` : ''}
+      <span>${pr.inicio ? 'desde a instalação' : `última leitura: ${esc(dataBR(pr.ini))}${pr.cad ? ' (caderno)' : ''}`}</span></div>`;
+  }
+  // Data da leitura anterior de um video game (para mostrar junto do medidor anterior)
+  function dataAnterior(maqId) {
+    const f = st.form;
+    const i = f?.uid ? st.prestacoes.findIndex(p => p.uid === f.uid) : -1;
+    const lista = i >= 0 ? st.prestacoes.slice(i + 1) : st.prestacoes;
+    const p = lista.find(x => (x.dados?.leituras || []).some(l => l.maquina_id === maqId));
+    if (p) return dia(p.data);
+    return dia(st.maquinas.find(m => m.id === maqId)?.instalada_em) || '';
+  }
+
   function htmlFormulario(ponto) {
     const f = st.form;
     const ver = f.modo === 'ver';
@@ -574,103 +959,161 @@
       : `Prestação de ${dataBR(f.data)}`;
     const travaLeit = ver || !!f.trava;
     const proxima = f.trava ? (() => { const i = st.prestacoes.findIndex(p => p.uid === f.uid); return i > 0 ? st.prestacoes[i - 1] : null; })() : null;
-    const ultima = st.prestacoes[0];
     const ativos = st.maquinas.filter(m => m.ativo).length;
     const negAnt = Number(f.negativoAnterior) || 0;
-    const etapa = (n, pergunta, dica, corpo) => `
-      <section class="vg-etapa${e === n ? ' on' : ''}" data-etapa="${n}">
-        <p class="vg-pergunta">${pergunta}</p>
-        ${dica ? `<p class="vg-sub" style="margin:0 0 14px">${dica}</p>` : ''}
-        ${corpo}
-      </section>`;
+    const ok = n => ver || (n === 1 ? !!f.data : n === 2 ? !Object.keys(avaliarLinhas().erros).length : n === 3 ? !avaliarDespesas().erro : true);
+    const pipe = ETAPAS.map((t, i) => {
+      const n = i + 1, feito = n < e && ok(n);
+      return `${i ? `<span class="vt-fio"><i style="width:${n <= e ? 100 : 0}%"></i></span>` : ''}<button type="button" class="vt-pp${n === e ? ' on' : ''}${feito ? ' ok' : ''}" data-vg="etapa" data-id="${n}" aria-current="${n === e ? 'step' : 'false'}"><b>${feito ? '✓' : String(n).padStart(2, '0')}</b><span>${t}</span></button>`;
+    }).join('');
+    const etapa = (n, h, sub, corpo) => `<section class="vt-etapa${e === n ? ' on' : ''}" data-etapa="${n}"><h3>${h}</h3>${sub ? `<p class="vt-sub2">${sub}</p>` : ''}${corpo}</section>`;
     return `
-      <div class="vg-ov" role="dialog" aria-modal="true" aria-label="${esc(titulo)}">
-        <div class="vg-ov-pg" id="vgFormCard">
-          <div class="vg-ov-topo">
-            <div style="min-width:0">
-              <div class="vg-titulo">🎰 ${esc(titulo)}</div>
-              <div class="vg-sub">${esc(rotuloPonto(ponto))}${ver ? ' · somente consulta' : ''}</div>
-            </div>
-            <button type="button" class="btn ghost sm" data-vg="form-fechar" aria-label="Fechar o formulário">✕ Fechar</button>
+      <div class="vt-ov" role="dialog" aria-modal="true" aria-label="${esc(titulo)}">
+        <div class="vt-ov-pg" id="vgFormCard">
+          <div class="vt-ov-topo">
+            <div class="vt-marca"><div class="vt-logo">${ICONE}</div><div style="min-width:0"><div class="vt-ov-t">${esc(titulo)}</div>
+              <div class="vt-sub">${esc(rotuloPonto(ponto))}${ver ? ' · somente consulta' : ''}</div></div></div>
+            <button type="button" class="vt-bts" data-vg="form-fechar" aria-label="Fechar o formulário">✕ Fechar</button>
           </div>
-          <div class="vg-passos" role="tablist">${ETAPAS.map((t, i) => `<button type="button" role="tab" aria-selected="${i + 1 === e}" class="vg-passo${i + 1 === e ? ' on' : ''}" data-vg="etapa" data-id="${i + 1}"><b>${i + 1}</b>${t}</button>`).join('')}</div>
-          <div class="vg-ov-corpo">
-            ${etapa(1, 'Qual gerente e qual a data da leitura?', f.modo === 'nova' ? 'Escolha o gerente e a data em que as leituras foram feitas.' : '', `
-              <div class="vg-campos">
-                <label>GERENTE<select id="vgPontoForm" ${f.modo !== 'nova' ? 'disabled' : ''}>${opcoesGerentes()}</select></label>
-                <label>DATA DA LEITURA<input type="date" id="vgData" value="${esc(f.data)}" ${travaLeit ? 'disabled' : ''}></label>
+          <div class="vt-ov-corpo">
+            <div class="vt-form">
+              <div class="vt-card">
+                <div class="vt-pipe">${pipe}</div>
+                ${etapa(1, 'Gerente e data', f.modo === 'nova' ? 'Escolha o gerente e a data em que as leituras foram feitas.' : '', `
+                  <div class="vt-campos">
+                    <div><label class="vt-lab" for="vgPontoForm">Gerente</label><select id="vgPontoForm" ${f.modo !== 'nova' ? 'disabled' : ''}>${opcoesGerentes()}</select></div>
+                    <div><label class="vt-lab" for="vgData">Data da leitura</label><input type="date" id="vgData" value="${esc(f.data)}" ${travaLeit ? 'disabled' : ''}></div>
+                  </div>
+                  <div data-per></div>
+                  <div class="vt-info"><span>Video games ativos: <b>${ativos}</b></span>
+                    ${negAnt ? `<span>Negativo anterior: <b style="color:var(--vt-ambar)">${esc(brl(negAnt))}</b></span>` : ''}</div>
+                  ${!ativos && f.modo === 'nova' ? `<p class="vg-aviso" style="margin-top:12px">Este gerente não tem video game ativo. Cadastre no menu <strong>Prestações → Cadastro video game</strong>.</p>` : ''}`)}
+                ${etapa(2, 'Leituras dos medidores', travaLeit ? '' : 'Digite a entrada (coin in) e a saída (coin out) atuais. O sistema compara com a leitura anterior de cada video game.', `
+                  <div data-per></div>
+                  ${f.trava ? `<p class="vg-aviso">Leituras e data travadas: ${proxima ? `a prestação de ${esc(dataBR(proxima.data))} parte destas leituras` : 'existe prestação depois desta'}. Aqui dá para lançar e corrigir <strong>pagamentos</strong> e <strong>despesas</strong>.</p>` : ''}
+                  ${f.linhas.length ? f.linhas.map((l, i) => htmlMaquina(l, travaLeit, i)).join('') : `<div class="vg-vazio">Este gerente ainda não tem video game. Cadastre no menu <strong>Prestações → Cadastro video game</strong>.</div>`}`)}
+                ${etapa(3, 'Despesas', ver ? '' : 'Saem do resultado antes da comissão, como no JB. Se não teve, é só seguir.', `
+                  ${!ver && podeEditar() ? `<button type="button" class="vt-bts" data-vg="despesa-nova" style="margin-bottom:10px">+ Adicionar despesa</button>` : ''}
+                  <div id="vgDespLista">${htmlDespesas(ver)}</div>
+                  <div class="vg-erro" id="vgDespErro"></div>`)}
+                ${etapa(4, 'Pagamentos do gerente', ver ? '' : 'Lance o que foi recebido do gerente (ou pago a ele). Cada pagamento vai para confirmação no caixa.', `
+                  <div class="vg-resumo" style="margin-top:0">
+                    <div class="vg-kpi"><div class="vg-sub">Líquido desta prestação</div><div class="vg-v" data-out="liquido"></div></div>
+                    <div class="vg-kpi"><div class="vg-sub">Pagamentos</div><div class="vg-v" data-out="pago"></div></div>
+                    <div class="vg-kpi"><div class="vg-sub" data-out="restamRot"></div><div class="vg-v" data-out="restam"></div></div>
+                  </div>
+                  ${!ver && podeEditar() ? `<button type="button" class="vt-bts" data-vg="pagamento-novo" style="margin-bottom:10px">+ Adicionar pagamento</button>` : ''}
+                  <div class="vg-tabela">${htmlPagamentos(ver)}</div>`)}
+                ${etapa(5, ver ? 'Resumo da prestação' : 'Revisão', ver ? '' : 'Confira cada video game antes de salvar.', `
+                  <div class="vg-tabela" style="margin-bottom:12px"><table class="vt-tab" id="vgConfMaq"></table></div>
+                  <div class="vg-sub" style="margin-bottom:6px">Comissões ${f.base === 'cascata' ? 'em cascata' : 'sobre o resultado de todos os video games'}${f.modo === 'nova' ? '' : ' · percentuais gravados nesta prestação'}</div>
+                  <div class="vg-coms" id="vgComs"></div>
+                  <div class="vg-linha"><span>Saldo do período (todos os video games)</span><span class="vg-num" id="vgSaldo"></span></div>
+                  <div class="vg-linha" id="vgDespLinha"><span>Despesas</span><span class="vg-num vg-neg" id="vgDespTot"></span></div>
+                  <div class="vg-linha" id="vgResLinha"><span>Resultado depois das despesas</span><span class="vg-num" id="vgRes"></span></div>
+                  <div class="vg-linha" id="vgNegAntLinha"><span>Negativo acumulado anterior</span><span class="vg-num" id="vgNegAnt"></span></div>
+                  <div class="vg-linha"><span>Total de comissões</span><span class="vg-num vg-neg" id="vgTotCom"></span></div>
+                  <div class="vg-linha vg-total"><span>Líquido da empresa</span><span class="vg-num" id="vgLiq"></span></div>
+                  <div class="vg-linha" id="vgNegNovoLinha" style="color:var(--vt-ambar)"><span>Negativo que vai para a próxima leitura</span><span class="vg-num" id="vgNegNovo"></span></div>
+                  <div class="vg-linha"><span>Pagamentos</span><span class="vg-num" data-out="pago"></span></div>
+                  <div class="vg-linha vg-total"><span id="vgRestamRot">Restam</span><span class="vg-num" id="vgRestam"></span></div>`)}
+                <div class="vg-erro" id="vgMsg" role="alert" style="margin-top:12px"></div>
+                <div class="vt-rodape">
+                  <button type="button" class="vt-bts" data-vg="etapa-voltar" style="visibility:${e > 1 ? 'visible' : 'hidden'}">← Voltar</button>
+                  ${e < ETAPAS.length ? `<button type="button" class="vt-btp" data-vg="etapa-proxima">Próximo →</button>` : ''}
+                </div>
               </div>
-              <div class="vg-det" style="margin-top:12px">
-                <span>Video games ativos: <b>${ativos}</b></span>
-                <span>Última prestação: <b>${ultima ? `${esc(dataBR(ultima.data))}${ehHistorico(ultima) ? ' (caderno)' : ''}` : 'ainda não tem'}</b></span>
-                ${negAnt ? `<span>Negativo anterior: <b style="color:#b45309">${esc(brl(negAnt))}</b></span>` : ''}
-              </div>
-              ${!ativos && f.modo === 'nova' ? `<p class="vg-aviso" style="margin-top:12px">Este gerente não tem video game ativo. Cadastre no menu <strong>Prestações → Cadastro video game</strong>.</p>` : ''}`)}
-            ${etapa(2, 'Quais são as leituras de cada video game?', travaLeit ? '' : 'Digite os números da tela: entrada (di) e saída (ds). O período é calculado a partir da leitura anterior.', `
-              ${f.trava ? `<p class="vg-aviso">Leituras e data travadas: ${proxima ? `a prestação de ${esc(dataBR(proxima.data))} parte destas leituras` : 'existe prestação depois desta'}. Nesta prestação dá para lançar e corrigir <strong>pagamentos</strong> e <strong>despesas</strong>.</p>` : ''}
-              ${f.linhas.length ? f.linhas.map(l => htmlMaquina(l, travaLeit)).join('') : `<div class="vg-vazio">Este gerente ainda não tem video game. Cadastre no menu <strong>Prestações → Cadastro video game</strong>.</div>`}
-              ${f.modo === 'nova' && podeEditar() ? `<div class="vg-sub">Para adicionar, trocar ou retirar video game, use o menu <strong>Prestações → Cadastro video game</strong>.</div>` : ''}`)}
-            ${etapa(3, 'Teve alguma despesa?', ver ? '' : 'As despesas saem do resultado antes da comissão, como no JB. Se não teve, é só seguir.', `
-              ${!ver && podeEditar() ? `<button type="button" class="btn sm" data-vg="despesa-nova" style="margin-bottom:10px">+ Adicionar despesa</button>` : ''}
-              <div id="vgDespLista">${htmlDespesas(ver)}</div>
-              <div class="vg-erro" id="vgDespErro"></div>`)}
-            ${etapa(4, 'O gerente pagou alguma coisa?', ver ? '' : 'Lance o que foi recebido do gerente (ou pago a ele). Cada pagamento vai para confirmação no caixa.', `
-              <div class="vg-resumo" style="margin-top:0">
-                <div class="vg-kpi"><div class="vg-sub">Líquido desta prestação</div><div class="vg-v" data-out="liquido"></div></div>
-                <div class="vg-kpi"><div class="vg-sub">Pagamentos</div><div class="vg-v" data-out="pago"></div></div>
-                <div class="vg-kpi"><div class="vg-sub" data-out="restamRot"></div><div class="vg-v" data-out="restam"></div></div>
-              </div>
-              ${!ver && podeEditar() ? `<button type="button" class="btn sm" data-vg="pagamento-novo" style="margin-bottom:10px">+ Adicionar pagamento</button>` : ''}
-              <div class="vg-tabela">${htmlPagamentos(ver)}</div>`)}
-            ${etapa(5, ver ? 'Resumo da prestação' : 'Confira e salve', '', `
-              <div class="vg-tabela" style="margin-bottom:12px"><table class="vg-mapa" id="vgConfMaq"></table></div>
-              <div class="vg-sub" style="margin-bottom:6px">Comissões ${f.base === 'cascata' ? 'em cascata' : 'sobre o resultado de todos os video games'}${f.modo === 'nova' ? '' : ' · percentuais gravados nesta prestação'}</div>
-              <div class="vg-coms" id="vgComs"></div>
-              <div class="vg-linha"><span>Saldo do período (todos os video games)</span><span class="vg-num" id="vgSaldo"></span></div>
-              <div class="vg-linha" id="vgDespLinha"><span>Despesas</span><span class="vg-num" id="vgDespTot" style="color:#b91c1c"></span></div>
-              <div class="vg-linha" id="vgResLinha"><span>Resultado depois das despesas</span><span class="vg-num" id="vgRes"></span></div>
-              <div class="vg-linha" id="vgNegAntLinha"><span>Negativo acumulado anterior</span><span class="vg-num" id="vgNegAnt"></span></div>
-              <div class="vg-linha"><span>Total de comissões</span><span class="vg-num" id="vgTotCom" style="color:#b91c1c"></span></div>
-              <div class="vg-linha vg-total"><span>Líquido da empresa</span><span class="vg-num" id="vgLiq"></span></div>
-              <div class="vg-linha" id="vgNegNovoLinha" style="color:#92400e"><span>Negativo que vai para a próxima leitura</span><span class="vg-num" id="vgNegNovo"></span></div>
-              <div class="vg-linha"><span>Pagamentos</span><span class="vg-num" data-out="pago"></span></div>
-              <div class="vg-linha vg-total"><span id="vgRestamRot">Restam</span><span class="vg-num" id="vgRestam"></span></div>`)}
-          </div>
-          <div class="vg-ov-rodape">
-            <div class="vg-erro" id="vgMsg" role="alert"></div>
-            <div class="vg-rodape-btns">
-              <div>${e > 1 ? `<button type="button" class="btn ghost" data-vg="etapa-voltar">← Voltar</button>` : ''}</div>
-              <div class="vg-acoes" style="margin:0">
-                ${f.modo !== 'nova' ? `<button type="button" class="btn ghost" data-vg="prest-imagem" data-id="${esc(f.uid)}" title="Imagem da prestação salva, para enviar no grupo do gerente">Gerar imagem</button>` : ''}
-                ${e < ETAPAS.length ? `<button type="button" class="btn primary" data-vg="etapa-proxima">Próximo →</button>`
-                  : (!ver && podeEditar() ? `<button type="button" class="btn primary" id="vgSalvar" data-vg="salvar">${rotuloSalvar()}</button>` : '')}
-              </div>
+              <aside class="vt-card vt-resumo" aria-label="Resultado da prestação">
+                <h4>Resultado da prestação</h4>
+                <div data-per="mini"></div>
+                <div id="vgCascata"></div>
+                <div class="vt-tot"><span>Líquido</span><span class="vt-num vt-grande" data-out="liquido"></span></div>
+                <div class="vt-tot sem"><span data-out="restamRot"></span><span class="vt-num" data-out="restam" style="font-weight:700"></span></div>
+                <div class="vt-tot sem"><span>Saldo por dia de venda</span><span class="vt-num" id="vgPorDia">—</span></div>
+                <div class="vt-prog"><i id="vgProg"></i></div>
+                ${!ver && podeEditar() ? `<div class="vt-slide" id="vgSlide"><div class="rastro" id="vgRastro"></div>
+                  <div class="txt"><span id="vgSlideTxt">Deslize para salvar</span></div>
+                  <div class="pino" id="vgPino" role="button" tabindex="0" aria-label="${f.modo === 'editar' ? 'Salvar alterações' : 'Salvar prestação'}">›</div></div>` : ''}
+                ${f.modo !== 'nova' ? `<button type="button" class="vt-bts" data-vg="prest-imagem" data-id="${esc(f.uid)}" style="width:100%;margin-top:10px">Gerar imagem para o grupo</button>` : ''}
+              </aside>
             </div>
           </div>
         </div>
       </div>`;
   }
 
-  function htmlMaquina(l, ver) {
+  function htmlMaquina(l, ver, idx = 0) {
     const id = esc(l.maquina_id);
     const dis = ver ? 'disabled' : '';
+    const dAnt = dataAnterior(l.maquina_id);
+    const det = [l.jogo, l.local].filter(Boolean).join(' · ');
     return `
-      <div class="vg-maq" data-maq="${id}">
-        <div class="vg-maq-topo"><span>🎰 ${esc(l.nome)}${[l.jogo, l.local].filter(Boolean).length ? ` <span class="vg-sub">· ${esc([l.jogo, l.local].filter(Boolean).join(' · '))}</span>` : ''}</span></div>
-        <div class="vg-sub vg-so-celular">Anterior: di ${esc(centavosTxt(l.di_anterior))} · ds ${esc(centavosTxt(l.ds_anterior))}</div>
-        <div class="vg-grade">
-          <span class="vg-so-largo"></span><span class="vg-rot vg-num vg-so-largo">Anterior</span><span class="vg-rot vg-num vg-so-largo">Atual</span><span class="vg-rot vg-num vg-so-largo">No período</span>
-          <span>di (venda)</span><span class="vg-num vg-so-largo">${esc(centavosTxt(l.di_anterior))}</span>
-          <input inputmode="numeric" autocomplete="off" data-leitura="diTxt" data-id="${id}" value="${esc(l.diTxt ? centavosTxt(l.diTxt) : '')}" placeholder="ex.: 1.507,00" aria-label="di atual de ${esc(l.nome)}" ${dis}>
-          <span class="vg-num" data-o="venda"></span>
-          <span>ds (prêmios)</span><span class="vg-num vg-so-largo">${esc(centavosTxt(l.ds_anterior))}</span>
-          <input inputmode="numeric" autocomplete="off" data-leitura="dsTxt" data-id="${id}" value="${esc(l.dsTxt ? centavosTxt(l.dsTxt) : '')}" placeholder="ex.: 664,70" aria-label="ds atual de ${esc(l.nome)}" ${dis}>
-          <span class="vg-num" data-o="premios" style="color:#b91c1c"></span>
+      <div class="vt-term" data-maq="${id}">
+        <div class="vt-term-cab"><span class="vt-term-t">${ICONE}<span>${esc(l.nome)}</span><small>${tagVG(idx)}${det ? ' · ' + esc(det) : ''}</small></span>
+          <span class="vt-st" data-o="st"><i></i><span data-o="stt">aguardando leitura</span></span></div>
+        <div class="vt-term-grid">
+          <div><label class="vt-lab" for="vgdi_${id}">Entrada · coin in</label>
+            <input id="vgdi_${id}" inputmode="numeric" autocomplete="off" data-leitura="diTxt" data-id="${id}" value="${esc(l.diTxt ? centavosTxt(l.diTxt) : '')}" placeholder="0,00" ${dis}>
+            <div class="vt-ant">anterior ${esc(centavosTxt(l.di_anterior))}${dAnt ? ' · ' + esc(dataCurta(dAnt)) : ''}</div></div>
+          <div><label class="vt-lab" for="vgds_${id}">Saída · coin out</label>
+            <input id="vgds_${id}" inputmode="numeric" autocomplete="off" data-leitura="dsTxt" data-id="${id}" value="${esc(l.dsTxt ? centavosTxt(l.dsTxt) : '')}" placeholder="0,00" ${dis}>
+            <div class="vt-ant">anterior ${esc(centavosTxt(l.ds_anterior))}${dAnt ? ' · ' + esc(dataCurta(dAnt)) : ''}</div></div>
+          <div class="vt-saidas">
+            <div class="vt-sd"><span>Venda</span><b data-o="venda">—</b></div>
+            <div class="vt-sd"><span>Prêmios</span><b data-o="premios" class="vt-neg">—</b></div>
+            <div class="vt-sd"><span>Saldo</span><b data-o="saldo" class="vt-ciano">—</b></div>
+            <div class="vt-sd"><span>Hold</span><b data-o="hold" class="vt-violeta">—</b></div>
+          </div>
         </div>
-        <div class="vg-rodape"><span class="vg-sub" data-o="acum"></span><strong>Saldo <span data-o="saldo"></span></strong></div>
         <label class="vg-zerado" data-o="zeradoBox" hidden><input type="checkbox" data-zerado data-id="${id}" ${l.zerado ? 'checked' : ''} ${dis}> Video game foi zerado: contar a partir de zero</label>
         <div class="vg-erro" data-o="erro"></div>
       </div>`;
+  }
+
+  // Deslizar para salvar: o gesto da alavanca, em versão moderna
+  function ligarSlide() {
+    const slide = document.getElementById('vgSlide'), pino = document.getElementById('vgPino'), rastro = document.getElementById('vgRastro');
+    if (!slide || !pino) return;
+    let x0 = null, maxX = 0;
+    const pos = (x, anim) => {
+      pino.style.transition = rastro.style.transition = anim ? 'left .25s, width .25s' : 'none';
+      pino.style.left = (4 + x) + 'px';
+      rastro.style.width = (x + 52) + 'px';
+    };
+    const disparar = async () => {
+      if (st.salvando) return;
+      pos(maxX, true);
+      slide.classList.add('feito');
+      pino.textContent = '✓';
+      document.getElementById('vgSlideTxt').textContent = 'Salvando…';
+      await salvarPrestacao();
+      // Se não salvou (algo a corrigir), a alavanca volta
+      const s2 = document.getElementById('vgSlide');
+      if (s2 && s2 === slide) {
+        slide.classList.remove('feito');
+        pino.textContent = '›';
+        document.getElementById('vgSlideTxt').textContent = 'Deslize para salvar';
+        pos(0, true);
+      }
+    };
+    pino.addEventListener('pointerdown', e => {
+      if (st.salvando) return;
+      x0 = e.clientX;
+      maxX = slide.clientWidth - 54;
+      pino.setPointerCapture?.(e.pointerId);
+    });
+    pino.addEventListener('pointermove', e => { if (x0 !== null) pos(Math.max(0, Math.min(maxX, e.clientX - x0)), false); });
+    const soltar = e => {
+      if (x0 === null) return;
+      const x = Math.max(0, Math.min(maxX, e.clientX - x0));
+      x0 = null;
+      if (x > maxX * 0.85) disparar(); else pos(0, true);
+    };
+    pino.addEventListener('pointerup', soltar);
+    pino.addEventListener('pointercancel', () => { x0 = null; pos(0, true); });
+    pino.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); maxX = slide.clientWidth - 54; disparar(); }
+    });
   }
 
   const rotuloSalvar = () => (st.form?.modo === 'editar' ? 'Salvar alterações' : 'Salvar prestação');
@@ -731,12 +1174,18 @@
       const o = n => box.querySelector(`[data-o="${n}"]`);
       const lin = r.linhas.find(x => x.maquina_id === l.maquina_id);
       const di = leituraInt(l.diTxt), ds = leituraInt(l.dsTxt);
-      definir(o('venda'), lin ? brl(lin.venda) : '—');
-      definir(o('premios'), lin ? brl(lin.premios) : '—');
-      definir(o('saldo'), lin ? brl(lin.saldo) : '—');
-      definir(o('acum'), di !== null && ds !== null ? 'Acumulado do totalizador: ' + brl(di - ds) : '');
-      definir(o('erro'), f.modo === 'ver' ? '' : (l.tocado || st.tentouSalvar ? erros[l.maquina_id] || '' : ''));
-      const menor = di !== null && ds !== null && (di < l.di_anterior || ds < l.ds_anterior);
+      definir(o('venda'), lin ? centavosTxt(lin.venda) : '—');
+      definir(o('premios'), lin ? centavosTxt(lin.premios) : '—');
+      definir(o('saldo'), lin ? centavosTxt(lin.saldo) : '—');
+      definir(o('hold'), lin && lin.venda ? pct1(lin.saldo, lin.venda) : '—');
+      const msgErro = f.modo === 'ver' ? '' : (l.tocado || st.tentouSalvar ? erros[l.maquina_id] || '' : '');
+      definir(o('erro'), msgErro);
+      const completo = di !== null && ds !== null;
+      const conferir = completo && !!erros[l.maquina_id];
+      if (o('st')) o('st').className = 'vt-st' + (lin ? ' ok' : conferir ? ' erro' : '');
+      definir(o('stt'), lin ? 'leitura ok' : conferir ? 'conferir' : 'aguardando leitura');
+      box.classList.toggle('erro', !!msgErro);
+      const menor = completo && (di < l.di_anterior || ds < l.ds_anterior);
       if (o('zeradoBox')) o('zeradoBox').hidden = !(menor || l.zerado);
     });
     const comsBox = document.getElementById('vgComs');
@@ -751,35 +1200,54 @@
     definir(document.getElementById('vgNegAnt'), '− ' + brl(r.negativoAnterior) + ' (só na base das comissões)');
     document.getElementById('vgNegAntLinha').hidden = !r.negativoAnterior;
     definir(document.getElementById('vgTotCom'), '− ' + brl(r.totalComissoes));
+    const corLiq = r.liquido < 0 ? '#f87171' : '#34d399';
     const liq = document.getElementById('vgLiq');
     definir(liq, brl(r.liquido));
-    liq.style.color = r.liquido < 0 ? '#b91c1c' : '#166534';
+    liq.style.color = corLiq;
     definir(document.getElementById('vgNegNovo'), brl(r.negativoNovo));
     document.getElementById('vgNegNovoLinha').hidden = !r.negativoNovo;
     const pago = totalPago(f.pagamentos);
     const restam = r.liquido - pago;
-    const restamRot = restam < 0 ? 'Restam (empresa deve ao gerente)' : 'Restam (gerente deve à empresa)';
+    const restamRot = restam < 0 ? 'Empresa deve ao gerente' : restam === 0 && pago ? 'Quitado' : 'Resta receber do gerente';
     definir(document.getElementById('vgRestamRot'), restamRot);
     definir(document.getElementById('vgRestam'), brl(Math.abs(restam)));
-    // Valores repetidos nas etapas do formulário
+    // Valores repetidos nas etapas e no painel de resultado
     const saida = (nome, txt, cor) => document.querySelectorAll(`[data-out="${nome}"]`).forEach(el => { el.textContent = txt; if (cor !== undefined) el.style.color = cor; });
-    saida('liquido', brl(r.liquido), r.liquido < 0 ? '#b91c1c' : '#166534');
+    saida('liquido', brl(r.liquido), corLiq);
     saida('pago', brl(pago));
     saida('restamRot', restamRot);
-    saida('restam', brl(Math.abs(restam)), restam < 0 ? '#b45309' : '');
+    saida('restam', brl(Math.abs(restam)), restam < 0 ? '#fbbf24' : restam === 0 && pago ? '#34d399' : restam > 0 ? '#f87171' : '');
+    // Cascata: saldo → despesas → comissões → líquido
+    const casc = document.getElementById('vgCascata');
+    if (casc) {
+      const base = Math.max(r.saldo, r.totalDespesas + r.totalComissoes, 1);
+      const pc = v => Math.max(0, Math.min(100, v / base * 100));
+      const barras = [
+        ['Saldo', r.saldo, 0, Math.max(r.saldo, 0), '#22d3ee'],
+        ['Despesas', -r.totalDespesas, Math.max(r.saldo - r.totalDespesas, 0), r.totalDespesas, '#fbbf24'],
+        ['Comissões', -r.totalComissoes, Math.max(r.resultado - r.totalComissoes, 0), r.totalComissoes, '#a78bfa'],
+        ['Líquido', r.liquido, 0, Math.max(r.liquido, 0), r.liquido < 0 ? '#f87171' : '#34d399']
+      ];
+      casc.innerHTML = barras.map(([rot, v, ini, larg, cor]) => `<div class="vt-lc"><span>${rot}</span><div class="vt-bar"><i style="left:${pc(ini)}%;width:${pc(larg)}%;background:${cor}"></i></div><span class="vt-num">${v < 0 ? '−' : ''}${brl(Math.abs(v))}</span></div>`).join('');
+    }
+    document.querySelectorAll('#vgRoot [data-per]').forEach(el => { el.innerHTML = htmlPeriodoForm(el.dataset.per === 'mini'); });
+    const pr = periodoForm();
+    definir(document.getElementById('vgPorDia'), pr.n > 0 && r.saldo ? brl(Math.round(r.saldo / pr.n)) : '—');
+    const prog = document.getElementById('vgProg');
+    if (prog) prog.style.width = (r.liquido > 0 ? Math.max(0, Math.min(100, pago / r.liquido * 100)) : 0) + '%';
     const conf = document.getElementById('vgConfMaq');
     if (conf) {
       let tv = 0, tp = 0;
       const corpo = f.linhas.map(l => {
         const lin = r.linhas.find(x => x.maquina_id === l.maquina_id);
         if (lin) { tv += lin.venda; tp += lin.premios; }
-        return `<tr><td>🎰 ${esc(l.nome)}${l.zerado ? ' <span class="vg-chip esp">zerado</span>' : ''}</td>
-          <td class="vg-num">${lin ? esc(brl(lin.venda)) : '—'}</td><td class="vg-num" style="color:#b91c1c">${lin ? esc(brl(lin.premios)) : '—'}</td>
-          <td class="vg-num"><strong>${lin ? esc(brl(lin.saldo)) : '<span class="vg-neg">falta leitura</span>'}</strong></td></tr>`;
+        return `<tr><td>${esc(l.nome)}${l.zerado ? ' <span class="vg-chip esp">zerado</span>' : ''}</td>
+          <td>${lin ? esc(brl(lin.venda)) : '—'}</td><td class="vt-neg">${lin ? esc(brl(lin.premios)) : '—'}</td>
+          <td><b>${lin ? esc(brl(lin.saldo)) : '<span class="vt-neg">falta leitura</span>'}</b></td><td class="vt-violeta">${lin && lin.venda ? pct1(lin.saldo, lin.venda) : '—'}</td></tr>`;
       }).join('');
-      conf.innerHTML = `<thead><tr><th>Video game</th><th class="vg-num">Venda</th><th class="vg-num">Prêmios</th><th class="vg-num">Saldo</th></tr></thead>
+      conf.innerHTML = `<thead><tr><th>Video game</th><th>Venda</th><th>Prêmios</th><th>Saldo</th><th>Hold</th></tr></thead>
         <tbody>${corpo}</tbody>
-        <tfoot><tr><td>Soma</td><td class="vg-num">${esc(brl(tv))}</td><td class="vg-num">${esc(brl(tp))}</td><td class="vg-num">${esc(brl(r.saldo))}</td></tr></tfoot>`;
+        <tfoot><tr><td>Soma</td><td>${esc(brl(tv))}</td><td>${esc(brl(tp))}</td><td>${esc(brl(r.saldo))}</td><td>${tv ? pct1(r.saldo, tv) : '—'}</td></tr></tfoot>`;
     }
     return { r, erros, desp };
   }
@@ -1730,6 +2198,7 @@
   function renderCadastro() {
     const root = document.getElementById('vgCadRoot');
     if (!root) return;
+    root.classList.add('vg-tech');
     const editar = podeEditar();
     const ponto = pontoAtual();
     root.innerHTML = `
@@ -1780,7 +2249,7 @@
     const cad = historicoDaMaquina(m.id);
     return `
       <div class="vg-maq">
-        <div class="vg-maq-topo"><span>🎰 ${esc(m.nome)}${m.jogo ? ` <span class="vg-sub">· ${esc(m.jogo)}</span>` : ''}</span>
+        <div class="vg-maq-topo"><span>${ICONE}${esc(m.nome)}${m.jogo ? ` <span class="vg-sub">· ${esc(m.jogo)}</span>` : ''}</span>
           ${editar ? `<span class="vg-maq-btns">
             <button type="button" class="btn ghost sm" data-vg="maquina-editar" data-id="${id}">Editar</button>
             <button type="button" class="btn ghost sm" data-vg="maquina-historico" data-id="${id}" title="Lançar as leituras antigas anotadas no caderno">Histórico</button>
@@ -1800,7 +2269,7 @@
 
   function htmlCadAntiga(m) {
     const det = [m.jogo, m.local].filter(Boolean).map(esc).join(' · ');
-    return `<div class="vg-ret-item">🎰 <strong>${esc(m.nome)}</strong>${det ? ' · ' + det : ''}
+    return `<div class="vg-ret-item">${ICONE} <strong>${esc(m.nome)}</strong>${det ? ' · ' + det : ''}
       — de ${esc(dataBR(m.instalada_em) || '?')} até ${esc(dataBR(m.retirada_em) || '?')} (${esc(MOTIVOS[m.motivo_saida] || 'inativo')})</div>`;
   }
 
@@ -1842,10 +2311,16 @@
       .filter(pg => pg.valor);
     const gerente = p.gerente_nome || ponto?.gerente_nome || '';
     const liquido = Number(p.liquido) || 0;
+    // Período de vendas: da leitura anterior do gerente até esta
+    const iP = st.prestacoes.findIndex(x => x.uid === p.uid);
+    const antP = iP >= 0 ? st.prestacoes[iP + 1] : null;
+    const iniP = antP ? dia(antP.data) : st.maquinas.filter(m => (p.dados?.leituras || []).some(l => l.maquina_id === m.id) && m.instalada_em).map(m => dia(m.instalada_em)).sort()[0];
+    const nP = iniP ? entreDias(iniP, p.data) : 0;
+    const periodo = iniP && nP > 0 ? `${dataCurta(iniP)} → ${dataBR(p.data)} (${nP} dias)` : '';
     return {
       titulo: rotuloDe(gerente, p.dados?.ponto_nome || ponto?.nome) || 'Gerente',
       empresa: st.empresaNome || window.getCompany?.() || '',
-      data: p.data, linhas,
+      data: p.data, linhas, periodo,
       comissoes: Array.isArray(p.dados?.comissoes) ? p.dados.comissoes : [],
       saldo: Number(p.saldo) || 0,
       despesas: (p.dados?.despesas || []).filter(d => Number(d.valor)),
@@ -1860,7 +2335,7 @@
   function desenharImagem(info) {
     const W = 1080, M = 48, IN = M + 24, FIM = W - M - 24;
     const COL = { venda: 616, premios: 812, saldo: FIM };
-    const COR = { fundo: '#2a0d3a', ouro: '#f2b705', ouroClaro: '#fcd34d', soma: '#f3e8fb' };
+    const COR = { fundo: '#0d1320', ouro: '#22d3ee', ouroClaro: '#67e8f9', soma: '#e6f7fb' };
     const pintar = ctx => {
       const txt = (t, x, y, o = {}) => {
         const { tam = 28, peso = 400, cor = '#0f172a', alinhar = 'left', max } = o;
@@ -1903,7 +2378,7 @@
       txt('PRESTAÇÃO DE CONTAS · VIDEO GAME', M, 62, { tam: 22, peso: 700, cor: COR.ouroClaro });
       txt(info.titulo, M, 126, { tam: 52, peso: 800, cor: '#ffffff', max: W - 2 * M - 250 });
       txt(dataBR(info.data), W - M, 126, { tam: 40, peso: 700, cor: '#ffffff', alinhar: 'right' });
-      txt(info.empresa, M, 170, { tam: 24, peso: 500, cor: '#cbd5e1', max: 600 });
+      txt(info.periodo ? `${info.empresa} · período ${info.periodo}` : info.empresa, M, 170, { tam: 24, peso: 500, cor: '#cbd5e1', max: 700 });
       txt(`${info.linhas.length} video game${info.linhas.length === 1 ? '' : 's'}`, W - M, 170, { tam: 24, cor: '#cbd5e1', alinhar: 'right' });
       let y = 232;
 
@@ -2086,13 +2561,7 @@
       recalcular();
     });
     root.addEventListener('change', async e => {
-      if (e.target.id === 'vgPonto') {
-        st.pontoId = e.target.value;
-        st.tentouSalvar = false;
-        await carregarDoPonto();
-        novoFormulario();
-        render();
-      } else if (e.target.id === 'vgPontoForm') {
+      if (e.target.id === 'vgPontoForm') {
         // Troca de gerente dentro do formulário (só na prestação nova)
         st.pontoId = e.target.value;
         st.tentouSalvar = false;
@@ -2113,7 +2582,7 @@
     });
     root.addEventListener('click', e => {
       const btn = e.target.closest('[data-vg]');
-      if (btn) executar(btn.getAttribute('data-vg'), btn.getAttribute('data-id'));
+      if (btn) executar(btn.getAttribute('data-vg'), btn.getAttribute('data-id'), btn);
     });
   }
   function ligarEventosCadastro() {
@@ -2126,8 +2595,20 @@
       if (btn) executar(btn.getAttribute('data-vg'), btn.getAttribute('data-id'));
     });
   }
-  function executar(acao, id) {
+  function executar(acao, id, btn) {
     const acoes = {
+      'periodo': () => { st.periodo = PERIODOS[id] ? id : '3m'; render(); },
+      'filtro': () => { st.filtro = id || 'todos'; render(); },
+      'ger-hist': () => { if (st.abertos.has(id)) st.abertos.delete(id); else st.abertos.add(id); render(); },
+      'ger-nova': () => abrirFormulario(id),
+      'maq-info': () => abrirPopMaq(btn, id),
+      'prest-det': () => {
+        const tr = document.querySelector(`#vgRoot tr[data-det="${CSS.escape(String(id))}"]`);
+        if (!tr) return;
+        tr.hidden = !tr.hidden;
+        btn.textContent = tr.hidden ? '+' : '−';
+        btn.setAttribute('aria-expanded', String(!tr.hidden));
+      },
       'ger-novo': () => abrirDialogoPonto(null),
       'ger-editar': () => abrirDialogoPonto(pontoAtual()),
       'ger-abrir': () => selecionarGerente(id),
@@ -2137,7 +2618,6 @@
       'maquina-trocar-ponto': () => abrirDialogoTroca(id, 'ponto'),
       'maquina-trocar-jogo': () => abrirDialogoTroca(id, 'jogo'),
       'maquina-historico': () => abrirHistorico(id),
-      'mapa-abrir': () => abrirGerenteNoMapa(id),
       'despesa-nova': () => {
         if (!st.form || st.form.modo === 'ver') return;
         (st.form.despesas ||= []).push({ id: novoId(), descricao: '', valorTxt: '' });
@@ -2160,9 +2640,9 @@
       'etapa-proxima': proximaEtapa,
       'etapa-voltar': () => irEtapa(st.etapa - 1),
       'form-novo': () => { st.tentouSalvar = false; novoFormulario(); render(); },
-      'prest-abrir': () => abrirPrestacao(id),
-      'prest-excluir': () => excluirPrestacao(id),
-      'prest-imagem': () => abrirImagem(id)
+      'prest-abrir': () => comGerente(btn?.dataset.ponto, () => abrirPrestacao(id)),
+      'prest-excluir': () => comGerente(btn?.dataset.ponto, () => excluirPrestacao(id)),
+      'prest-imagem': () => comGerente(btn?.dataset.ponto, () => abrirImagem(id))
     };
     acoes[acao]?.();
   }
@@ -2188,23 +2668,25 @@
     novoFormulario();
     render();
   }
-  async function abrirGerenteNoMapa(id) {
-    st.pontoId = id || null;
-    st.tentouSalvar = false;
-    try { await carregarDoPonto(); } catch (err) { aviso('Não foi possível carregar: ' + (err.message || err), 'error'); }
-    novoFormulario();
-    render();
-    document.getElementById('vgMapaGer')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
   // ---------- formulário em etapas ----------
-  function abrirFormulario() {
+  async function abrirFormulario(pontoId) {
     if (!st.pontos.length || !podeEditar()) return;
+    const alvo = (pontoId && st.pontos.some(p => p.id === pontoId)) ? pontoId : (st.pontoId || st.pontos[0].id);
+    st.pontoId = alvo;
+    try { await carregarDoPonto(); } catch (err) { aviso('Não foi possível carregar: ' + (err.message || err), 'error'); return; }
     st.tentouSalvar = false;
     novoFormulario();
     st.formAberto = true;
     st.etapa = 1;
     render();
+  }
+  // Ações do histórico: carrega o gerente da prestação antes de abrir, excluir ou gerar a imagem
+  async function comGerente(pontoId, fn) {
+    if (pontoId) {
+      st.pontoId = pontoId;
+      try { await carregarDoPonto(); } catch (err) { aviso('Não foi possível carregar: ' + (err.message || err), 'error'); return; }
+    }
+    return fn();
   }
   function fecharFormulario() {
     const f = st.form;

@@ -10,14 +10,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="css/app.css?v=20261116d">
-  <link rel="stylesheet" href="css/system-redesign.css?v=20261116d">
-  <link rel="stylesheet" href="css/mobile.css?v=20261116d">
-  <link rel="stylesheet" href="css/mobile-fixes.css?v=20261116d">
-  <link rel="stylesheet" href="css/dashboard-mobile-fix.css?v=20261116d">
-  <link rel="stylesheet" href="css/dashboard-redesign.css?v=20261116d">
-  <link rel="stylesheet" href="css/analise-gerente-redesign.css?v=20261116d">
-  <link rel="stylesheet" href="css/tooltips.css?v=20261116d">
+  <link rel="stylesheet" href="css/app.css?v=20261117a">
+  <link rel="stylesheet" href="css/system-redesign.css?v=20261117a">
+  <link rel="stylesheet" href="css/mobile.css?v=20261117a">
+  <link rel="stylesheet" href="css/mobile-fixes.css?v=20261117a">
+  <link rel="stylesheet" href="css/dashboard-mobile-fix.css?v=20261117a">
+  <link rel="stylesheet" href="css/dashboard-redesign.css?v=20261117a">
+  <link rel="stylesheet" href="css/analise-gerente-redesign.css?v=20261117a">
+  <link rel="stylesheet" href="css/tooltips.css?v=20261117a">
+  <link rel="stylesheet" href="css/tema-video-game.css?v=20261117a">
   <style>
     /* Abas de periodicidade Semanal/Mensal */
     .tab-btn { transition: all 0.15s ease; }
@@ -86,7 +87,7 @@
 </button>
 <nav class="sb-sub" data-sub="cad" hidden>
   <!-- Gerentes --> 
-  <button class="sb-subitem" data-tab="cad" data-perm="cad_gerentes_view" title="Cadastro Gerentes">
+  <button class="sb-subitem" data-tab="cad" data-ramo="JB,FUTEBOL" data-perm="cad_gerentes_view" title="Cadastro Gerentes">
     <span class="ico" aria-hidden="true">
       <!-- id-card -->
       <svg viewBox="0 0 24 24"><path d="M3 6.75A1.75 1.75 0 0 1 4.75 5h14.5A1.75 1.75 0 0 1 21 6.75v10.5A1.75 1.75 0 0 1 19.25 19H4.75A1.75 1.75 0 0 1 3 17.25V6.75Zm4 8.25h6M7 9.5h10"/></svg>
@@ -94,7 +95,7 @@
     <span class="label">Cadastro Gerentes</span>
   </button>
 
-  <button class="sb-subitem" data-tab="fich" data-perm="cad_fichas_view" title="Fichas">
+  <button class="sb-subitem" data-tab="fich" data-ramo="JB,FUTEBOL" data-perm="cad_fichas_view" title="Fichas">
     <span class="ico" aria-hidden="true">
       <!-- tickets -->
       <svg viewBox="0 0 24 24"><path d="M3 8h18v8H3zM7 8v8M17 8v8"/></svg>
@@ -102,7 +103,7 @@
     <span class="label">Fichas</span>
   </button>
 
-  <button class="sb-subitem" data-tab="empresas" data-perm="admin_only" title="Empresas">
+  <button class="sb-subitem" data-tab="empresas" data-ramo="JB,FUTEBOL" data-perm="admin_only" title="Empresas">
     <span class="ico" aria-hidden="true">
       <!-- prédio -->
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 21V7l6-4 6 4v14"/><path d="M15 21V11h6v10"/><path d="M7 8h.01M11 8h.01M7 12h.01M11 12h.01M7 16h.01M11 16h.01M18 14h.01M18 17h.01"/></svg>
@@ -180,7 +181,7 @@
 </button>
 
 <!-- Análise Gerente -->
-<button class="sb-item" data-tab="analise-gerente" data-perm="admin_only" aria-label="Análise Gerente" title="Análise Gerente">
+<button class="sb-item" data-tab="analise-gerente" data-ramo="JB,FUTEBOL" data-perm="admin_only" aria-label="Análise Gerente" title="Análise Gerente">
   <span class="ico" aria-hidden="true">
     <!-- chart-bar -->
     <svg viewBox="0 0 24 24"><path d="M4 20V6M10 20V10M16 20V4M3 20h18"/></svg>
@@ -208,7 +209,7 @@
   <span class="label">Usuários</span>
 </button>
 
-<button class="sb-item" data-tab="historico" data-perm="admin_only" aria-label="Histórico" title="Histórico">
+<button class="sb-item" data-tab="historico" data-ramo="JB,FUTEBOL" data-perm="admin_only" aria-label="Histórico" title="Histórico">
   <span class="ico" aria-hidden="true">
     <!-- clock/history -->
     <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5"/></svg>
@@ -230,40 +231,40 @@
   </span>
 </button>
 <nav class="sb-sub" data-sub="maquinas" hidden>
-  <button class="sb-subitem" data-tab="maquinas-cad" data-perm="maquinas_view" title="Cadastro de Máquinas">
+  <button class="sb-subitem" data-tab="maquinas-cad" data-ramo="JB,FUTEBOL" data-perm="maquinas_view" title="Cadastro de Máquinas">
     <span class="ico" aria-hidden="true">
       <svg viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg>
     </span>
     <span class="label">Cadastro de Máquinas</span>
   </button>
-  <button class="sb-subitem" data-tab="maquinas-estoque" data-perm="maquinas_view" title="Estoque">
+  <button class="sb-subitem" data-tab="maquinas-estoque" data-ramo="JB,FUTEBOL" data-perm="maquinas_view" title="Estoque">
     <span class="ico" aria-hidden="true">
       <svg viewBox="0 0 24 24"><path d="M3 7h18v13H3zM3 7l2-3h14l2 3M8 11h8"/></svg>
     </span>
     <span class="label">Estoque</span>
   </button>
-  <button class="sb-subitem" data-tab="maquinas-bobinas-lanc" data-perm="maquinas_view" title="Bobinas — Lançamentos">
+  <button class="sb-subitem" data-tab="maquinas-bobinas-lanc" data-ramo="JB,FUTEBOL" data-perm="maquinas_view" title="Bobinas — Lançamentos">
     <span class="ico" aria-hidden="true">
       <!-- caixa entrada -->
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
     </span>
     <span class="label">Bobinas — Lançamentos</span>
   </button>
-  <button class="sb-subitem" data-tab="maquinas-bobinas-ctrl" data-perm="maquinas_view" title="Bobinas — Controle">
+  <button class="sb-subitem" data-tab="maquinas-bobinas-ctrl" data-ramo="JB,FUTEBOL" data-perm="maquinas_view" title="Bobinas — Controle">
     <span class="ico" aria-hidden="true">
       <!-- rolo/bobina -->
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="6" width="16" height="12" rx="2"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="4" y1="14" x2="20" y2="14"/><line x1="8" y1="6" x2="8" y2="18"/></svg>
     </span>
     <span class="label">Bobinas — Controle</span>
   </button>
-  <button class="sb-subitem" data-tab="maquinas-pecas" data-perm="maquinas_view" title="Peças">
+  <button class="sb-subitem" data-tab="maquinas-pecas" data-ramo="JB,FUTEBOL" data-perm="maquinas_view" title="Peças">
     <span class="ico" aria-hidden="true">
       <!-- engrenagem -->
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
     </span>
     <span class="label">Peças</span>
   </button>
-  <button class="sb-subitem" data-tab="maquinas-mapa" data-perm="maquinas_view" title="Mapa">
+  <button class="sb-subitem" data-tab="maquinas-mapa" data-ramo="JB,FUTEBOL" data-perm="maquinas_view" title="Mapa">
     <span class="ico" aria-hidden="true">
       <!-- mapa/pin -->
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 22s-8-7.58-8-13a8 8 0 0 1 16 0c0 5.42-8 13-8 13z"/><circle cx="12" cy="9" r="2.5"/></svg>
@@ -491,13 +492,13 @@
       </section>
 
             <!-- ANÁLISE POR GERENTE -->
-<section id="pageAnaliseGerente" class="page-section" style="display:none" data-perm="admin_only">
+<section id="pageAnaliseGerente" class="page-section" style="display:none" data-perm="admin_only" data-ramo="JB,FUTEBOL">
   <h1>📊 Análise por Gerente</h1>
   <div id="analiseGerenteContent"></div>
 </section>
 
       <!-- ===== PÁGINA HISTÓRICO/AUDITORIA ===== -->
-      <section id="pageHistorico" class="container hidden" data-perm="admin_only">
+      <section id="pageHistorico" class="container hidden" data-perm="admin_only" data-ramo="JB,FUTEBOL">
         <header style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
           <h2 style="margin:0; display:flex; align-items:center; gap:10px;">
             📜 Histórico do Sistema
@@ -620,7 +621,7 @@
 <!-- ============================================================
      PÁGINA: EMPRESAS (só admin)
      ============================================================ -->
-<section id="pageEmpresas" class="container hidden" data-perm="admin_only">
+<section id="pageEmpresas" class="container hidden" data-perm="admin_only" data-ramo="JB,FUTEBOL">
   <h2>🏢 Empresas</h2>
 
   <!-- KPIs GLOBAIS -->
@@ -694,7 +695,7 @@
 </section>
 
 
-    <section id="pageCadastros" class="container hidden" data-perm="cad_gerentes_view">
+    <section id="pageCadastros" class="container hidden" data-perm="cad_gerentes_view" data-ramo="JB,FUTEBOL">
 
       <div class="grid">
         <div class="card">
@@ -1633,7 +1634,7 @@ function pgDivAddFromForm(){
     </section>
 
     <!-- ====== PÁGINA: FICHAS ====== -->
-    <section id="pageFichas" class="container hidden" data-perm="cad_fichas_view">
+    <section id="pageFichas" class="container hidden" data-perm="cad_fichas_view" data-ramo="JB,FUTEBOL">
       <h2>Fichas – Cadastro e Vendas</h2>
 
       <div class="grid">
@@ -1750,7 +1751,7 @@ function pgDivAddFromForm(){
 <!-- ============================================================================
      PÁGINA: CADASTRO DE MÁQUINAS
      ============================================================================ -->
-<section id="pageMaquinasCadastro" class="container hidden" data-perm="maquinas_view">
+<section id="pageMaquinasCadastro" class="container hidden" data-perm="maquinas_view" data-ramo="JB,FUTEBOL">
   <h2>🖥️ Cadastro de Máquinas</h2>
 
   <div class="grid">
@@ -2113,7 +2114,7 @@ function pgDivAddFromForm(){
 <!-- ============================================================================
      PÁGINA: ESTOQUE (controle/dashboard)
      ============================================================================ -->
-<section id="pageMaquinasEstoque" class="container hidden" data-perm="maquinas_view">
+<section id="pageMaquinasEstoque" class="container hidden" data-perm="maquinas_view" data-ramo="JB,FUTEBOL">
   <h2>📦 Controle de Estoque</h2>
 
   <!-- KPIs em cards -->
@@ -2207,7 +2208,7 @@ function pgDivAddFromForm(){
 <!-- =====================================================================
      PÁGINA 1: BOBINAS — LANÇAMENTOS (só ações)
      ===================================================================== -->
-<section id="pageBobinasLanc" class="container hidden" data-perm="maquinas_view">
+<section id="pageBobinasLanc" class="container hidden" data-perm="maquinas_view" data-ramo="JB,FUTEBOL">
   <h2>📦 Bobinas — Lançamentos</h2>
 
   <!-- AVISO se a tabela bobinas ainda não existe -->
@@ -2287,7 +2288,7 @@ function pgDivAddFromForm(){
 <!-- =====================================================================
      PÁGINA 2: BOBINAS — CONTROLE (KPIs + movimentações + entregas)
      ===================================================================== -->
-<section id="pageBobinasCtrl" class="container hidden" data-perm="maquinas_view">
+<section id="pageBobinasCtrl" class="container hidden" data-perm="maquinas_view" data-ramo="JB,FUTEBOL">
   <h2>📊 Bobinas — Controle</h2>
 
   <!-- KPIs -->
@@ -2484,7 +2485,7 @@ function pgDivAddFromForm(){
 <!-- ============================================================================
      PÁGINA: PEÇAS DE MÁQUINAS (catálogo + estoque + movimentações)
      ============================================================================ -->
-<section id="pagePecasEstoque" class="container hidden" data-perm="maquinas_view">
+<section id="pagePecasEstoque" class="container hidden" data-perm="maquinas_view" data-ramo="JB,FUTEBOL">
   <h2>⚙️ Controle de Peças de Máquinas</h2>
 
   <!-- KPIs -->
@@ -2617,7 +2618,7 @@ function pgDivAddFromForm(){
 <!-- ============================================================
      PÁGINA: MAPA DE USO — Máquinas + Bobinas por gerente
      ============================================================ -->
-<section id="pageMapa" class="container hidden" data-perm="maquinas_view">
+<section id="pageMapa" class="container hidden" data-perm="maquinas_view" data-ramo="JB,FUTEBOL">
   <h2>🗺️ Mapa de Uso — Máquinas e Bobinas</h2>
   <div style="color:#6b7280; font-size:13px; margin-bottom:20px;">
     Visão compacta por gerente. Máquinas mostram situação atual; bobinas do período (padrão = mês atual).
@@ -2921,7 +2922,7 @@ function pgDivAddFromForm(){
 <!-- ===== PÁGINA DE HISTÓRICO/AUDITORIA ===== -->
 <!-- Adicionar no index.html junto com as outras sections -->
 
-<section id="pageHistorico" class="container hidden" data-perm="admin_only">
+<section id="pageHistorico" class="container hidden" data-perm="admin_only" data-ramo="JB,FUTEBOL">
   <div class="card">
     <h2>📜 Histórico do Sistema</h2>
     
@@ -3155,45 +3156,45 @@ function pgDivAddFromForm(){
 
 <!-- JS externo -->
 
-<script src="js/utils.js?v=20261116d"></script>
-<script src="js/empresa-shim.js?v=20261116d"></script>
-<script src="js/auth-rbac.js?v=20261116d" ></script>
-<script src="js/api-supabase.js?v=20261116d"></script>
-<script src="js/prestacoes-supabase.js?v=20261116d" defer></script>
-<script src="js/supabase-init.js?v=20261116d"></script>
-<script src="js/config-supabase.js?v=20261116d"></script>
-<script src="js/auth-supabase-adapter.js?v=20261116d"></script>
-<script src="js/sync-manager.js?v=20261116d" defer></script>
-<script src="js/nav.js?v=20261116d"></script>
-<script src="js/core.js?v=20261116d" defer></script>
-<script src="js/gerentes.js?v=20261116d"></script>
-<script src="js/fichas.js?v=20261116d" defer></script>
-<script src="js/maquinas.js?v=20261116d" defer></script>
-<script src="js/estoque.js?v=20261116d" defer></script>
-<script src="js/pecas.js?v=20261116d" defer></script>
-<script src="js/bobinas.js?v=20261116d" defer></script>
-<script src="js/empresas-page.js?v=20261116d" defer></script>
-<script src="js/ramo-empresa.js?v=20261116d" defer></script>
-<script src="js/mapa.js?v=20261116d" defer></script>
-<script src="js/tooltips.js?v=20261116d" defer></script>
-<script src="js/saldo-acumulado.js?v=20261116d"></script>
-<script src="js/saldo-acumulado-ui.js?v=20261116d"></script>
-<script src="ajuste-saldo-manual.js?v=20261116d"></script>
-<script src="js/prestacoes.js?v=20261116d" defer></script>
-<script src="js/relatorios.js?v=20261116d" defer></script>
-<script src="js/financeiro.js?v=20261116d" defer></script>
-<script src="js/despesas.js?v=20261116d" defer></script>
-<script src="js/video-game.js?v=20261116d" defer></script>
-<script src="js/dashboard.js?v=20261116d" defer></script>
-<script src="js/users-page.js?v=20261116d" defer></script>
-<script src="js/auth.js?v=20261116d" defer></script>
-<script src="js/boot.js?v=20261116d" defer></script>
-<script src="js/ai.js?v=20261116d" defer></script>
-<script src="js/audit-log.js?v=20261116d"></script>
-<script src="js/audit-auto.js?v=20261116d"></script>
-<script src="js/historico.js?v=20261116d" defer></script>
-<script src="js/analise-gerente.js?v=20261116d"></script>
-<script src="js/tema-sazonal.js?v=20261116d"></script>
+<script src="js/utils.js?v=20261117a"></script>
+<script src="js/empresa-shim.js?v=20261117a"></script>
+<script src="js/auth-rbac.js?v=20261117a" ></script>
+<script src="js/api-supabase.js?v=20261117a"></script>
+<script src="js/prestacoes-supabase.js?v=20261117a" defer></script>
+<script src="js/supabase-init.js?v=20261117a"></script>
+<script src="js/config-supabase.js?v=20261117a"></script>
+<script src="js/auth-supabase-adapter.js?v=20261117a"></script>
+<script src="js/sync-manager.js?v=20261117a" defer></script>
+<script src="js/nav.js?v=20261117a"></script>
+<script src="js/core.js?v=20261117a" defer></script>
+<script src="js/gerentes.js?v=20261117a"></script>
+<script src="js/fichas.js?v=20261117a" defer></script>
+<script src="js/maquinas.js?v=20261117a" defer></script>
+<script src="js/estoque.js?v=20261117a" defer></script>
+<script src="js/pecas.js?v=20261117a" defer></script>
+<script src="js/bobinas.js?v=20261117a" defer></script>
+<script src="js/empresas-page.js?v=20261117a" defer></script>
+<script src="js/ramo-empresa.js?v=20261117a" defer></script>
+<script src="js/mapa.js?v=20261117a" defer></script>
+<script src="js/tooltips.js?v=20261117a" defer></script>
+<script src="js/saldo-acumulado.js?v=20261117a"></script>
+<script src="js/saldo-acumulado-ui.js?v=20261117a"></script>
+<script src="ajuste-saldo-manual.js?v=20261117a"></script>
+<script src="js/prestacoes.js?v=20261117a" defer></script>
+<script src="js/relatorios.js?v=20261117a" defer></script>
+<script src="js/financeiro.js?v=20261117a" defer></script>
+<script src="js/despesas.js?v=20261117a" defer></script>
+<script src="js/video-game.js?v=20261117a" defer></script>
+<script src="js/dashboard.js?v=20261117a" defer></script>
+<script src="js/users-page.js?v=20261117a" defer></script>
+<script src="js/auth.js?v=20261117a" defer></script>
+<script src="js/boot.js?v=20261117a" defer></script>
+<script src="js/ai.js?v=20261117a" defer></script>
+<script src="js/audit-log.js?v=20261117a"></script>
+<script src="js/audit-auto.js?v=20261117a"></script>
+<script src="js/historico.js?v=20261117a" defer></script>
+<script src="js/analise-gerente.js?v=20261117a"></script>
+<script src="js/tema-sazonal.js?v=20261117a"></script>
 
 
 

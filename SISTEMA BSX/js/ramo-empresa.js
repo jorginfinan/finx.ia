@@ -21,7 +21,17 @@
     return !ramo || !lista || lista.split(',').map(s => s.trim()).includes(ramo);
   }
 
+  // Tema visual do ramo Video game (css/tema-video-game.css só vale com body.ramo-vg)
+  const CHAVE_TEMA = 'finx:ramo:';
+  function temaDoCache() {
+    try {
+      const nome = String(window.getCompany?.() || '').toUpperCase();
+      if (nome && localStorage.getItem(CHAVE_TEMA + nome) === 'VG') document.body?.classList.add('ramo-vg');
+    } catch (_) {}
+  }
+
   function aplicar() {
+    document.body?.classList.toggle('ramo-vg', ramo === 'VG');
     document.querySelectorAll('[data-ramo]').forEach(el => el.classList.toggle('ramo-oculto', !permite(el)));
 
     // Grupo do menu cujos itens são todos de outro ramo some inteiro
@@ -50,6 +60,7 @@
       if (error) throw error;
       const emp = (data || []).find(e => String(e.nome || '').toUpperCase() === nome);
       ramo = emp ? (NOMES[emp.ramo] ? emp.ramo : 'JB') : null;
+      try { if (ramo) localStorage.setItem(CHAVE_TEMA + nome, ramo); } catch (_) {}
     } catch (e) {
       console.warn('[Ramo] Ramo da empresa indisponível; menu completo mantido.', e?.message || e);
       ramo = null;
@@ -59,7 +70,7 @@
 
   window.RamoEmpresa = { atual: () => ramo, nome: r => NOMES[r] || r || '', permite, aplicar, recarregar: carregar };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => carregar());
-  else carregar();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { temaDoCache(); carregar(); });
+  else { temaDoCache(); carregar(); }
   document.addEventListener('empresa:change', () => carregar());
 })();

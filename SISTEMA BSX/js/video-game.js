@@ -338,8 +338,8 @@
       .vg-passos{display:flex;gap:6px;padding:10px 18px;background:#fff;border-bottom:1px solid #e5e7eb;overflow-x:auto}
       .vg-passo{display:flex;align-items:center;gap:6px;border:1px solid #e2e8f0;background:#f1f5f9;color:#475569;border-radius:999px;padding:6px 12px 6px 6px;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer}
       .vg-passo b{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#cbd5e1;color:#fff;font-size:12px}
-      .vg-passo.on{background:#13294b;border-color:#13294b;color:#fff}
-      .vg-passo.on b{background:#facc15;color:#13294b}
+      .vg-passo.on{background:var(--navy,#13294b);border-color:var(--navy,#13294b);color:#fff}
+      .vg-passo.on b{background:var(--brand-2,#facc15);color:var(--navy,#13294b)}
       .vg-passo.ok b{background:#16a34a}
       .vg-ov-corpo{flex:1;overflow:auto;padding:18px;overscroll-behavior:contain}
       .vg-ov-rodape{padding:12px 18px;background:#fff;border-top:1px solid #e5e7eb}
@@ -593,7 +593,7 @@
             </div>
             <button type="button" class="btn ghost sm" data-vg="form-fechar" aria-label="Fechar o formulário">✕ Fechar</button>
           </div>
-          <div class="vg-passos" role="tablist">${ETAPAS.map((t, i) => `<button type="button" role="tab" aria-selected="${i + 1 === e}" class="vg-passo${i + 1 === e ? ' on' : ''}${i + 1 < e ? ' ok' : ''}" data-vg="etapa" data-id="${i + 1}"><b>${i + 1}</b>${t}</button>`).join('')}</div>
+          <div class="vg-passos" role="tablist">${ETAPAS.map((t, i) => `<button type="button" role="tab" aria-selected="${i + 1 === e}" class="vg-passo${i + 1 === e ? ' on' : ''}" data-vg="etapa" data-id="${i + 1}"><b>${i + 1}</b>${t}</button>`).join('')}</div>
           <div class="vg-ov-corpo">
             ${etapa(1, 'Qual gerente e qual a data da leitura?', f.modo === 'nova' ? 'Escolha o gerente e a data em que as leituras foram feitas.' : '', `
               <div class="vg-campos">
@@ -1860,6 +1860,7 @@
   function desenharImagem(info) {
     const W = 1080, M = 48, IN = M + 24, FIM = W - M - 24;
     const COL = { venda: 616, premios: 812, saldo: FIM };
+    const COR = { fundo: '#2a0d3a', ouro: '#f2b705', ouroClaro: '#fcd34d', soma: '#f3e8fb' };
     const pintar = ctx => {
       const txt = (t, x, y, o = {}) => {
         const { tam = 28, peso = 400, cor = '#0f172a', alinhar = 'left', max } = o;
@@ -1895,9 +1896,11 @@
       ctx.fillRect(0, 0, W, ctx.canvas.height);
 
       // Cabeçalho
-      ctx.fillStyle = '#13294b';
+      ctx.fillStyle = COR.fundo;
       ctx.fillRect(0, 0, W, 196);
-      txt('PRESTAÇÃO DE CONTAS · VIDEO GAME', M, 62, { tam: 22, peso: 700, cor: '#93c5fd' });
+      ctx.fillStyle = COR.ouro;
+      ctx.fillRect(0, 190, W, 6);
+      txt('PRESTAÇÃO DE CONTAS · VIDEO GAME', M, 62, { tam: 22, peso: 700, cor: COR.ouroClaro });
       txt(info.titulo, M, 126, { tam: 52, peso: 800, cor: '#ffffff', max: W - 2 * M - 250 });
       txt(dataBR(info.data), W - M, 126, { tam: 40, peso: 700, cor: '#ffffff', alinhar: 'right' });
       txt(info.empresa, M, 170, { tam: 24, peso: 500, cor: '#cbd5e1', max: 600 });
@@ -1927,11 +1930,11 @@
       const somaVenda = info.linhas.reduce((a, l) => a + l.venda, 0);
       const somaPremios = info.linhas.reduce((a, l) => a + l.premios, 0);
       y += 12;
-      caixa(M, y, W - 2 * M, 76, 12, '#e0e7ff');
-      txt('SOMA', IN, y + 49, { tam: 28, peso: 800, cor: '#13294b' });
-      txt(brl(somaVenda), COL.venda, y + 49, { tam: 28, peso: 700, cor: '#13294b', alinhar: 'right', max: 172 });
+      caixa(M, y, W - 2 * M, 76, 12, COR.soma);
+      txt('SOMA', IN, y + 49, { tam: 28, peso: 800, cor: COR.fundo });
+      txt(brl(somaVenda), COL.venda, y + 49, { tam: 28, peso: 700, cor: COR.fundo, alinhar: 'right', max: 172 });
       txt(brl(somaPremios), COL.premios, y + 49, { tam: 28, peso: 700, cor: '#b91c1c', alinhar: 'right', max: 172 });
-      txt(brl(info.saldo), COL.saldo, y + 49, { tam: 30, peso: 800, cor: info.saldo < 0 ? '#b91c1c' : '#13294b', alinhar: 'right', max: 176 });
+      txt(brl(info.saldo), COL.saldo, y + 49, { tam: 30, peso: 800, cor: info.saldo < 0 ? '#b91c1c' : COR.fundo, alinhar: 'right', max: 176 });
       y += 76 + 32;
 
       // Comissões sobre a soma e líquido
@@ -1979,7 +1982,7 @@
 
       // Faixa final
       const r = info.restam;
-      const [rotulo, cor] = r > 0 ? ['RESTA ACERTAR', '#13294b'] : r < 0 ? ['EMPRESA DEVE AO GERENTE', '#b45309'] : ['QUITADO', '#166534'];
+      const [rotulo, cor] = r > 0 ? ['RESTA ACERTAR', COR.fundo] : r < 0 ? ['EMPRESA DEVE AO GERENTE', '#b45309'] : ['QUITADO', '#166534'];
       caixa(M, y, W - 2 * M, 112, 20, cor);
       txt(rotulo, IN + 8, y + 70, { tam: 32, peso: 800, cor: '#ffffff', max: 560 });
       txt(brl(Math.abs(r)), FIM - 8, y + 72, { tam: 44, peso: 800, cor: '#ffffff', alinhar: 'right', max: 380 });

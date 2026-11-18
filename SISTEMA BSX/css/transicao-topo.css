@@ -1,0 +1,186 @@
+/* =====================================================================
+   TRANSIÇÃO DO TOPO — troca de ramo e troca de empresa (estilo Portal)
+   Montada pelo js/transicao-topo.js. Um círculo branco nasce no seletor
+   clicado, cobre a tela com a borda na cor do ramo e depois se fecha de
+   volta nele. Cores: JB amarelo · Video game azul · Futebol verde.
+   Só CSS animado em poucos elementos (leve).
+   ===================================================================== */
+
+/* Página nova montando por trás: só a transição aparece (ligado pelo script do <head>) */
+html[data-sx-trans] { background: #ffffff !important; }
+html[data-sx-trans] body { visibility: hidden !important; }
+
+.tx {
+  /* cor (anel, barra, brilho) · forte (ícone e detalhes sobre o branco) */
+  --tx-c: #f4b300;
+  --tx-forte: #b7791f;
+  --t1: 480ms;
+  --t2: 520ms;
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  visibility: visible !important;
+  overflow: hidden;
+  cursor: progress;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #0f172a;
+}
+.tx[data-cor="VG"] { --tx-c: #22d3ee; --tx-forte: #0891b2; }
+.tx[data-cor="FUTEBOL"] { --tx-c: #22c55e; --tx-forte: #15803d; }
+.tx.tx-sai { pointer-events: none; cursor: default; }
+
+/* Fundo branco com grade discreta e brilho na cor do ramo */
+.tx-fundo {
+  position: absolute;
+  inset: 0;
+  background-color: #ffffff;
+  background-image:
+    radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--tx-c) 20%, transparent) 0%, transparent 58%),
+    linear-gradient(color-mix(in srgb, var(--tx-c) 10%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--tx-c) 10%, transparent) 1px, transparent 1px);
+  background-size: auto, 44px 44px, 44px 44px;
+  background-position: center;
+  clip-path: circle(var(--r) at var(--x) var(--y));
+}
+
+/* Borda do portal (acompanha o círculo abrindo e fechando) */
+.tx-anel {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: calc(var(--r) * 2);
+  height: calc(var(--r) * 2);
+  margin: calc(var(--r) * -1) 0 0 calc(var(--r) * -1);
+  border-radius: 50%;
+  border: 6px solid var(--tx-c);
+  box-shadow: 0 0 26px 5px color-mix(in srgb, var(--tx-c) 55%, transparent), inset 0 0 60px 18px color-mix(in srgb, var(--tx-c) 30%, transparent);
+  transform: scale(0);
+  opacity: 0;
+  pointer-events: none;
+}
+/* Segundo anel, fino, vindo logo atrás (efeito de onda do portal) */
+.tx-anel2 {
+  border-width: 2px;
+  box-shadow: 0 0 12px 2px color-mix(in srgb, var(--tx-c) 45%, transparent);
+}
+
+.tx-entra .tx-fundo { animation: tx-abre var(--t1) cubic-bezier(0.7, 0, 0.25, 1) both; }
+.tx-sai .tx-fundo { animation: tx-fecha var(--t2) cubic-bezier(0.6, 0, 0.3, 1) both; }
+@keyframes tx-abre { from { clip-path: circle(0px at var(--x) var(--y)); } to { clip-path: circle(var(--r) at var(--x) var(--y)); } }
+@keyframes tx-fecha { from { clip-path: circle(var(--r) at var(--x) var(--y)); } to { clip-path: circle(0px at var(--x) var(--y)); } }
+.tx-entra .tx-anel { animation: tx-anel-abre var(--t1) cubic-bezier(0.7, 0, 0.25, 1) both; }
+.tx-sai .tx-anel { animation: tx-anel-fecha var(--t2) cubic-bezier(0.6, 0, 0.3, 1) both; }
+@keyframes tx-anel-abre { from { transform: scale(0); opacity: 1; } 80% { opacity: 1; } to { transform: scale(1); opacity: 0; } }
+@keyframes tx-anel-fecha { from { transform: scale(1); opacity: 0; } 20%, 85% { opacity: 1; } to { transform: scale(0); opacity: 0; } }
+.tx-entra .tx-anel2, .tx-sai .tx-anel2 { animation-delay: 80ms; }
+
+/* ---------- Centro: ícone, nome e barra ---------- */
+.tx-centro {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  pointer-events: none;
+}
+.tx-ico {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  margin-bottom: 10px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--tx-forte);
+  background: color-mix(in srgb, var(--tx-c) 14%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--tx-c) 45%, #ffffff);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--tx-c) 28%, transparent);
+}
+.tx-ico::after {
+  content: '';
+  position: absolute;
+  inset: -9px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-top-color: var(--tx-c);
+  border-right-color: color-mix(in srgb, var(--tx-c) 30%, transparent);
+  animation: tx-gira 0.9s linear infinite;
+}
+@keyframes tx-gira { to { transform: rotate(360deg); } }
+.tx-ico svg { width: 40px; height: 40px; display: block; }
+.tx-emoji { font-size: 40px; line-height: 1; }
+.tx-rot {
+  font: 700 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.3em;
+  padding-left: 0.3em;
+  text-transform: uppercase;
+  color: var(--tx-forte);
+}
+.tx-nome {
+  max-width: 90vw;
+  font-size: clamp(26px, 5vw, 40px);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tx-sub { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: #64748b; }
+.tx-sub b { color: #0f172a; }
+.tx-sub svg { width: 14px; height: 14px; color: var(--tx-forte); }
+.tx-barra {
+  width: min(240px, 70vw);
+  height: 4px;
+  margin-top: 12px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+.tx-barra i {
+  display: block;
+  height: 100%;
+  width: var(--p, 0%);
+  border-radius: 4px;
+  background: var(--tx-c);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--tx-c) 70%, transparent);
+  transition: width var(--pt, 0.5s) ease;
+}
+.tx-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.tx-entra .tx-centro { animation: tx-sobe 0.3s calc(var(--t1) * 0.6) ease-out both; }
+.tx-sai .tx-centro { animation: tx-some 0.18s ease-in both; }
+@keyframes tx-sobe { from { opacity: 0; transform: translateY(10px) scale(0.97); } }
+@keyframes tx-some { to { opacity: 0; transform: scale(0.96); } }
+
+/* ---------- Movimento reduzido (preferência do aparelho): só esmaece ---------- */
+.tx-calmo .tx-fundo, .tx-calmo .tx-anel { animation: none !important; }
+.tx-calmo .tx-anel { display: none; }
+.tx-calmo .tx-fundo { clip-path: none; }
+.tx-calmo .tx-centro, .tx-calmo .tx-ico::after { animation: none !important; }
+.tx-calmo.tx-entra { animation: tx-esmaece var(--t1) ease both; }
+.tx-calmo.tx-sai { animation: tx-esmaece var(--t2) ease reverse both; }
+@keyframes tx-esmaece { from { opacity: 0; } to { opacity: 1; } }
+
+/* Seletor usado pulsa quando a transição termina */
+.company-switcher.tx-pulso { animation: tx-pulso 0.85s ease-out 2; }
+@keyframes tx-pulso {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand) 75%, transparent); border-color: var(--brand); }
+  100% { box-shadow: 0 0 0 14px transparent; border-color: var(--brand); }
+}
+
+@media (max-width: 640px) {
+  .tx-ico { width: 76px; height: 76px; }
+  .tx-ico svg { width: 34px; height: 34px; }
+  .tx-emoji { font-size: 34px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .company-switcher.tx-pulso { animation: none; }
+}

@@ -76,6 +76,7 @@
     const temRamo = lista.some(e => e.ramo);
     const empAtual = lista.find(e => String(e.nome || '').toUpperCase() === atual);
     const ramoAtual = temRamo && empAtual ? ramoDe(empAtual) : null;
+    ramoVigente = ramoAtual;
     atualizarRamo(temRamo ? lista : [], ramoAtual, atual);
     if (ramoAtual) lista = lista.filter(e => ramoDe(e) === ramoAtual);
 
@@ -145,9 +146,14 @@
         if (!opcoes.length) { sel.value = sel.__ramoAtual; renderizarTodos(); return; }
         const ultima = String(ler(CHAVE_ULTIMA + novo) || '').toUpperCase();
         const alvo = opcoes.find(e => String(e.nome || '').toUpperCase() === ultima) || opcoes[0];
-        try {
+        const trocar = () => {
           if (typeof window.setCompany === 'function') window.setCompany(alvo.nome);
           else { localStorage.setItem('CURRENT_COMPANY', alvo.nome); location.reload(); }
+        };
+        try {
+          // Com a transição carregada, ela cobre a tela e chama a troca no meio
+          if (window.TransicaoTopo?.sair) window.TransicaoTopo.sair({ tipo: 'ramo', de: sel.__ramoAtual, para: novo, empresa: alvo.nome, emoji: emojiDe(alvo) }, trocar);
+          else trocar();
         } catch (err) {
           console.error('[EmpresasSelector] Erro ao trocar de ramo:', err);
           sel.value = sel.__ramoAtual;
@@ -161,6 +167,7 @@
   // ---------- Menu próprio ----------
   const seletores = [];
   let aberto = null;
+  let ramoVigente = null; // ramo da empresa aberta (para a transição)
   let saindo = false;
   window.addEventListener('beforeunload', () => { saindo = true; });
   window.addEventListener('pagehide', () => { saindo = true; });
@@ -324,8 +331,19 @@
     if (o.atual) return;
     s.carregando = o;
     renderizar(s);
-    s.sel.value = valor;
-    s.sel.dispatchEvent(new Event('change', { bubbles: true }));
+    const aplicar = () => {
+      s.sel.value = valor;
+      s.sel.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    // Troca de empresa: a transição cobre a tela e só então avisa o sistema
+    // (os ouvintes de sempre do #empresaSelect recebem o "change" igual a antes)
+    if (s.tipo === 'empresa' && window.TransicaoTopo?.sair) {
+      const ramo = ramoVigente || (document.body.classList.contains('ramo-vg') ? 'VG' : 'JB');
+      try { window.TransicaoTopo.sair({ tipo: 'empresa', ramo, empresa: o.nome, emoji: o.emoji }, aplicar); }
+      catch (err) { console.error('[SeletorTopo] Erro na transição:', err); aplicar(); }
+    } else {
+      aplicar();
+    }
     // Se a troca não recarregou a página (ex.: usuário sem acesso), volta ao normal
     setTimeout(() => {
       if (saindo || !s.carregando) return;

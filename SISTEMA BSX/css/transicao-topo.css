@@ -1,8 +1,8 @@
 /* =====================================================================
-   TRANSIÇÃO DO TOPO — troca de ramo e troca de empresa (estilo Portal)
-   Montada pelo js/transicao-topo.js. Um círculo branco nasce no seletor
-   clicado, cobre a tela com a borda na cor do ramo e depois se fecha de
-   volta nele. Cores: JB amarelo · Video game azul · Futebol verde.
+   TRANSIÇÃO (estilo Portal) — troca de ramo, troca de empresa, login e Sair
+   Montada pelo js/transicao-topo.js. Um círculo branco nasce no botão
+   clicado, cobre a tela com a borda na cor do ramo e depois se fecha no
+   lugar certo. Cores: JB amarelo · Video game azul · Futebol verde.
    Só CSS animado em poucos elementos (leve).
    ===================================================================== */
 
@@ -30,6 +30,15 @@ html[data-sx-trans] body { visibility: hidden !important; }
 .tx[data-cor="VG"] { --tx-c: #22d3ee; --tx-forte: #0891b2; }
 .tx[data-cor="FUTEBOL"] { --tx-c: #22c55e; --tx-forte: #15803d; }
 .tx.tx-sai { pointer-events: none; cursor: default; }
+
+/* Login: cópia da tela de login por baixo enquanto o portal cresce */
+.tx > .tx-copia {
+  position: absolute !important;
+  inset: 0 !important;
+  margin: 0 !important;
+  overflow: hidden;
+  pointer-events: none;
+}
 
 /* Fundo branco com grade discreta e brilho na cor do ramo */
 .tx-fundo {

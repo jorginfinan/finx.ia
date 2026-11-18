@@ -10,22 +10,23 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="css/app.css?v=20261118a">
-  <link rel="stylesheet" href="css/system-redesign.css?v=20261118a">
-  <link rel="stylesheet" href="css/mobile.css?v=20261118a">
-  <link rel="stylesheet" href="css/mobile-fixes.css?v=20261118a">
-  <link rel="stylesheet" href="css/dashboard-mobile-fix.css?v=20261118a">
-  <link rel="stylesheet" href="css/dashboard-redesign.css?v=20261118a">
-  <link rel="stylesheet" href="css/analise-gerente-redesign.css?v=20261118a">
-  <link rel="stylesheet" href="css/tooltips.css?v=20261118a">
-  <link rel="stylesheet" href="css/tema-video-game.css?v=20261118a">
-  <link rel="stylesheet" href="css/seletor-topo.css?v=20261118a">
-  <link rel="stylesheet" href="css/transicao-topo.css?v=20261118a">
+  <link rel="stylesheet" href="css/app.css?v=20261118b">
+  <link rel="stylesheet" href="css/system-redesign.css?v=20261118b">
+  <link rel="stylesheet" href="css/mobile.css?v=20261118b">
+  <link rel="stylesheet" href="css/mobile-fixes.css?v=20261118b">
+  <link rel="stylesheet" href="css/dashboard-mobile-fix.css?v=20261118b">
+  <link rel="stylesheet" href="css/dashboard-redesign.css?v=20261118b">
+  <link rel="stylesheet" href="css/analise-gerente-redesign.css?v=20261118b">
+  <link rel="stylesheet" href="css/tooltips.css?v=20261118b">
+  <link rel="stylesheet" href="css/tema-video-game.css?v=20261118b">
+  <link rel="stylesheet" href="css/tema-futebol.css?v=20261118b">
+  <link rel="stylesheet" href="css/seletor-topo.css?v=20261118b">
+  <link rel="stylesheet" href="css/transicao-topo.css?v=20261118b">
   <script>
-    /* Transição do topo (js/transicao-topo.js): se a página foi recarregada por uma troca de ramo ou de empresa,
+    /* Transição (js/transicao-topo.js): se a página foi recarregada por uma troca de ramo/empresa ou logo após o login,
        cobre a tela até o sistema ficar pronto. Trava de segurança: libera sozinha em 6 s. */
     (function(){try{var k='finx:transicaoTopo',d=JSON.parse(sessionStorage.getItem(k)||'null');sessionStorage.removeItem(k);
-    if(!d||(d.tipo!=='ramo'&&d.tipo!=='empresa')||!(Date.now()-Number(d.t||0)<15000))return;window.__sxTrans=d;
+    if(!d||(d.tipo!=='ramo'&&d.tipo!=='empresa'&&d.tipo!=='login')||!(Date.now()-Number(d.t||0)<15000))return;window.__sxTrans=d;
     var h=document.documentElement;h.setAttribute('data-sx-trans','1');setTimeout(function(){h.removeAttribute('data-sx-trans')},6000);}catch(e){}})();
   </script>
   <style>
@@ -426,9 +427,9 @@
 })();
 </script>
         <!-- Seletores do topo (ramo e empresa) em menu próprio; carrega aqui para aparecer na hora -->
-        <script src="js/seletor-topo.js?v=20261118a"></script>
+        <script src="js/seletor-topo.js?v=20261118b"></script>
         <!-- Transição (portal) ao trocar de ramo ou de empresa; logo após o seletor -->
-        <script src="js/transicao-topo.js?v=20261118a"></script>
+        <script src="js/transicao-topo.js?v=20261118b"></script>
         
 
     </header>
@@ -3179,45 +3180,45 @@ function pgDivAddFromForm(){
 
 <!-- JS externo -->
 
-<script src="js/utils.js?v=20261118a"></script>
-<script src="js/empresa-shim.js?v=20261118a"></script>
-<script src="js/auth-rbac.js?v=20261118a" ></script>
-<script src="js/api-supabase.js?v=20261118a"></script>
-<script src="js/prestacoes-supabase.js?v=20261118a" defer></script>
-<script src="js/supabase-init.js?v=20261118a"></script>
-<script src="js/config-supabase.js?v=20261118a"></script>
-<script src="js/auth-supabase-adapter.js?v=20261118a"></script>
-<script src="js/sync-manager.js?v=20261118a" defer></script>
-<script src="js/nav.js?v=20261118a"></script>
-<script src="js/core.js?v=20261118a" defer></script>
-<script src="js/gerentes.js?v=20261118a"></script>
-<script src="js/fichas.js?v=20261118a" defer></script>
-<script src="js/maquinas.js?v=20261118a" defer></script>
-<script src="js/estoque.js?v=20261118a" defer></script>
-<script src="js/pecas.js?v=20261118a" defer></script>
-<script src="js/bobinas.js?v=20261118a" defer></script>
-<script src="js/empresas-page.js?v=20261118a" defer></script>
-<script src="js/ramo-empresa.js?v=20261118a" defer></script>
-<script src="js/mapa.js?v=20261118a" defer></script>
-<script src="js/tooltips.js?v=20261118a" defer></script>
-<script src="js/saldo-acumulado.js?v=20261118a"></script>
-<script src="js/saldo-acumulado-ui.js?v=20261118a"></script>
-<script src="ajuste-saldo-manual.js?v=20261118a"></script>
-<script src="js/prestacoes.js?v=20261118a" defer></script>
-<script src="js/relatorios.js?v=20261118a" defer></script>
-<script src="js/financeiro.js?v=20261118a" defer></script>
-<script src="js/despesas.js?v=20261118a" defer></script>
-<script src="js/video-game.js?v=20261118a" defer></script>
-<script src="js/dashboard.js?v=20261118a" defer></script>
-<script src="js/users-page.js?v=20261118a" defer></script>
-<script src="js/auth.js?v=20261118a" defer></script>
-<script src="js/boot.js?v=20261118a" defer></script>
-<script src="js/ai.js?v=20261118a" defer></script>
-<script src="js/audit-log.js?v=20261118a"></script>
-<script src="js/audit-auto.js?v=20261118a"></script>
-<script src="js/historico.js?v=20261118a" defer></script>
-<script src="js/analise-gerente.js?v=20261118a"></script>
-<script src="js/tema-sazonal.js?v=20261118a"></script>
+<script src="js/utils.js?v=20261118b"></script>
+<script src="js/empresa-shim.js?v=20261118b"></script>
+<script src="js/auth-rbac.js?v=20261118b" ></script>
+<script src="js/api-supabase.js?v=20261118b"></script>
+<script src="js/prestacoes-supabase.js?v=20261118b" defer></script>
+<script src="js/supabase-init.js?v=20261118b"></script>
+<script src="js/config-supabase.js?v=20261118b"></script>
+<script src="js/auth-supabase-adapter.js?v=20261118b"></script>
+<script src="js/sync-manager.js?v=20261118b" defer></script>
+<script src="js/nav.js?v=20261118b"></script>
+<script src="js/core.js?v=20261118b" defer></script>
+<script src="js/gerentes.js?v=20261118b"></script>
+<script src="js/fichas.js?v=20261118b" defer></script>
+<script src="js/maquinas.js?v=20261118b" defer></script>
+<script src="js/estoque.js?v=20261118b" defer></script>
+<script src="js/pecas.js?v=20261118b" defer></script>
+<script src="js/bobinas.js?v=20261118b" defer></script>
+<script src="js/empresas-page.js?v=20261118b" defer></script>
+<script src="js/ramo-empresa.js?v=20261118b" defer></script>
+<script src="js/mapa.js?v=20261118b" defer></script>
+<script src="js/tooltips.js?v=20261118b" defer></script>
+<script src="js/saldo-acumulado.js?v=20261118b"></script>
+<script src="js/saldo-acumulado-ui.js?v=20261118b"></script>
+<script src="ajuste-saldo-manual.js?v=20261118b"></script>
+<script src="js/prestacoes.js?v=20261118b" defer></script>
+<script src="js/relatorios.js?v=20261118b" defer></script>
+<script src="js/financeiro.js?v=20261118b" defer></script>
+<script src="js/despesas.js?v=20261118b" defer></script>
+<script src="js/video-game.js?v=20261118b" defer></script>
+<script src="js/dashboard.js?v=20261118b" defer></script>
+<script src="js/users-page.js?v=20261118b" defer></script>
+<script src="js/auth.js?v=20261118b" defer></script>
+<script src="js/boot.js?v=20261118b" defer></script>
+<script src="js/ai.js?v=20261118b" defer></script>
+<script src="js/audit-log.js?v=20261118b"></script>
+<script src="js/audit-auto.js?v=20261118b"></script>
+<script src="js/historico.js?v=20261118b" defer></script>
+<script src="js/analise-gerente.js?v=20261118b"></script>
+<script src="js/tema-sazonal.js?v=20261118b"></script>
 
 
 

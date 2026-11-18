@@ -433,6 +433,7 @@
       aplicarLista(cache);
       const emp = cache.find(e => String(e.nome || '').toUpperCase() === empresaAtual());
       if (emp && ramoDe(emp) === 'VG') document.body?.classList.add('ramo-vg');
+      if (emp && ramoDe(emp) === 'FUTEBOL') document.body?.classList.add('ramo-futebol');
     }
   }
 

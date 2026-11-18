@@ -21,17 +21,21 @@
     return !ramo || !lista || lista.split(',').map(s => s.trim()).includes(ramo);
   }
 
-  // Tema visual do ramo Video game (css/tema-video-game.css só vale com body.ramo-vg)
+  // Tema visual do ramo: Video game (css/tema-video-game.css, body.ramo-vg)
+  // e Futebol (css/tema-futebol.css, body.ramo-futebol). JB fica sem classe.
   const CHAVE_TEMA = 'finx:ramo:';
   function temaDoCache() {
     try {
       const nome = String(window.getCompany?.() || '').toUpperCase();
-      if (nome && localStorage.getItem(CHAVE_TEMA + nome) === 'VG') document.body?.classList.add('ramo-vg');
+      const r = nome ? localStorage.getItem(CHAVE_TEMA + nome) : null;
+      if (r === 'VG') document.body?.classList.add('ramo-vg');
+      if (r === 'FUTEBOL') document.body?.classList.add('ramo-futebol');
     } catch (_) {}
   }
 
   function aplicar() {
     document.body?.classList.toggle('ramo-vg', ramo === 'VG');
+    document.body?.classList.toggle('ramo-futebol', ramo === 'FUTEBOL');
     document.querySelectorAll('[data-ramo]').forEach(el => el.classList.toggle('ramo-oculto', !permite(el)));
 
     // Grupo do menu cujos itens são todos de outro ramo some inteiro

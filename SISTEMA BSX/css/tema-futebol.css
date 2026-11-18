@@ -1,0 +1,59 @@
+/* =====================================================================
+   TEMA FUTEBOL (verde gramado)
+   Só vale quando a empresa selecionada é do ramo Futebol: <body class="ramo-futebol">
+   (a classe é colocada pelo js/ramo-empresa.js). No JB nada muda.
+   Mesmo padrão do tema do Video game (css/tema-video-game.css), em verde.
+   ===================================================================== */
+
+body.ramo-futebol {
+  --navy: #0a1a12;
+  --navy-2: #13291d;
+  --navy-3: #22402f;
+  --navy-4: #36574a;
+  --brand: #22c55e;
+  --brand-2: #4ade80;
+  --brand-dim: rgba(34, 197, 94, 0.12);
+  --brand-glow: rgba(34, 197, 94, 0.25);
+  --sb-bg: #07110c;
+  --sb-border: #1a3324;
+  --sb-fg: #e7f5ec;
+  --sb-fg-dim: #8db3a0;
+}
+
+/* ---------- Menu lateral ---------- */
+body.ramo-futebol #sidebar {
+  background: linear-gradient(180deg, #0b1a12 0%, #07110c 45%) !important;
+}
+body.ramo-futebol #sidebar .sb-top {
+  border-bottom: 1px solid rgba(34, 197, 94, 0.18);
+}
+body.ramo-futebol #sidebar .logo::after {
+  content: 'FUTEBOL · OPERAÇÃO';
+  display: block;
+  margin-top: 6px;
+  font: 700 9.5px/1 "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 2px;
+  color: #4ade80;
+  text-shadow: none;
+}
+body.ramo-futebol.sidebar-compact #sidebar .logo::after {
+  content: 'FUT';
+  letter-spacing: 0;
+  font-size: 11px;
+}
+body.ramo-futebol #sidebar .sb-item:hover,
+body.ramo-futebol #sidebar .sb-subitem:hover,
+body.ramo-futebol #sidebar .sb-group:hover {
+  background: rgba(34, 197, 94, 0.06) !important;
+}
+body.ramo-futebol #sidebar .sb-item.active,
+body.ramo-futebol #sidebar .sb-subitem.active {
+  background: rgba(34, 197, 94, 0.10) !important;
+  box-shadow: inset 3px 0 0 #22c55e !important;
+  color: #86efac !important;
+}
+
+/* ---------- Barra do topo: filete verde ---------- */
+body.ramo-futebol .topbar {
+  box-shadow: inset 0 -1px 0 rgba(34, 197, 94, 0.7) !important;
+}

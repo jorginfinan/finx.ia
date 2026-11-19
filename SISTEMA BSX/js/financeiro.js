@@ -1,5 +1,18 @@
 // ==== FINANCEIRO (versão enxuta com delegação única) ====
 /* === Persistência forte do Financeiro (autossalvar + travar window.lanc) === */
+
+// ===== Cópia do caixa guardada no navegador (localStorage) =====
+// O caixa completo vem do Supabase e fica em window.lanc. No navegador fica só uma
+// cópia dos 1000 lançamentos mais recentes (o mesmo tamanho de antes), para o espaço
+// do navegador não lotar conforme o caixa cresce.
+window.__lancParaCache = function (arr) {
+  const lista = Array.isArray(arr) ? arr : [];
+  if (lista.length <= 1000) return lista;
+  return lista.slice()
+    .sort((a, b) => String(b?.data || '').localeCompare(String(a?.data || '')))
+    .slice(0, 1000);
+};
+
 // ===== VERIFICAÇÃO E AGUARDO DE DEPENDÊNCIAS =====
 (function waitForDeps() {
   const required = ['esc', 'uid', 'jget', 'jset'];
@@ -115,7 +128,7 @@ window.getFinanceiro = window.getFinanceiro || function() {
 
   window.saveLanc = function () {
     try {
-      const arr = Array.isArray(window.lanc) ? window.lanc : [];
+      const arr = window.__lancParaCache(Array.isArray(window.lanc) ? window.lanc : []);
       const json = JSON.stringify(arr);
       // Mantém localStorage como backup
       localStorage.setItem('bsx_fin_lanc', json);
@@ -548,8 +561,9 @@ window.carregarFinanceiroSupabase = async function() {
       if (Array.isArray(data)) {
         window.lanc = data;
         try {
-          localStorage.setItem('bsx_fin_lanc', JSON.stringify(data));
-          localStorage.setItem('lanc', JSON.stringify(data));
+          const cache = JSON.stringify(window.__lancParaCache(data));
+          localStorage.setItem('bsx_fin_lanc', cache);
+          localStorage.setItem('lanc', cache);
         } catch(_) {}
         window.renderFin?.();
         console.log('[Financeiro] ✅ Recarregado do Supabase:', data.length);
@@ -3096,15 +3110,27 @@ console.log('[Financeiro] Módulo carregado e pronto');
       
       async getAll(empresa) {
         const company = empresa || window.getCompany?.() || 'BSX';
-        const { data, error } = await window.SupabaseAPI.client
-          .from('lancamentos')
-          .select('*')
-          .eq('company', company)
-          .order('data', { ascending: false });
-        
-        if (error) { console.error('[Lancamentos] Erro:', error); return []; }
-        
-        return (data || []).map(r => ({
+        // O Supabase entrega no máximo 1000 linhas por consulta. Sem buscar em lotes,
+        // só vinham os 1000 lançamentos mais recentes e os meses antigos sumiam do caixa.
+        // Ordem estável (data + uid) para nenhum lançamento pular ou repetir entre lotes.
+        const LOTE = 1000;
+        const linhas = [];
+        for (let de = 0; ; de += LOTE) {
+          const { data, error } = await window.SupabaseAPI.client
+            .from('lancamentos')
+            .select('*')
+            .eq('company', company)
+            .order('data', { ascending: false })
+            .order('uid', { ascending: true })
+            .range(de, de + LOTE - 1);
+
+          // Erro: devolve null para quem chamou manter o caixa que já está na tela (em vez de zerar)
+          if (error) { console.error('[Lancamentos] Erro:', error); return null; }
+          linhas.push(...(data || []));
+          if (!data || data.length < LOTE) break;
+        }
+
+        return linhas.map(r => ({
           id: r.id, uid: r.uid, key: r.uid,
           gerente: r.gerente || '', valor: Number(r.valor) || 0,
           status: r.status || 'RECEBIDO', forma: r.forma || 'PIX',
@@ -3271,10 +3297,11 @@ console.log('[Financeiro] Módulo carregado e pronto');
 window.SupabaseAPI.lancamentos.getAll().then(data => {
   if (Array.isArray(data)) {
     window.lanc = data;
-    // Atualiza localStorage como cache
+    // Atualiza localStorage como cache (só os mais recentes; o caixa completo fica em window.lanc)
     try {
-      localStorage.setItem('bsx_fin_lanc', JSON.stringify(data));
-      localStorage.setItem('lanc', JSON.stringify(data));
+      const cache = JSON.stringify(window.__lancParaCache(data));
+      localStorage.setItem('bsx_fin_lanc', cache);
+      localStorage.setItem('lanc', cache);
     } catch(_) {}
     window.renderFin?.();
     console.log('[Financeiro] ✅ Carregado do Supabase:', data.length, 'lançamentos');
